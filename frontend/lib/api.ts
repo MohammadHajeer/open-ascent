@@ -1,0 +1,50 @@
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
+
+type ApiErrorBody = {
+  error?: {
+    code?: string;
+    message?: string;
+    details?: unknown;
+  };
+};
+
+export class ApiError extends Error {
+  status: number;
+  code: string;
+  details?: unknown;
+
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    details?: unknown,
+  ) {
+    super(message);
+
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export async function apiFetch<T>(
+  path: string,
+  options?: RequestInit,
+): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`, options);
+
+  const data = (await response.json()) as T | ApiErrorBody;
+
+  if (!response.ok) {
+    const error = data as ApiErrorBody;
+
+    throw new ApiError(
+      response.status,
+      error.error?.code ?? "unknown_error",
+      error.error?.message ?? "Something went wrong",
+      error.error?.details,
+    );
+  }
+
+  return data as T;
+}

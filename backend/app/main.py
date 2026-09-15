@@ -1,9 +1,55 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.core.config import settings
+from app.db.database import DbSession
 from sqlalchemy import text
 
-from app.db.database import DbSession
-
 app = FastAPI(title="Open Ascent API")
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(
+    request: Request,
+    exc: HTTPException,
+):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "code": "http_error",
+                "message": str(exc.detail),
+            }
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+):
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "validation_error",
+                "message": "Invalid request",
+                "details": exc.errors(),
+            }
+        },
+    )
 
 
 @app.get("/health")
@@ -19,3 +65,19 @@ def database_health_check(db: DbSession):
         "status": "ok",
         "database": "connected",
     }
+
+
+@app.get("/api/test")
+def test_api():
+    return {
+        "status": "ok",
+        "message": "Open Ascent frontend connected to FastAPI",
+    }
+
+
+@app.get("/api/test-error")
+def test_error():
+    raise HTTPException(
+        status_code=400,
+        detail="This is a test API error",
+    )
