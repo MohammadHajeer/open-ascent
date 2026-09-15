@@ -1,0 +1,109 @@
+# =========================
+# Environment files
+# =========================
+
+.env
+.env.local
+.env.*.local
+
+frontend/.env
+frontend/.env.local
+
+backend/.env
+backend/.env.local
+
+
+# =========================
+# Node / Next.js
+# =========================
+
+node_modules/
+frontend/node_modules/
+
+.next/
+frontend/.next/
+
+out/
+frontend/out/
+
+dist/
+frontend/dist/
+
+coverage/
+frontend/coverage/
+
+*.tsbuildinfo
+next-env.d.ts
+
+
+# =========================
+# Python / FastAPI
+# =========================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+.venv/
+venv/
+env/
+
+backend/.venv/
+backend/venv/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+*.egg-info/
+.eggs/
+build/
+backend/build/
+backend/dist/
+
+
+# =========================
+# uv / Python tooling
+# =========================
+
+.uv/
+uv-cache/
+
+
+# =========================
+# IDE / Editor
+# =========================
+
+.vscode/
+.idea/
+
+*.swp
+*.swo
+
+
+# =========================
+# OS files
+# =========================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# =========================
+# Logs
+# =========================
+
+*.log
+logs/
+
+
+# =========================
+# Temporary files
+# =========================
+
+tmp/
+temp/
+*.tmp
