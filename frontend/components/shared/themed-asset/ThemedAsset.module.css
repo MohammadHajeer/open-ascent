@@ -1,0 +1,28 @@
+.root {
+  display: inline-grid;
+  max-width: 100%;
+  vertical-align: middle;
+  line-height: 0;
+}
+
+.image {
+  display: block;
+  grid-area: 1 / 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.auto .dark {
+  display: none;
+}
+
+:global(html.dark) .auto .light,
+:global(html[data-theme="dark"]) .auto .light {
+  display: none;
+}
+
+:global(html.dark) .auto .dark,
+:global(html[data-theme="dark"]) .auto .dark {
+  display: block;
+}
