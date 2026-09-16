@@ -5,41 +5,45 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import settings
 from app.db.base import Base
-
-# IMPORTANT:
-# Import models so SQLAlchemy knows about them when Alembic
-# runs autogenerate.
 import app.models  # noqa: F401
 
 
 config = context.config
 
-
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-
-# Use DATABASE_URL from our .env instead of hardcoding it
-# inside alembic.ini.
 config.set_main_option(
     "sqlalchemy.url",
     settings.database_url.replace("%", "%%"),
 )
 
-
-# Alembic compares this metadata against the database.
 target_metadata = Base.metadata
+
+
+def include_object(object_, name, type_, reflected, compare_to):
+    """Exclude every platform-managed object from Alembic ownership."""
+    info = getattr(object_, "info", {}) or {}
+    if info.get("external"):
+        return False
+
+    schema = getattr(object_, "schema", None)
+    if type_ == "table" and schema not in (None, "public"):
+        return False
+
+    return True
 
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
-
     context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        include_object=include_object,
+        include_schemas=False,
     )
 
     with context.begin_transaction():
@@ -58,6 +62,8 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            include_object=include_object,
+            include_schemas=False,
         )
 
         with context.begin_transaction():

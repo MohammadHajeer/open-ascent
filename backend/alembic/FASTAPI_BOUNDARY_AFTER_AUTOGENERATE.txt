@@ -1,0 +1,32 @@
+After Alembic autogenerates the initial schema migration, add the following at the END of upgrade(), after all create_table/create_index calls:
+
+APP_TABLES = [
+    "profiles",
+    "movements",
+    "movement_documentation",
+    "analyses",
+    "workout_sessions",
+    "workout_sets",
+    "training_plans",
+    "conversations",
+    "messages",
+    "ai_runs",
+    "subscription_plans",
+    "plan_entitlements",
+    "user_subscriptions",
+    "feature_usage",
+]
+
+for table in APP_TABLES:
+    op.execute(sa.text(f'ALTER TABLE public."{table}" ENABLE ROW LEVEL SECURITY'))
+    op.execute(
+        sa.text(
+            f'REVOKE ALL PRIVILEGES ON TABLE public."{table}" '
+            'FROM anon, authenticated'
+        )
+    )
+
+Do NOT create public anon/authenticated RLS policies for these application tables.
+FastAPI/PostgreSQL remains the application-data boundary.
+
+In downgrade(), no special RLS cleanup is needed if the tables are dropped.
