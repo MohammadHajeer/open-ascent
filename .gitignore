@@ -76,7 +76,6 @@ uv-cache/
 # IDE / Editor
 # =========================
 
-.vscode/
 .idea/
 
 *.swp

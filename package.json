@@ -1,0 +1,25 @@
+{
+  "name": "open-ascent",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n frontend,backend \"pnpm dev:frontend\" \"pnpm dev:backend\"",
+    "dev:frontend": "pnpm --dir frontend dev",
+    "dev:backend": "cd backend && uv run fastapi dev",
+    "lint": "pnpm lint:frontend && pnpm lint:backend",
+    "lint:frontend": "pnpm --dir frontend lint",
+    "lint:backend": "cd backend && uv run ruff check .",
+    "lint:staged": "lint-staged",
+    "test": "pnpm test:backend",
+    "test:backend": "cd backend && uv run pytest",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "frontend/**/*.{js,jsx,ts,tsx}": "pnpm --dir frontend exec eslint --fix",
+    "backend/**/*.py": "uv run --project backend ruff check --fix"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.5.1"
+  }
+}

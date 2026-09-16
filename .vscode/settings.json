@@ -1,0 +1,61 @@
+{
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/*.pyo": true,
+    "**/*.pyd": true,
+
+    "**/.pytest_cache": true,
+    "**/.ruff_cache": true,
+    "**/.mypy_cache": true,
+    "**/.pyright": true,
+    "**/.hypothesis": true,
+
+    "**/.next": true,
+    "**/node_modules": true,
+    "**/.turbo": true,
+    "**/.cache": true,
+    "**/.parcel-cache": true,
+    "**/.eslintcache": true,
+    "**/.stylelintcache": true,
+
+    "**/coverage": true,
+    "**/htmlcov": true,
+    "**/.coverage": true,
+    "**/dist": true,
+    "**/build": true,
+    "**/out": true,
+
+    "**/*.tsbuildinfo": true,
+
+    "**/.DS_Store": true
+  },
+
+  "search.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.ruff_cache": true,
+    "**/.mypy_cache": true,
+    "**/.next": true,
+    "**/node_modules": true,
+    "**/.turbo": true,
+    "**/coverage": true,
+    "**/htmlcov": true,
+    "**/dist": true,
+    "**/build": true,
+    "**/out": true
+  },
+
+  "files.watcherExclude": {
+    "**/__pycache__/**": true,
+    "**/.pytest_cache/**": true,
+    "**/.ruff_cache/**": true,
+    "**/.mypy_cache/**": true,
+    "**/.next/**": true,
+    "**/node_modules/**": true,
+    "**/.turbo/**": true,
+    "**/coverage/**": true,
+    "**/dist/**": true,
+    "**/build/**": true
+  }
+}
