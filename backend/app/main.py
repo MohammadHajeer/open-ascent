@@ -1,13 +1,16 @@
-from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-
+from app.api.sse_smoke import router as sse_smoke_router
+from app.api.stripe_smoke import router as stripe_smoke_router
 from app.core.config import settings
 from app.db.database import DbSession
+from fastapi import FastAPI, Request
+from fastapi.exceptions import HTTPException, RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 app = FastAPI(title="Open Ascent API")
+app.include_router(sse_smoke_router)
+app.include_router(stripe_smoke_router)
 
 
 app.add_middleware(

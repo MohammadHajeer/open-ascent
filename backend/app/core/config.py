@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # Guest analysis
     guest_token_secret: str
     guest_analysis_expiry_minutes: int = 60
-    guest_video_max_size_mb: int = 100
+    guest_video_max_size_mb: int = 50
     guest_video_max_duration_seconds: int = 60
 
     # CORS

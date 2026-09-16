@@ -2,9 +2,10 @@
   "name": "open-ascent",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n frontend,backend \"pnpm dev:frontend\" \"pnpm dev:backend\"",
+    "dev": "concurrently -n frontend,backend,worker \"pnpm dev:frontend\" \"pnpm dev:backend\" \"pnpm dev:worker\"",
     "dev:frontend": "pnpm --dir frontend dev",
     "dev:backend": "cd backend && uv run fastapi dev",
+    "dev:worker": "cd backend && uv run python -u -m app.workers.analysis_worker",
     "lint": "pnpm lint:frontend && pnpm lint:backend",
     "lint:frontend": "pnpm --dir frontend lint",
     "lint:backend": "cd backend && uv run ruff check .",
