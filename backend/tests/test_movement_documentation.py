@@ -4,6 +4,7 @@ import uuid
 from collections.abc import Generator
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -14,16 +15,18 @@ from app.schemas.movement_documentation import (
     MovementDocumentationCreate,
     MovementDocumentationUpdate,
 )
+from app.schemas.movement_safety import MovementSafetyContentDraft
 from app.services.movement_documentation import (
     DraftAlreadyExistsError,
     ImmutableDocumentationError,
+    InvalidSafetyContentError,
     MovementDocumentationService,
 )
 
 
 @pytest.fixture(scope="module")
 def auth_user_id() -> Generator[uuid.UUID, None, None]:
-    email = f"open-ascent-saf01-{uuid.uuid4().hex}@example.com"
+    email = f"open-ascent-safety-{uuid.uuid4().hex}@example.com"
 
     response = supabase.auth.admin.create_user(
         {
@@ -50,7 +53,7 @@ def admin_profile(
 ) -> Profile:
     profile = Profile(
         id=auth_user_id,
-        display_name="SAF-01 Test Admin",
+        display_name="Safety Test Admin",
         app_role="admin",
     )
 
@@ -90,9 +93,27 @@ def test_movement_documentation_lifecycle(
     # ---------------------------------------------------------
 
     v1_content = {
-        "notice": "Test safety notice.",
+        "notice": "Perform the movement with controlled technique.",
         "difficulty": "beginner",
-        "cautions": ["Stop if you feel pain."],
+        "stressed_areas": [
+            "shoulders",
+            "elbows",
+        ],
+        "prerequisites": [
+            "Comfortable overhead position",
+        ],
+        "cautions": [
+            "Avoid uncontrolled swinging",
+        ],
+        "stop_conditions": [
+            "Sharp shoulder pain",
+            "Loss of grip control",
+        ],
+        "easier_option": "Use an assisted variation.",
+        "setup": [
+            "Use stable equipment",
+            "Ensure enough clearance",
+        ],
     }
 
     v1 = MovementDocumentationService.create_draft(
@@ -110,6 +131,7 @@ def test_movement_documentation_lifecycle(
     assert v1.created_by == admin_profile.id
     assert v1.published_by is None
     assert v1.published_at is None
+    assert v1.content == v1_content
 
     # Only one draft may exist at a time.
 
@@ -128,10 +150,10 @@ def test_movement_documentation_lifecycle(
     # ---------------------------------------------------------
 
     updated_v1_content = {
+        **v1_content,
         "notice": "Updated safety notice.",
-        "difficulty": "beginner",
         "cautions": [
-            "Stop if you feel pain.",
+            "Avoid uncontrolled swinging",
             "Maintain controlled movement.",
         ],
     }
@@ -176,7 +198,9 @@ def test_movement_documentation_lifecycle(
             db=db,
             documentation_id=v1.id,
             payload=MovementDocumentationUpdate(
-                content={"notice": "This must not be allowed."},
+                content={
+                    "notice": "This must not be allowed.",
+                },
             ),
         )
 
@@ -196,9 +220,11 @@ def test_movement_documentation_lifecycle(
     assert v2.content == updated_v1_content
     assert v2.created_by == admin_profile.id
 
-    # Editing v2 must not modify v1.
+    # ---------------------------------------------------------
+    # Partially update v2
+    # ---------------------------------------------------------
 
-    v2_content = {
+    v2_updates = {
         "notice": "Version 2 safety notice.",
         "difficulty": "intermediate",
         "cautions": [
@@ -211,13 +237,21 @@ def test_movement_documentation_lifecycle(
         db=db,
         documentation_id=v2.id,
         payload=MovementDocumentationUpdate(
-            content=v2_content,
+            content=v2_updates,
         ),
     )
 
+    expected_v2_content = {
+        **updated_v1_content,
+        **v2_updates,
+    }
+
     db.refresh(v1)
 
-    assert v2.content == v2_content
+    # PATCH-style update keeps fields that were not supplied.
+    assert v2.content == expected_v2_content
+
+    # Editing v2 must not modify already-published v1.
     assert v1.content == updated_v1_content
 
     # ---------------------------------------------------------
@@ -234,6 +268,7 @@ def test_movement_documentation_lifecycle(
 
     assert v1.status == "archived"
     assert v2.status == "published"
+    assert v2.content == expected_v2_content
 
     # Archived versions are also immutable.
 
@@ -242,7 +277,9 @@ def test_movement_documentation_lifecycle(
             db=db,
             documentation_id=v1.id,
             payload=MovementDocumentationUpdate(
-                content={"notice": "Archived content modification."},
+                content={
+                    "notice": "Archived content modification.",
+                },
             ),
         )
 
@@ -275,3 +312,51 @@ def test_movement_documentation_lifecycle(
         "published",
         "archived",
     ]
+
+
+def test_incomplete_safety_documentation_cannot_be_published(
+    db: Session,
+    admin_profile: Profile,
+    movement: Movement,
+) -> None:
+    draft = MovementDocumentationService.create_draft(
+        db=db,
+        movement_id=movement.id,
+        payload=MovementDocumentationCreate(
+            content={
+                "notice": "This draft is still incomplete.",
+            },
+        ),
+        actor_id=admin_profile.id,
+    )
+
+    assert draft.status == "draft"
+
+    with pytest.raises(InvalidSafetyContentError):
+        MovementDocumentationService.publish_draft(
+            db=db,
+            documentation_id=draft.id,
+            actor_id=admin_profile.id,
+        )
+
+    db.refresh(draft)
+
+    # Failed publication must leave the draft untouched.
+    assert draft.status == "draft"
+    assert draft.published_by is None
+    assert draft.published_at is None
+
+
+def test_safety_content_rejects_invalid_difficulty() -> None:
+    with pytest.raises(ValidationError):
+        MovementSafetyContentDraft(
+            difficulty="extreme",
+        )
+
+
+def test_safety_content_rejects_unknown_fields() -> None:
+    with pytest.raises(ValidationError):
+        MovementSafetyContentDraft(
+            notice="Valid notice.",
+            random_field="This should not exist.",
+        )

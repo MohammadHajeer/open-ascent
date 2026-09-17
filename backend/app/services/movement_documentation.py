@@ -4,6 +4,7 @@ import copy
 import uuid
 from datetime import UTC, datetime
 
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -13,6 +14,7 @@ from app.schemas.movement_documentation import (
     MovementDocumentationCreate,
     MovementDocumentationUpdate,
 )
+from app.schemas.movement_safety import MovementSafetyContent
 
 
 class MovementNotFoundError(Exception):
@@ -28,6 +30,10 @@ class DraftAlreadyExistsError(Exception):
 
 
 class ImmutableDocumentationError(Exception):
+    pass
+
+
+class InvalidSafetyContentError(Exception):
     pass
 
 
@@ -100,7 +106,7 @@ class MovementDocumentationService:
             movement_id=movement_id,
             version=cls._next_version(db, movement_id),
             status="draft",
-            content=payload.content,
+            content=payload.content.model_dump(exclude_none=True),
             created_by=actor_id,
             edit_revision=1,
         )
@@ -129,7 +135,13 @@ class MovementDocumentationService:
         if documentation.status != "draft":
             raise ImmutableDocumentationError
 
-        documentation.content = payload.content
+        updates = payload.content.model_dump(exclude_unset=True)
+
+        documentation.content = {
+            **documentation.content,
+            **updates,
+        }
+
         documentation.edit_revision += 1
 
         db.commit()
@@ -187,6 +199,13 @@ class MovementDocumentationService:
 
         if draft.status != "draft":
             raise ImmutableDocumentationError
+
+        try:
+            validated_content = MovementSafetyContent.model_validate(draft.content)
+        except ValidationError as exc:
+            raise InvalidSafetyContentError from exc
+
+        draft.content = validated_content.model_dump(exclude_none=True)
 
         cls._lock_movement(db, draft.movement_id)
 

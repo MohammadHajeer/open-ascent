@@ -15,6 +15,7 @@ from app.services.movement_documentation import (
     DocumentationNotFoundError,
     DraftAlreadyExistsError,
     ImmutableDocumentationError,
+    InvalidSafetyContentError,
     MovementDocumentationService,
     MovementNotFoundError,
 )
@@ -136,10 +137,17 @@ def publish_draft(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Documentation not found.",
         ) from exc
+
     except ImmutableDocumentationError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Only draft documentation can be published.",
+        ) from exc
+
+    except InvalidSafetyContentError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Safety documentation is incomplete or invalid.",
         ) from exc
 
 
