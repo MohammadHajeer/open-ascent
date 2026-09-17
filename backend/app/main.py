@@ -1,11 +1,12 @@
-from app.api import api_router
-from app.core.config import settings
-from app.db.database import DbSession
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException, RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
+
+from app.api import api_router
+from app.core.config import settings
+from app.db.database import DbSession
 
 app = FastAPI(title="Open Ascent API")
 app.include_router(api_router)

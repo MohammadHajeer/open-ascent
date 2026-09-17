@@ -2,8 +2,9 @@ import uuid
 from pathlib import Path
 
 import httpx
-from app.core.config import settings
 from supabase import create_client
+
+from app.core.config import settings
 
 BUCKET = settings.supabase_video_bucket
 OBJECT_PATH = f"smoke-tests/{uuid.uuid4()}.mp4"

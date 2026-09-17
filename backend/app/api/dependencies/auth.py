@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from app.core.supabase import supabase
-from app.db.database import DbSession
-from app.models.profile import Profile
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
+
+from app.core.supabase import supabase
+from app.db.database import DbSession
+from app.models.profile import Profile
 
 bearer_scheme = HTTPBearer(auto_error=False)
 

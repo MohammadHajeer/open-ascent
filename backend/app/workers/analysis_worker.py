@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import time
 
-from app.db.database import engine
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+
+from app.db.database import engine
 
 POLL_INTERVAL_SECONDS = 5
 

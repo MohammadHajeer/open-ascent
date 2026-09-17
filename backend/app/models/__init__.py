@@ -7,7 +7,12 @@ from app.models.coach import Conversation, Message
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.models.profile import Profile
-from app.models.subscription import FeatureUsage, PlanEntitlement, SubscriptionPlan, UserSubscription
+from app.models.subscription import (
+    FeatureUsage,
+    PlanEntitlement,
+    SubscriptionPlan,
+    UserSubscription,
+)
 from app.models.training import TrainingPlan, WorkoutSession, WorkoutSet
 
 __all__ = [

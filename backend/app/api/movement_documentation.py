@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import uuid
 
+from fastapi import APIRouter, HTTPException, status
+
 from app.api.dependencies.auth import AdminProfile
 from app.db.database import DbSession
 from app.schemas.movement_documentation import (
@@ -16,7 +18,6 @@ from app.services.movement_documentation import (
     MovementDocumentationService,
     MovementNotFoundError,
 )
-from fastapi import APIRouter, HTTPException, status
 
 router = APIRouter(
     prefix="/movements",

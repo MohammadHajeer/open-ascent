@@ -1,7 +1,8 @@
+from fastapi import APIRouter
+
 from app.api.movement_documentation import router as movement_documentation_router
 from app.api.sse_smoke import router as sse_smoke_router
 from app.api.stripe_smoke import router as stripe_smoke_router
-from fastapi import APIRouter
 
 api_router = APIRouter()
 

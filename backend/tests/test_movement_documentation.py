@@ -4,6 +4,9 @@ import uuid
 from collections.abc import Generator
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
 from app.core.supabase import supabase
 from app.models.movement import Movement
 from app.models.profile import Profile
@@ -16,8 +19,6 @@ from app.services.movement_documentation import (
     ImmutableDocumentationError,
     MovementDocumentationService,
 )
-from sqlalchemy import text
-from sqlalchemy.orm import Session
 
 
 @pytest.fixture(scope="module")

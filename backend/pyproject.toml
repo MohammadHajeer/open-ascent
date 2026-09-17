@@ -33,3 +33,6 @@ entrypoint = "app.main:app"
 pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "strict"
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/versions/*.py" = ["I001", "UP007", "UP035"]

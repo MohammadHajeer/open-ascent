@@ -4,14 +4,15 @@ import copy
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
+
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.schemas.movement_documentation import (
     MovementDocumentationCreate,
     MovementDocumentationUpdate,
 )
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
 
 
 class MovementNotFoundError(Exception):

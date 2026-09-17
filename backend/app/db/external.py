@@ -9,7 +9,6 @@ from sqlalchemy.dialects.postgresql import UUID
 
 from app.db.base import Base
 
-
 auth_users = Table(
     "users",
     Base.metadata,

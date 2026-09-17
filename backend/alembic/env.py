@@ -1,12 +1,11 @@
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+import app.models  # noqa: F401
+from alembic import context
 from app.core.config import settings
 from app.db.base import Base
-import app.models  # noqa: F401
-
 
 config = context.config
 
@@ -28,10 +27,8 @@ def include_object(object_, name, type_, reflected, compare_to):
         return False
 
     schema = getattr(object_, "schema", None)
-    if type_ == "table" and schema not in (None, "public"):
-        return False
 
-    return True
+    return not (type_ == "table" and schema not in (None, "public"))
 
 
 def run_migrations_offline() -> None:
