@@ -1,5 +1,4 @@
-from app.api.sse_smoke import router as sse_smoke_router
-from app.api.stripe_smoke import router as stripe_smoke_router
+from app.api import api_router
 from app.core.config import settings
 from app.db.database import DbSession
 from fastapi import FastAPI, Request
@@ -9,8 +8,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 app = FastAPI(title="Open Ascent API")
-app.include_router(sse_smoke_router)
-app.include_router(stripe_smoke_router)
+app.include_router(api_router)
 
 
 app.add_middleware(
