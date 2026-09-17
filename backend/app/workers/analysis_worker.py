@@ -18,12 +18,22 @@ def check_database() -> None:
 def main() -> None:
     print("Open Ascent analysis worker started.")
 
+    database_available: bool | None = None
+
     while True:
         try:
             check_database()
-            print("Worker alive — database reachable, waiting for analyses...")
+
+            if database_available is not True:
+                print("Worker ready - database reachable.")
+
+            database_available = True
+
         except SQLAlchemyError as exc:
-            print(f"Worker database check failed: {exc}")
+            if database_available is not False:
+                print(f"Worker database connection failed: {exc}")
+
+            database_available = False
 
         time.sleep(POLL_INTERVAL_SECONDS)
 
