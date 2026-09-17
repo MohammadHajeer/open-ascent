@@ -26,6 +26,11 @@ router = APIRouter(
 )
 
 
+# ------------------------------------------------------------------
+# Admin — create draft
+# ------------------------------------------------------------------
+
+
 @router.post(
     "/{movement_id}/documentation/draft",
     response_model=MovementDocumentationRead,
@@ -44,16 +49,23 @@ def create_draft(
             payload=payload,
             actor_id=admin.id,
         )
+
     except MovementNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Movement not found.",
         ) from exc
+
     except DraftAlreadyExistsError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A draft already exists for this movement.",
         ) from exc
+
+
+# ------------------------------------------------------------------
+# Admin — update draft
+# ------------------------------------------------------------------
 
 
 @router.patch(
@@ -72,16 +84,23 @@ def update_draft(
             documentation_id=documentation_id,
             payload=payload,
         )
+
     except DocumentationNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Documentation not found.",
         ) from exc
+
     except ImmutableDocumentationError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Published or archived documentation cannot be edited.",
         ) from exc
+
+
+# ------------------------------------------------------------------
+# Admin — create new draft from published version
+# ------------------------------------------------------------------
 
 
 @router.post(
@@ -100,21 +119,29 @@ def create_draft_from_published(
             movement_id=movement_id,
             actor_id=admin.id,
         )
+
     except MovementNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Movement not found.",
         ) from exc
+
     except DocumentationNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Published documentation not found.",
         ) from exc
+
     except DraftAlreadyExistsError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="A draft already exists for this movement.",
         ) from exc
+
+
+# ------------------------------------------------------------------
+# Admin — publish draft
+# ------------------------------------------------------------------
 
 
 @router.post(
@@ -132,6 +159,7 @@ def publish_draft(
             documentation_id=documentation_id,
             actor_id=admin.id,
         )
+
     except DocumentationNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -150,14 +178,19 @@ def publish_draft(
             detail="Safety documentation is incomplete or invalid.",
         ) from exc
 
+# ------------------------------------------------------------------
+# Admin — published documentation by movement UUID
+# ------------------------------------------------------------------
+
 
 @router.get(
-    "/{movement_id}/documentation/published",
+    "/id/{movement_id}/documentation/published",
     response_model=MovementDocumentationRead,
 )
 def get_published(
     movement_id: uuid.UUID,
     db: DbSession,
+    admin: AdminProfile,
 ) -> MovementDocumentationRead:
     documentation = MovementDocumentationService.get_published(
         db=db,
@@ -171,6 +204,11 @@ def get_published(
         )
 
     return documentation
+
+
+# ------------------------------------------------------------------
+# Admin — current draft
+# ------------------------------------------------------------------
 
 
 @router.get(
@@ -194,6 +232,11 @@ def get_draft(
         )
 
     return documentation
+
+
+# ------------------------------------------------------------------
+# Admin — documentation version history
+# ------------------------------------------------------------------
 
 
 @router.get(
