@@ -1,25 +1,44 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException
 
-from app.core.config import settings
 from app.db.database import DbSession
-from app.schemas.movement import MovementGuideRead
+from app.schemas.movement import (
+    MovementGuideRead,
+    MovementListItemRead,
+)
 from app.schemas.movement_documentation import MovementDocumentationRead
+from app.schemas.movement_safety import MovementSafetyContent
 from app.services.movement import (
     MovementNotFoundError,
     MovementService,
     PublishedDocumentationNotFoundError,
+    get_illustration_url,
 )
 
-router = APIRouter(
-    prefix="/movements",
-    tags=["movements"],
-)
+router = APIRouter(prefix="/movements", tags=["movements"])
 
 
-@router.get(
-    "/{slug}",
-    response_model=MovementGuideRead,
-)
+@router.get("", response_model=list[MovementListItemRead])
+def list_movements(db: DbSession) -> list[MovementListItemRead]:
+    guides = MovementService.list_public_guides(db)
+
+    return [
+        MovementListItemRead(
+            id=movement.id,
+            slug=movement.slug,
+            name=movement.name,
+            family_key=movement.family_key,
+            difficulty=MovementSafetyContent.model_validate(
+                documentation.content
+            ).difficulty,
+            illustration_url=get_illustration_url(movement.illustration_path),
+            upload_analysis_supported=movement.upload_analysis_supported,
+            live_coach_supported=movement.live_coach_supported,
+        )
+        for movement, documentation in guides
+    ]
+
+
+@router.get("/{slug}", response_model=MovementGuideRead)
 def get_movement_guide(
     slug: str,
     db: DbSession,
@@ -29,35 +48,23 @@ def get_movement_guide(
             db=db,
             slug=slug,
         )
-
     except MovementNotFoundError as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=404,
             detail="Movement not found.",
         ) from exc
-
     except PublishedDocumentationNotFoundError as exc:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=404,
             detail="Published guide not found.",
         ) from exc
-
-    illustration_url = None
-
-    if movement.illustration_path:
-        illustration_url = (
-            f"{settings.supabase_url}"
-            f"/storage/v1/object/public/"
-            f"movement-illustrations/"
-            f"{movement.illustration_path}"
-        )
 
     return MovementGuideRead(
         id=movement.id,
         slug=movement.slug,
         name=movement.name,
         family_key=movement.family_key,
-        illustration_url=illustration_url,
+        illustration_url=get_illustration_url(movement.illustration_path),
         upload_analysis_supported=movement.upload_analysis_supported,
         live_coach_supported=movement.live_coach_supported,
         documentation=MovementDocumentationRead.model_validate(documentation),
