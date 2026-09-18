@@ -146,5 +146,5 @@ class Analysis(TimestampMixin, Base):
         nullable=False,
         server_default=text("'pending'"),
     )
-    analyzer_version: Mapped[str] = mapped_column(Text, nullable=False)
-    model_version: Mapped[str] = mapped_column(Text, nullable=False)
+    analyzer_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_version: Mapped[str | None] = mapped_column(Text, nullable=True)
