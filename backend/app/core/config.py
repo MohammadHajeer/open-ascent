@@ -33,13 +33,17 @@ class Settings(BaseSettings):
 
     # Guest analysis
     guest_token_secret: str
-    
+
     guest_reservation_ttl_minutes: int = 15
     guest_access_ttl_minutes: int = 60
     guest_purge_ttl_hours: int = 24
 
     guest_video_max_size_mb: int = 50
     guest_video_max_duration_seconds: int = 60
+
+    # Analysis worker
+    analysis_worker_poll_interval_seconds: int = 5
+    analysis_worker_lease_seconds: int = 300
 
     # CORS
     cors_origins: list[str] = [
