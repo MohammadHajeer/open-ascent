@@ -22,6 +22,22 @@ class GuestAnalysisReservationResponse(BaseModel):
     access_expires_at: datetime
 
 
+class GuestAnalysisUploadAuthorizationResponse(BaseModel):
+    analysis_id: uuid.UUID
+    bucket: str
+    path: str
+    token: str
+    max_size_bytes: int
+    allowed_content_types: list[str]
+
+
+class GuestAnalysisFinalizeResponse(BaseModel):
+    analysis_id: uuid.UUID
+    video_path: str
+    status: Literal["queued"] = "queued"
+    stage: Literal["queued"] = "queued"
+
+
 class GuestAnalysisStatusResponse(BaseModel):
     analysis_id: uuid.UUID
     status: str

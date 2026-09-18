@@ -10,9 +10,11 @@ from app.core.config import settings
 from app.core.guest_rate_limit import build_guest_rate_key
 from app.db.database import DbSession
 from app.schemas.analysis import (
+    GuestAnalysisFinalizeResponse,
     GuestAnalysisReservationRequest,
     GuestAnalysisReservationResponse,
     GuestAnalysisStatusResponse,
+    GuestAnalysisUploadAuthorizationResponse,
 )
 from app.services.analysis import (
     AnalysisNotSupportedError,
@@ -24,6 +26,16 @@ from app.services.analysis import (
     SafetyDocumentationNotFoundError,
     SafetyDocumentationNotPublishedError,
     reserve_guest_analysis,
+)
+from app.services.analysis_storage import (
+    AnalysisNotReservedError,
+    InvalidUploadedVideoError,
+    UploadedVideoNotFoundError,
+    UploadedVideoTooLargeError,
+    UploadedVideoTooLongError,
+    UploadReservationExpiredError,
+    create_guest_upload_authorization,
+    finalize_guest_analysis_upload,
 )
 
 router = APIRouter(
@@ -119,6 +131,100 @@ def create_guest_analysis_reservation(
         status="reserved",
         reservation_expires_at=analysis.reservation_expires_at,
         access_expires_at=analysis.access_expires_at,
+    )
+
+
+@router.post(
+    "/{analysis_id}/upload",
+    response_model=GuestAnalysisUploadAuthorizationResponse,
+)
+def create_guest_analysis_upload(
+    analysis_id: uuid.UUID,
+    analysis: GuestAnalysisAccess,
+) -> GuestAnalysisUploadAuthorizationResponse:
+    try:
+        path, token = create_guest_upload_authorization(analysis)
+
+    except AnalysisNotReservedError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Analysis is not awaiting an upload.",
+        )
+
+    except UploadReservationExpiredError:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Analysis reservation has expired.",
+        )
+
+    return GuestAnalysisUploadAuthorizationResponse(
+        analysis_id=analysis.id,
+        bucket=settings.supabase_video_bucket,
+        path=path,
+        token=token,
+        max_size_bytes=(settings.guest_video_max_size_mb * 1024 * 1024),
+        allowed_content_types=[
+            "video/mp4",
+        ],
+    )
+
+
+@router.post(
+    "/{analysis_id}/finalize",
+    response_model=GuestAnalysisFinalizeResponse,
+)
+def finalize_guest_analysis(
+    analysis_id: uuid.UUID,
+    analysis: GuestAnalysisAccess,
+    db: DbSession,
+) -> GuestAnalysisFinalizeResponse:
+    try:
+        finalized = finalize_guest_analysis_upload(
+            db,
+            analysis_id=analysis.id,
+        )
+
+    except UploadedVideoNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Uploaded video was not found.",
+        )
+
+    except UploadedVideoTooLargeError:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail="Uploaded video exceeds the allowed size.",
+        )
+
+    except InvalidUploadedVideoError:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Uploaded file is not a valid supported video.",
+        )
+
+    except UploadedVideoTooLongError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Uploaded video exceeds the allowed duration.",
+        )
+
+    except UploadReservationExpiredError:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Analysis reservation has expired.",
+        )
+
+    except AnalysisNotReservedError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Analysis cannot be finalized.",
+        )
+
+    return GuestAnalysisFinalizeResponse(
+        analysis_id=finalized.id,
+        video_path=finalized.video_path,
+        status="queued",
+        stage="queued",
     )
 
 
