@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { Footer } from "@/components/shared/footer";
-import { Navbar } from "@/components/shared/navbar";
 import { ApiError } from "@/lib/api";
 
 import { CautionsSection } from "./_components/cautions-section";
@@ -37,7 +35,12 @@ export async function generateMetadata({
         description,
         type: "article",
         images: movement.illustration_url
-          ? [{ url: movement.illustration_url, alt: `${movement.name} illustration` }]
+          ? [
+              {
+                url: movement.illustration_url,
+                alt: `${movement.name} illustration`,
+              },
+            ]
           : [],
       },
       twitter: {
@@ -77,19 +80,13 @@ export default async function MovementPage({ params }: MovementPageProps) {
   const { content } = movement.documentation;
 
   return (
-    <main id="top" className="min-h-dvh overflow-x-hidden bg-background">
-      <Navbar activePage="movements" />
-
-      <article>
-        <MovementHero movement={movement} />
-        <SafetyOverview content={content} />
-        <ReadinessSection content={content} />
-        <CautionsSection content={content} />
-        <StopConditionsSection content={content} />
-        <MovementCapabilities movement={movement} />
-      </article>
-
-      <Footer />
-    </main>
+    <article>
+      <MovementHero movement={movement} />
+      <SafetyOverview content={content} />
+      <ReadinessSection content={content} />
+      <CautionsSection content={content} />
+      <StopConditionsSection content={content} />
+      <MovementCapabilities movement={movement} />
+    </article>
   );
 }

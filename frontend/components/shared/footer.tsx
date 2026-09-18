@@ -16,22 +16,24 @@ export function Footer() {
       <div className="mx-auto grid w-full max-w-360 gap-12 px-4 py-16 sm:px-5 sm:py-20 lg:grid-cols-[1fr_auto] lg:items-start">
         <div>
           <Link
-            className="flex w-max items-center gap-3"
             href="/"
-            aria-label="AI Calisthenics Coach home"
+            aria-label="Open Ascent home"
+            className="group flex w-max items-center gap-3"
           >
             <BrandLogo
-              className="size-14 max-w-none"
               alt=""
-              sizes="56px"
+              sizes="48px"
+              className="size-12 max-w-none rounded-full sm:size-13"
             />
-            <span>
-              <strong className="block text-sm tracking-[-0.02em] text-foreground">
-                AI Calisthenics Coach
+
+            <span className="grid leading-none">
+              <strong className="text-[0.86rem] font-semibold tracking-tight text-foreground">
+                Open Ascent
               </strong>
-              <small className="mt-1 block font-mono text-[0.58rem] tracking-[0.09em] text-foreground-faint uppercase">
-                Your form, understood
-              </small>
+
+              <span className="mt-1.5 hidden font-mono text-[0.55rem] tracking-[0.12em] text-foreground-faint uppercase sm:block">
+                Movement intelligence
+              </span>
             </span>
           </Link>
           <p className="mt-6 max-w-sm text-sm leading-6 text-foreground-soft">
@@ -64,7 +66,7 @@ export function Footer() {
         </div>
       </div>
       <div className="mx-auto flex w-full max-w-360 flex-wrap items-center justify-between gap-4 border-t border-border px-4 py-5 font-mono text-[0.55rem] tracking-[0.08em] text-foreground-faint uppercase sm:px-5">
-        <span>AI Calisthenics Coach</span>
+        <span>Open Ascent</span>
         <span>Movement → Vision → Understanding → Coaching</span>
       </div>
     </footer>
