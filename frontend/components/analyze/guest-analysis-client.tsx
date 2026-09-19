@@ -16,7 +16,9 @@ import {
   type AnalysisStatus,
   type GuestAccess,
   type GuestResult,
+  type RepOutcome,
 } from "@/lib/analysis";
+import { streamGuestAnalysis, type AnalysisProgressEvent } from "@/lib/analysis-stream";
 import {
   analysisUrlWithId,
   getGuestAnalysisSession,
@@ -67,8 +69,10 @@ export function GuestAnalysisClient({
   const router = useRouter();
   const restorationRef = useRef<{
     id: string;
-    request: Promise<{ status: AnalysisStatus; result: GuestResult | null }>;
+    request: Promise<{ status: AnalysisStatus; stage: string; result: GuestResult | null }>;
   } | null>(null);
+  const lastEventId = useRef(0);
+  const currentAttempt = useRef(0);
   const [step, setStep] = useState<Step>(analysisId ? "restoring" : "video");
   const [file, setFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -76,7 +80,10 @@ export function GuestAnalysisClient({
   const [acknowledged, setAcknowledged] = useState(false);
   const [access, setAccess] = useState<GuestAccess | null>(null);
   const [status, setStatus] = useState<AnalysisStatus>("reserved");
-  const [polling, setPolling] = useState(false);
+  const [observing, setObserving] = useState(false);
+  const [stage, setStage] = useState("reserved");
+  const [reps, setReps] = useState<{ rep_index: number; outcome: RepOutcome }[]>([]);
+  const [streamRecovering, setStreamRecovering] = useState(false);
   const [result, setResult] = useState<GuestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [storageWarning, setStorageWarning] = useState(false);
@@ -106,22 +113,24 @@ export function GuestAnalysisClient({
         id: analysisId,
         request: getGuestStatus(saved).then(async (current) => ({
           status: current.status,
+          stage: current.stage,
           result: current.status === "completed" ? await getGuestResult(saved) : null,
         })),
       };
     }
 
     restorationRef.current.request.then(
-      ({ status: restoredStatus, result: restoredResult }) => {
+      ({ status: restoredStatus, stage: restoredStage, result: restoredResult }) => {
         if (!active) return;
         setAccess(saved);
         setStatus(restoredStatus);
+        setStage(restoredStage);
         const action = recoveryActionForStatus(restoredStatus);
         if (action === "reselect-video") {
           setStep("video");
         } else if (action === "poll") {
           setStep("processing");
-          setPolling(true);
+          setObserving(true);
         } else if (action === "fetch-result") {
           if (!restoredResult?.result) {
             setError("The analysis completed without a result.");
@@ -151,44 +160,112 @@ export function GuestAnalysisClient({
   }, [analysisId]);
 
   useEffect(() => {
-    if (step !== "processing" || !access || !polling) return;
+    if (step !== "processing" || !access || !observing) return;
     let active = true;
-    let timer: ReturnType<typeof setTimeout>;
-    async function check() {
-      try {
-        const current = await getGuestStatus(access!);
-        if (!active) return;
-        setStatus(current.status);
-        if (current.status === "completed") {
-          const completed = await getGuestResult(access!);
-          if (!active) return;
-          if (!completed.result)
-            throw new Error("The analysis completed without a result.");
-          setResult(completed);
-          setPolling(false);
-          setStep("results");
-        } else if (current.status === "failed" || current.status === "expired") {
-          setPolling(false);
-          if (current.status === "expired") removeGuestAnalysisSession(access!.analysis_id);
-        } else {
-          timer = setTimeout(check, 3000);
-        }
-      } catch (cause) {
-        if (active) {
+    let settled = false;
+    const controller = new AbortController();
+
+    async function finish(nextStatus: AnalysisStatus) {
+      if (!active || settled) return;
+      setStatus(nextStatus);
+      if (nextStatus === "completed") {
+        const completed = await getGuestResult(access!);
+        if (!active || settled) return;
+        if (!completed.result) throw new Error("The analysis completed without a result.");
+        settled = true;
+        setResult(completed);
+        setObserving(false);
+        setStep("results");
+      } else if (nextStatus === "failed" || nextStatus === "expired") {
+        settled = true;
+        setObserving(false);
+        if (nextStatus === "expired") removeGuestAnalysisSession(access!.analysis_id);
+      }
+    }
+
+    async function receive(event: AnalysisProgressEvent) {
+      if (!active || settled) return;
+      setStreamRecovering(false);
+      if (event.id !== null) {
+        if (event.id <= lastEventId.current) return;
+        lastEventId.current = event.id;
+      }
+      if (event.type === "state") {
+        setStatus(event.status);
+        setStage(event.stage);
+        if (["completed", "failed", "expired"].includes(event.status)) await finish(event.status);
+        return;
+      }
+      if (event.attempt < currentAttempt.current) return;
+      if (event.attempt > currentAttempt.current) {
+        currentAttempt.current = event.attempt;
+        setReps([]);
+      }
+      if (event.type === "analysis_queued") {
+        setStatus("queued");
+        setStage("queued");
+      } else if (event.type === "processing_started") {
+        setStatus("running");
+        setStage("processing_started");
+      } else if (event.type === "rep_completed") {
+        setReps((previous) => [
+          ...previous.filter((rep) => rep.rep_index !== event.rep_index),
+          { rep_index: event.rep_index, outcome: event.outcome },
+        ].sort((left, right) => left.rep_index - right.rep_index));
+      } else if (event.type === "completed" || event.type === "failed") {
+        setStage(event.type);
+        await finish(event.type);
+      } else {
+        setStatus("running");
+        setStage(event.type);
+      }
+    }
+
+    async function observe() {
+      let failures = 0;
+      while (active && !settled) {
+        try {
+          await streamGuestAnalysis(access!, lastEventId.current, controller.signal, receive);
+          if (active && !settled) throw new Error("Progress stream disconnected.");
+        } catch (cause) {
+          if (!active || controller.signal.aborted) return;
           if (cause instanceof ApiError && cause.status === 401) {
             removeGuestAnalysisSession(access!.analysis_id);
-            setPolling(false);
+            setObserving(false);
+            setError(INVALID_ACCESS_MESSAGE);
+            return;
           }
-          setError(messageFor(cause));
+          failures += 1;
+          setStreamRecovering(true);
+          if (failures >= 3) {
+            try {
+              const current = await getGuestStatus(access!);
+              if (!active) return;
+              setStatus(current.status);
+              setStage(current.stage);
+              await finish(current.status);
+              if (settled) return;
+            } catch (statusError) {
+              if (statusError instanceof ApiError && statusError.status === 401) {
+                removeGuestAnalysisSession(access!.analysis_id);
+                setObserving(false);
+                setError(INVALID_ACCESS_MESSAGE);
+                return;
+              }
+            }
+          }
+          await new Promise((resolve) => setTimeout(resolve,
+            Math.min(1000 * 2 ** Math.min(failures - 1, 3), 8000)));
         }
       }
     }
-    timer = setTimeout(check, 3000);
+
+    void observe();
     return () => {
       active = false;
-      clearTimeout(timer);
+      controller.abort();
     };
-  }, [step, access, polling]);
+  }, [step, access, observing]);
 
   function selectFile(next: File) {
     if (next.size === 0) {
@@ -214,7 +291,11 @@ export function GuestAnalysisClient({
     if (!file || !acknowledged || duration === null || duration > config.maxDurationSeconds) return;
     setError(null);
     setStatus("reserved");
-    setPolling(false);
+    setStage("reserved");
+    setObserving(false);
+    setReps([]);
+    lastEventId.current = 0;
+    currentAttempt.current = 0;
     setStep("processing");
     let currentAccess = access;
     try {
@@ -234,7 +315,8 @@ export function GuestAnalysisClient({
       }
       await uploadGuestVideo(currentAccess, file);
       setStatus("queued");
-      setPolling(true);
+      setStage("queued");
+      setObserving(true);
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 401 && currentAccess) {
         removeGuestAnalysisSession(currentAccess.analysis_id);
@@ -250,7 +332,11 @@ export function GuestAnalysisClient({
     setFile(null);
     setVideoUrl(null);
     setResult(null);
-    setPolling(false);
+    setObserving(false);
+    setStreamRecovering(false);
+    setReps([]);
+    lastEventId.current = 0;
+    currentAttempt.current = 0;
     setError(null);
     setRecoveryIssue(null);
     setStep("video");
@@ -258,6 +344,15 @@ export function GuestAnalysisClient({
   }
 
   const accessInvalid = error === INVALID_ACCESS_MESSAGE;
+  const progressTitle = accessInvalid ? "Guest access expired."
+    : status === "failed" ? "Analysis failed."
+    : status === "expired" ? "Analysis expired."
+    : error ? "Analysis could not continue."
+    : status === "reserved" ? "Uploading video…"
+    : status === "queued" ? "Waiting for analysis…"
+    : stage === "finalizing" ? "Finalizing analysis…"
+    : stage === "processing_started" || stage === "video_loaded" ? "Preparing video…"
+    : "Analyzing movement…";
 
   return (
     <>
@@ -314,9 +409,11 @@ export function GuestAnalysisClient({
         {step === "processing" && (
           <section className="overflow-hidden rounded-[3px_3px_34px_3px] border border-border bg-card lg:grid lg:grid-cols-2" role="status" aria-live="polite">
             <div className="relative grid min-h-85 place-items-center bg-background-alt p-8 lg:min-h-140">{movement.illustrationUrl && <div className="relative aspect-square w-full max-w-95"><Image src={movement.illustrationUrl} alt="" fill sizes="40vw" className="object-contain" /></div>}</div>
-            <div className="flex flex-col justify-center p-7 sm:p-12"><span className="font-mono text-[0.59rem] font-semibold tracking-widest text-primary uppercase">Step 03 / Analysis</span><h2 className="mt-4 text-[clamp(2.6rem,5vw,4.5rem)] leading-[0.94] font-medium tracking-[-0.06em]">{accessInvalid ? "Guest access expired." : status === "failed" ? "Analysis failed." : status === "expired" ? "Analysis expired." : error ? "Analysis could not continue." : status === "reserved" ? "Uploading video…" : status === "queued" ? "Waiting for analysis…" : "Analyzing movement…"}</h2>
+            <div className="flex flex-col justify-center p-7 sm:p-12"><span className="font-mono text-[0.59rem] font-semibold tracking-widest text-primary uppercase">Step 03 / Analysis</span><h2 className="mt-4 text-[clamp(2.6rem,5vw,4.5rem)] leading-[0.94] font-medium tracking-[-0.06em]">{progressTitle}</h2>
               <p className="mt-5 text-sm leading-6 text-foreground-soft">{status === "failed" ? "The video could not be processed. This is a processing failure, not a judgment of your movement." : accessInvalid ? "This guest credential no longer grants access to the analysis." : status === "expired" ? "This guest analysis has expired. Start a new analysis to try again." : error ? "Start a new analysis to try again." : "The uploaded video is processed privately. Results appear when the worker completes."}</p>
+              {streamRecovering && !error && status !== "failed" && status !== "expired" && <p className="mt-4 text-xs text-foreground-soft">Live updates interrupted. Checking saved analysis status…</p>}
               {!error && status !== "failed" && status !== "expired" && <div className="mt-8 grid gap-3 text-sm"><span className="flex items-center gap-3"><Check className="size-4 text-primary" /> Video selected</span><span className="flex items-center gap-3">{status === "reserved" ? <LoaderCircle className="size-4 animate-spin text-primary" /> : <Check className="size-4 text-primary" />} Upload and verification</span><span className="flex items-center gap-3">{status === "running" ? <LoaderCircle className="size-4 animate-spin text-primary" /> : <span className="size-4 rounded-full border border-border" />} Deterministic analysis</span></div>}
+              {reps.length > 0 && status !== "failed" && status !== "expired" && <div className="mt-8"><h3 className="text-sm font-medium">Reps detected</h3><ol className="mt-3 space-y-2 text-sm text-foreground-soft">{reps.map((rep) => <li key={rep.rep_index}>Rep {rep.rep_index} — <span className="capitalize">{rep.outcome}</span></li>)}</ol></div>}
               {(error || status === "failed" || status === "expired") && <Button variant="outline" className="mt-8 w-fit" onClick={restart}>Start a new analysis</Button>}
             </div>
           </section>

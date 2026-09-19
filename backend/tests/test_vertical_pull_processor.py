@@ -27,6 +27,7 @@ def test_processor_dispatches_supported_exercises_by_family(
     slug: str,
 ) -> None:
     movement_id = uuid.uuid4()
+    published = []
 
     class FakeSession:
         def get(self, model, key):
@@ -50,8 +51,9 @@ def test_processor_dispatches_supported_exercises_by_family(
             assert path == "private/source.mp4"
             return b"video bytes"
 
-    def fake_analyzer(path):
+    def fake_analyzer(path, *, on_rep_completed):
         assert path.read_bytes() == b"video bytes"
+        on_rep_completed(SimpleNamespace(rep_index=1, outcome=SimpleNamespace(value="valid")))
         return SimpleNamespace(to_dict=lambda: {"outcome": "zero_valid_reps"})
 
     monkeypatch.setattr(vertical_pull_processor, "SessionLocal", fake_session)
@@ -60,6 +62,11 @@ def test_processor_dispatches_supported_exercises_by_family(
     )
     monkeypatch.setattr(
         vertical_pull_processor, "analyze_vertical_pull_video", fake_analyzer
+    )
+    monkeypatch.setattr(
+        vertical_pull_processor,
+        "publish_claim_event",
+        lambda db, claim, event_type, **kwargs: published.append((event_type, kwargs)),
     )
 
     result = vertical_pull_processor.process_vertical_pull(
@@ -72,6 +79,10 @@ def test_processor_dispatches_supported_exercises_by_family(
     )
     assert result.result_data == {"outcome": "zero_valid_reps"}
     assert result.analyzer_version == "vertical_pull_v1"
+    assert [event_type for event_type, _ in published] == [
+        "video_loaded", "movement_analysis_started", "rep_completed", "finalizing"
+    ]
+    assert published[2][1] == {"rep_index": 1, "outcome": "valid"}
 
 
 def test_processor_rejects_an_unknown_family_before_download(monkeypatch) -> None:

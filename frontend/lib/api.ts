@@ -1,5 +1,7 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
+export const apiUrl = (path: string) => `${API_URL}${path}`;
+
 type ApiErrorBody = {
   error?: {
     code?: string;
@@ -31,7 +33,7 @@ export async function apiFetch<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, options);
+  const response = await fetch(apiUrl(path), options);
 
   const data = (await response.json()) as T | ApiErrorBody;
 

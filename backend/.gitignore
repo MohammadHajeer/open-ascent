@@ -1,6 +1,6 @@
 scripts/smoke-test.mp4
 
 # MediaPipe model assets
-models/
+/models/
 
 validation/pull_up/clips/

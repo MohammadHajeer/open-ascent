@@ -157,7 +157,7 @@ def test_queued_analysis_can_be_claimed(
     db.refresh(analysis)
 
     assert analysis.status == "running"
-    assert analysis.stage == "running"
+    assert analysis.stage == "processing_started"
     assert analysis.attempts == 1
     assert analysis.claim_token == claim.claim_token
     assert analysis.lease_expires_at is not None

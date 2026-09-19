@@ -201,6 +201,7 @@ def test_valid_rep_is_counted(
     fast_config: PullUpAnalyzerConfig,
 ) -> None:
     frames = make_frames(5)
+    completed_reps = []
 
     install_video_mocks(monkeypatch, frames)
     install_valid_hang_mocks(monkeypatch)
@@ -218,11 +219,13 @@ def test_valid_rep_is_counted(
     result = analyzer_module.analyze_pull_up_video(
         analyzer_module.Path("fake.mp4"),
         config=fast_config,
+        on_rep_completed=completed_reps.append,
     )
 
     assert result.outcome == AnalysisOutcome.COMPLETED
     assert result.valid_rep_count == 1
     assert result.partial_rep_count == 0
+    assert completed_reps == result.reps
 
 
 def test_confirmed_hang_allows_high_pull_geometry(

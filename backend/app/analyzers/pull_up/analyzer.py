@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from collections import deque
+from collections.abc import Callable
 from pathlib import Path
 from statistics import median
 
@@ -47,6 +48,7 @@ def analyze_vertical_pull_video(
     config: PullUpAnalyzerConfig = DEFAULT_PULL_UP_CONFIG,
     pose_model_path: Path = POSE_MODEL_PATH,
     hand_model_path: Path = HAND_MODEL_PATH,
+    on_rep_completed: Callable[[RepAnalysis], None] | None = None,
 ) -> MovementAnalysisResult:
     metadata = get_video_metadata(video_path)
 
@@ -100,6 +102,12 @@ def analyze_vertical_pull_video(
     reps: list[RepAnalysis] = []
     grip_observations: list[GripObservation] = []
 
+    def record_rep(rep: RepAnalysis) -> None:
+        classified = add_grip_variations(rep, grip_observations, config=config)
+        reps.append(classified)
+        if on_rep_completed is not None:
+            on_rep_completed(classified)
+
     total_sampled_frames = 0
     usable_pose_frames = 0
 
@@ -145,13 +153,7 @@ def analyze_vertical_pull_video(
                         )
 
                         if uncertain_rep is not None:
-                            reps.append(
-                                add_grip_variations(
-                                    uncertain_rep,
-                                    grip_observations,
-                                    config=config,
-                                )
-                            )
+                            record_rep(uncertain_rep)
 
                         hang_confirmed = False
                         left_wrist_anchor_y = None
@@ -190,13 +192,7 @@ def analyze_vertical_pull_video(
                         )
 
                         if uncertain_rep is not None:
-                            reps.append(
-                                add_grip_variations(
-                                    uncertain_rep,
-                                    grip_observations,
-                                    config=config,
-                                )
-                            )
+                            record_rep(uncertain_rep)
 
                         hang_confirmed = False
                         left_wrist_anchor_y = None
@@ -342,13 +338,7 @@ def analyze_vertical_pull_video(
                     )
 
                     if uncertain_rep is not None:
-                        reps.append(
-                            add_grip_variations(
-                                uncertain_rep,
-                                grip_observations,
-                                config=config,
-                            )
-                        )
+                        record_rep(uncertain_rep)
 
                     hang_confirmed = False
                     left_wrist_anchor_y = None
@@ -394,13 +384,7 @@ def analyze_vertical_pull_video(
             )
 
             if completed_rep is not None:
-                reps.append(
-                    add_grip_variations(
-                        completed_rep,
-                        grip_observations,
-                        config=config,
-                    )
-                )
+                record_rep(completed_rep)
 
     # ---------------------------------------------------------
     # VIDEO ENDED DURING AN ACTIVE REP
@@ -412,13 +396,7 @@ def analyze_vertical_pull_video(
     )
 
     if final_uncertain_rep is not None:
-        reps.append(
-            add_grip_variations(
-                final_uncertain_rep,
-                grip_observations,
-                config=config,
-            )
-        )
+        record_rep(final_uncertain_rep)
 
     # ---------------------------------------------------------
     # EVIDENCE QUALITY
@@ -517,6 +495,7 @@ def analyze_pull_up_video(
     config: PullUpAnalyzerConfig = DEFAULT_PULL_UP_CONFIG,
     pose_model_path: Path = POSE_MODEL_PATH,
     hand_model_path: Path = HAND_MODEL_PATH,
+    on_rep_completed: Callable[[RepAnalysis], None] | None = None,
 ) -> MovementAnalysisResult:
     """
     Backwards-compatible entry point.
@@ -531,5 +510,5 @@ def analyze_pull_up_video(
         config=config,
         pose_model_path=pose_model_path,
         hand_model_path=hand_model_path,
+        on_rep_completed=on_rep_completed,
     )
-

@@ -3,6 +3,7 @@
 from app.db.external import auth_users as auth_users
 from app.models.ai_run import AIRun
 from app.models.analysis import Analysis
+from app.models.analysis_event import AnalysisEvent
 from app.models.coach import Conversation, Message
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
@@ -18,6 +19,7 @@ from app.models.training import TrainingPlan, WorkoutSession, WorkoutSet
 __all__ = [
     "AIRun",
     "Analysis",
+    "AnalysisEvent",
     "Conversation",
     "FeatureUsage",
     "Message",

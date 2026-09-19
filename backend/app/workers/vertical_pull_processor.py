@@ -12,6 +12,7 @@ from app.core.supabase import supabase
 from app.db.database import SessionLocal
 from app.models.analysis import Analysis
 from app.models.movement import Movement
+from app.services.analysis_events import publish_claim_event
 from app.services.analysis_jobs import (
     AnalysisClaim,
     AnalysisClaimLostError,
@@ -45,6 +46,12 @@ def process_vertical_pull(claim: AnalysisClaim) -> AnalysisProcessingResult:
     heartbeat = Thread(target=keep_lease, daemon=True)
     heartbeat.start()
 
+    def publish(event_type: str, *, rep_index: int | None = None, outcome: str | None = None) -> None:
+        with SessionLocal() as db:
+            publish_claim_event(
+                db, claim, event_type, rep_index=rep_index, outcome=outcome
+            )
+
     try:
         video_bytes = supabase.storage.from_(settings.supabase_video_bucket).download(
             claim.video_path
@@ -53,7 +60,17 @@ def process_vertical_pull(claim: AnalysisClaim) -> AnalysisProcessingResult:
         with tempfile.TemporaryDirectory() as temporary_directory:
             video_path = Path(temporary_directory) / "source.mp4"
             video_path.write_bytes(video_bytes)
-            result = analyze_vertical_pull_video(video_path)
+            publish("video_loaded")
+            publish("movement_analysis_started")
+            result = analyze_vertical_pull_video(
+                video_path,
+                on_rep_completed=lambda rep: publish(
+                    "rep_completed",
+                    rep_index=rep.rep_index,
+                    outcome=rep.outcome.value,
+                ),
+            )
+            publish("finalizing")
     finally:
         stop_heartbeat.set()
         heartbeat.join(timeout=1)

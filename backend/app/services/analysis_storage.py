@@ -13,6 +13,7 @@ from storage3.exceptions import StorageApiError
 from app.core.config import settings
 from app.core.supabase import supabase
 from app.models.analysis import Analysis
+from app.services.analysis_events import record_analysis_event
 
 
 class AnalysisNotReservedError(Exception):
@@ -185,6 +186,12 @@ def finalize_guest_analysis_upload(
     analysis.video_path = expected_path
     analysis.status = "queued"
     analysis.stage = "queued"
+    record_analysis_event(
+        db,
+        analysis_id=analysis.id,
+        attempt=0,
+        event_type="analysis_queued",
+    )
 
     db.commit()
     db.refresh(analysis)

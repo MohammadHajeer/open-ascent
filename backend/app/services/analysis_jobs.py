@@ -26,6 +26,8 @@ class AnalysisClaim:
 def claim_next_analysis(
     db: Session,
 ) -> AnalysisClaim | None:
+    from app.services.analysis_events import record_analysis_event
+
     analysis = db.scalar(
         select(Analysis)
         .where(
@@ -61,7 +63,7 @@ def claim_next_analysis(
     claim_token = uuid.uuid4().hex
 
     analysis.status = "running"
-    analysis.stage = "running"
+    analysis.stage = "processing_started"
     analysis.claim_token = claim_token
     analysis.lease_expires_at = now + timedelta(
         seconds=settings.analysis_worker_lease_seconds
@@ -70,6 +72,13 @@ def claim_next_analysis(
     analysis.attempts += 1
     analysis.error_code = None
     analysis.progress_snapshot = {}
+
+    record_analysis_event(
+        db,
+        analysis_id=analysis.id,
+        attempt=analysis.attempts,
+        event_type="processing_started",
+    )
 
     db.commit()
 
@@ -120,6 +129,8 @@ def complete_analysis(
     analyzer_version: str,
     model_version: str,
 ) -> None:
+    from app.services.analysis_events import record_analysis_event
+
     result = db.execute(
         update(Analysis)
         .where(
@@ -144,6 +155,12 @@ def complete_analysis(
         db.rollback()
         raise AnalysisClaimLostError
 
+    record_analysis_event(
+        db,
+        analysis_id=claim.analysis_id,
+        attempt=claim.attempt,
+        event_type="completed",
+    )
     db.commit()
 
 
@@ -153,6 +170,8 @@ def fail_analysis(
     *,
     error_code: str,
 ) -> None:
+    from app.services.analysis_events import record_analysis_event
+
     result = db.execute(
         update(Analysis)
         .where(
@@ -174,4 +193,10 @@ def fail_analysis(
         db.rollback()
         raise AnalysisClaimLostError
 
+    record_analysis_event(
+        db,
+        analysis_id=claim.analysis_id,
+        attempt=claim.attempt,
+        event_type="failed",
+    )
     db.commit()
