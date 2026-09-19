@@ -8,14 +8,22 @@ from fastapi import APIRouter, Header, HTTPException, Request, status
 from app.api.dependencies.analysis_access import GuestAnalysisAccess
 from app.core.config import settings
 from app.core.guest_rate_limit import build_guest_rate_key
+from app.core.safety import CURRENT_SAFETY_ACK_VERSION
 from app.db.database import DbSession
+from app.models.movement import Movement
+from app.models.movement_documentation import MovementDocumentation
 from app.schemas.analysis import (
+    DeterministicAnalysisRead,
+    GuestAnalysisConfigResponse,
     GuestAnalysisFinalizeResponse,
+    GuestAnalysisMovementRead,
     GuestAnalysisReservationRequest,
     GuestAnalysisReservationResponse,
+    GuestAnalysisResultResponse,
     GuestAnalysisStatusResponse,
     GuestAnalysisUploadAuthorizationResponse,
 )
+from app.schemas.movement_safety import MovementSafetyContentDraft
 from app.services.analysis import (
     AnalysisNotSupportedError,
     IdempotencyConflictError,
@@ -48,6 +56,16 @@ IdempotencyKey = Annotated[
     uuid.UUID,
     Header(alias="Idempotency-Key"),
 ]
+
+
+@router.get("/guest/config", response_model=GuestAnalysisConfigResponse)
+def get_guest_analysis_config() -> GuestAnalysisConfigResponse:
+    return GuestAnalysisConfigResponse(
+        allowed_content_types=["video/mp4"],
+        max_size_bytes=settings.guest_video_max_size_mb * 1024 * 1024,
+        max_duration_seconds=settings.guest_video_max_duration_seconds,
+        safety_ack_version=CURRENT_SAFETY_ACK_VERSION,
+    )
 
 
 @router.post(
@@ -240,4 +258,36 @@ def get_guest_analysis_status(
         analysis_id=analysis.id,
         status=analysis.status,
         stage=analysis.stage,
+    )
+
+
+@router.get(
+    "/{analysis_id}/result",
+    response_model=GuestAnalysisResultResponse,
+)
+def get_guest_analysis_result(
+    analysis_id: uuid.UUID,
+    analysis: GuestAnalysisAccess,
+    db: DbSession,
+) -> GuestAnalysisResultResponse:
+    movement = db.get(Movement, analysis.movement_id)
+    documentation = db.get(MovementDocumentation, analysis.safety_documentation_id)
+    if movement is None or documentation is None:
+        raise HTTPException(status_code=404, detail="Analysis guide not found.")
+
+    result = None
+    if analysis.status == "completed" and analysis.result is not None:
+        result = DeterministicAnalysisRead.model_validate(analysis.result)
+
+    return GuestAnalysisResultResponse(
+        analysis_id=analysis.id,
+        status=analysis.status,
+        stage=analysis.stage,
+        movement=GuestAnalysisMovementRead(
+            id=movement.id,
+            slug=movement.slug,
+            name=movement.name,
+            safety=MovementSafetyContentDraft.model_validate(documentation.content),
+        ),
+        result=result,
     )

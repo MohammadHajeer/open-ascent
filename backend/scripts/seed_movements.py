@@ -518,7 +518,7 @@ def seed_movement(
             name=seed["name"],
             family_key=seed["family_key"],
             illustration_path=seed["illustration_path"],
-            upload_analysis_supported=False,
+            upload_analysis_supported=seed["slug"] in {"pull-up", "chin-up"},
             live_coach_supported=False,
         )
 
@@ -557,9 +557,7 @@ def seed_movement(
     )
 
     if draft is not None:
-        print(
-            "  Draft documentation already exists; " "leaving documentation untouched."
-        )
+        print("  Draft documentation already exists; leaving documentation untouched.")
         return movement_created, documentation_created
 
     validated_content = MovementSafetyContent.model_validate(seed["documentation"])

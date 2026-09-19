@@ -48,17 +48,25 @@ pnpm install
 pnpm dev
 ```
 
-This starts both:
+This starts:
 
 - Next.js frontend
 - FastAPI backend
+- deterministic analysis worker
 
 You can also run them separately:
 
 ```bash
 pnpm dev:frontend
 pnpm dev:backend
+pnpm dev:worker
 ```
+
+The guest Analyze flow needs the current database migration and published
+pull-up/chin-up movement guides. From `backend`, run `uv run alembic upgrade head`
+and `uv run python -m scripts.seed_movements` when setting up an environment.
+The worker reads private videos and uses the MediaPipe task files in
+`backend/models`.
 
 ## Quality Checks
 
