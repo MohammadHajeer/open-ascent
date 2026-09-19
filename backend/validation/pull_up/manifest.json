@@ -1,10 +1,24 @@
 {
   "cases": [
     {
-      "name": "original",
+      "name": "pull_up_original",
       "video": "validation/pull_up/clips/pull-up-original.mp4",
       "expected": {
-        "valid_rep_count": 4
+        "valid_rep_count": 4,
+        "partial_rep_count": 0,
+        "uncertain_rep_count": 0,
+        "rep_movements": [
+          "pull_up",
+          "pull_up",
+          "pull_up",
+          "pull_up"
+        ],
+        "rep_grip_orientations": [
+          "pronated",
+          "pronated",
+          "pronated",
+          "pronated"
+        ]
       }
     },
     {
@@ -40,6 +54,27 @@
       "video": "validation/pull_up/clips/pull-up-negative-standing-arms.mp4",
       "expected": {
         "valid_rep_count": 0
+      }
+    },
+    {
+      "name": "chin_up_variations",
+      "video": "validation/pull_up/clips/chin-up-variations.mp4",
+      "expected": {
+        "valid_rep_count": 4,
+        "partial_rep_count": 0,
+        "uncertain_rep_count": 0,
+        "rep_movements": [
+          "chin_up",
+          "chin_up",
+          "chin_up",
+          "chin_up"
+        ],
+        "rep_grip_orientations": [
+          "supinated",
+          "supinated",
+          "supinated",
+          "supinated"
+        ]
       }
     }
   ]

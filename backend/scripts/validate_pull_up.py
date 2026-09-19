@@ -8,7 +8,12 @@ from app.analyzers.pull_up.analyzer import analyze_pull_up_video
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-MANIFEST_PATH = PROJECT_ROOT / "validation" / "pull_up" / "manifest.json"
+MANIFEST_PATH = (
+    PROJECT_ROOT
+    / "validation"
+    / "pull_up"
+    / "manifest.json"
+)
 
 
 def load_manifest() -> dict[str, Any]:
@@ -17,6 +22,31 @@ def load_manifest() -> dict[str, Any]:
         encoding="utf-8",
     ) as file:
         return json.load(file)
+
+
+def _actual_value(
+    actual: dict[str, Any],
+    key: str,
+) -> Any:
+    if key == "rep_movements":
+        return [
+            rep.get("variations", {}).get(
+                "movement",
+                "uncertain",
+            )
+            for rep in actual.get("reps", [])
+        ]
+
+    if key == "rep_grip_orientations":
+        return [
+            rep.get("variations", {}).get(
+                "grip_orientation",
+                "uncertain",
+            )
+            for rep in actual.get("reps", [])
+        ]
+
+    return actual.get(key)
 
 
 def validate_case(
@@ -40,11 +70,12 @@ def validate_case(
     failures: list[str] = []
 
     for key, expected_value in expected.items():
-        actual_value = actual.get(key)
+        actual_value = _actual_value(actual, key)
 
         if actual_value != expected_value:
             failures.append(
-                f"{key}: expected {expected_value!r}, " f"actual {actual_value!r}"
+                f"{key}: expected {expected_value!r}, "
+                f"actual {actual_value!r}"
             )
 
     if failures:
@@ -71,8 +102,8 @@ def main() -> None:
     failed = 0
 
     print()
-    print("Open Ascent Pull-Up Validation")
-    print("=" * 32)
+    print("Open Ascent Vertical-Pull Validation")
+    print("=" * 36)
     print()
 
     for case in cases:
@@ -94,7 +125,7 @@ def main() -> None:
             failed += 1
 
     print()
-    print("=" * 32)
+    print("=" * 36)
     print(f"Passed: {passed}")
     print(f"Failed: {failed}")
     print(f"Total:  {passed + failed}")

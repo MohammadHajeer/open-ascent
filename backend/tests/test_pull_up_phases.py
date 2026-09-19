@@ -193,7 +193,7 @@ def test_tracking_loss_during_rep_produces_uncertain_rep() -> None:
 
     tracker.update(
         timestamp_ms=100,
-        angle_deg=120,
+        angle_deg=80,
     )
 
     rep = tracker.interrupt(

@@ -196,6 +196,26 @@ class PullUpPhaseTracker:
             self._reset()
             return None
 
+        # A candidate that only barely left the bottom has not yet
+        # accumulated enough evidence to count as a real rep attempt.
+        #
+        # This mirrors the normal RISING -> BOTTOM path above, where an
+        # attempt that never reaches `partial_top_angle_deg` is ignored.
+        # In particular, releasing the bar after a completed rep can bend
+        # the elbows for a few frames and briefly look like RISING before
+        # release detection fires. That should end the bar session, not
+        # manufacture an uncertain extra rep.
+        if (
+            self.phase == RepPhase.RISING
+            and (
+                self.minimum_angle_deg is None
+                or self.minimum_angle_deg
+                > self.config.partial_top_angle_deg
+            )
+        ):
+            self._reset()
+            return None
+
         return self._finish_rep(
             outcome=RepOutcome.UNCERTAIN,
             end_ms=timestamp_ms,
