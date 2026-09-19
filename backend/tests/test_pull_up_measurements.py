@@ -24,6 +24,10 @@ def make_landmarks() -> list[Landmark]:
         for _ in range(33)
     ]
 
+    # Mouth reference.
+    landmarks[9] = Landmark(0.47, 0.30)
+    landmarks[10] = Landmark(0.53, 0.30)
+
     # Left arm: straight line.
     landmarks[11] = Landmark(0.30, 0.50)
     landmarks[13] = Landmark(0.40, 0.50)
@@ -51,11 +55,21 @@ def test_measure_valid_pull_up_frame() -> None:
 
     assert measurement.timestamp_ms == 1000
 
-    assert measurement.left_elbow_angle_deg == pytest.approx(180.0)
+    assert measurement.left_elbow_angle_deg == pytest.approx(
+        180.0
+    )
 
-    assert measurement.right_elbow_angle_deg == pytest.approx(180.0)
+    assert measurement.right_elbow_angle_deg == pytest.approx(
+        180.0
+    )
 
-    assert measurement.average_elbow_angle_deg == pytest.approx(180.0)
+    assert measurement.average_elbow_angle_deg == pytest.approx(
+        180.0
+    )
+
+    assert measurement.face_to_wrist_y == pytest.approx(
+        -0.20
+    )
 
 
 def test_low_visibility_frame_is_rejected() -> None:
@@ -97,3 +111,18 @@ def test_degenerate_elbow_geometry_is_rejected() -> None:
     )
 
     assert measurement is None
+
+
+def test_low_face_visibility_does_not_reject_body_measurement() -> None:
+    landmarks = make_landmarks()
+
+    landmarks[9].visibility = 0.20
+
+    measurement = measure_pull_up_frame(
+        landmarks,
+        timestamp_ms=1000,
+        min_visibility=0.50,
+    )
+
+    assert measurement is not None
+    assert measurement.face_to_wrist_y is None

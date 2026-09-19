@@ -333,13 +333,19 @@ def analyze_pull_up_video(
         # Elbow flexion alone is not enough to begin a rep. The phase
         # tracker also receives shoulder motion relative to the wrists,
         # so releasing the bar and bending the elbows while falling does
-        # not look like another upward pull.
+        # not look like another upward pull. Once a rep is rising, the
+        # optional mouth-to-wrist measurement can also confirm a valid
+        # wide-grip top even when the elbows never reach the strict
+        # standard/close-grip top angle.
 
         completed_rep = tracker.update(
             timestamp_ms=pose_frame.timestamp_ms,
             angle_deg=smoothed_angle,
             body_relative_y=(
                 wrist_sample.shoulder_relative_y
+            ),
+            face_to_wrist_y=(
+                measurement.face_to_wrist_y
             ),
         )
 

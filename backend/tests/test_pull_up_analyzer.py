@@ -115,8 +115,15 @@ def install_body_motion(
 def install_angles(
     monkeypatch: pytest.MonkeyPatch,
     angles: list[float],
+    *,
+    face_to_wrist_values: list[float | None] | None = None,
 ) -> None:
-    values = iter(angles)
+    angle_values = iter(angles)
+    face_values = iter(
+        face_to_wrist_values
+        if face_to_wrist_values is not None
+        else [None] * len(angles)
+    )
 
     monkeypatch.setattr(
         analyzer_module,
@@ -126,8 +133,9 @@ def install_angles(
                 timestamp_ms=timestamp_ms,
                 left_elbow_angle_deg=150.0,
                 right_elbow_angle_deg=150.0,
-                average_elbow_angle_deg=next(values),
+                average_elbow_angle_deg=next(angle_values),
                 minimum_required_visibility=1.0,
+                face_to_wrist_y=next(face_values),
             )
         ),
     )
@@ -273,6 +281,43 @@ def test_confirmed_hang_allows_high_pull_geometry(
         config=fast_config,
     )
 
+    assert result.valid_rep_count == 1
+    assert result.uncertain_rep_count == 0
+
+
+def test_face_assisted_wide_rep_is_counted(
+    monkeypatch: pytest.MonkeyPatch,
+    fast_config: PullUpAnalyzerConfig,
+) -> None:
+    frames = make_frames(6)
+
+    install_video_mocks(monkeypatch, frames)
+    install_valid_hang_mocks(monkeypatch)
+
+    install_body_motion(
+        monkeypatch,
+        [0.20, 0.17, 0.12, 0.07, 0.11, 0.20],
+    )
+
+    install_angles(
+        monkeypatch,
+        [150.0, 125.0, 112.0, 105.0, 115.0, 150.0],
+        face_to_wrist_values=[
+            0.20,
+            0.14,
+            0.06,
+            -0.01,
+            0.03,
+            0.20,
+        ],
+    )
+
+    result = analyzer_module.analyze_pull_up_video(
+        analyzer_module.Path("fake.mp4"),
+        config=fast_config,
+    )
+
+    assert result.outcome == AnalysisOutcome.COMPLETED
     assert result.valid_rep_count == 1
     assert result.uncertain_rep_count == 0
 

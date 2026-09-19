@@ -19,8 +19,26 @@ class PullUpAnalyzerConfig:
     # Arms are approximately extended.
     bottom_angle_deg: float = 145.0
 
-    # Elbows are strongly flexed.
+    # Strong elbow flexion is enough by itself to confirm the top.
+    # This remains useful for standard and close-grip reps.
     top_angle_deg: float = 50.0
+
+    # Wide pull-ups can reach a legitimate top while keeping the
+    # elbows much more open. In that case, face/bar evidence may
+    # assist top detection as long as the elbows still flexed
+    # meaningfully.
+    face_assisted_top_max_angle_deg: float = 120.0
+
+    # MediaPipe Pose has no chin landmark. We use the midpoint of the
+    # mouth landmarks as a conservative face reference. Negative means
+    # the mouth is above the wrist midpoint. A tiny positive tolerance
+    # absorbs normal landmark jitter around bar height.
+    face_to_wrist_top_tolerance: float = 0.01
+
+    # Face/bar evidence is accepted only after the shoulders have risen
+    # a meaningful fraction of their bottom-to-wrist vertical distance.
+    # This prevents a noisy face landmark from declaring TOP too early.
+    face_assisted_top_min_body_rise_ratio: float = 0.35
 
     # A meaningful upward attempt that did not reach our full
     # top threshold may later be classified as a partial rep.

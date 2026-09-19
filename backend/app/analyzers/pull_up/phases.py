@@ -23,6 +23,7 @@ class PullUpPhaseTracker:
     top_ms: int | None = None
 
     minimum_angle_deg: float | None = None
+    top_entry_angle_deg: float | None = None
 
     # Shoulder Y relative to the wrists at the bottom of the current
     # candidate rep. In normalized image coordinates, a smaller value
@@ -39,6 +40,7 @@ class PullUpPhaseTracker:
         timestamp_ms: int,
         angle_deg: float,
         body_relative_y: float | None = None,
+        face_to_wrist_y: float | None = None,
     ) -> RepAnalysis | None:
         if self.phase == RepPhase.UNKNOWN:
             if angle_deg >= self.config.bottom_angle_deg:
@@ -80,13 +82,18 @@ class PullUpPhaseTracker:
         if self.phase == RepPhase.RISING:
             self._update_minimum_angle(angle_deg)
 
-            if angle_deg <= self.config.top_angle_deg:
+            if self._top_is_confirmed(
+                angle_deg=angle_deg,
+                body_relative_y=body_relative_y,
+                face_to_wrist_y=face_to_wrist_y,
+            ):
                 self._set_phase(
                     RepPhase.TOP,
                     timestamp_ms,
                 )
 
                 self.top_ms = timestamp_ms
+                self.top_entry_angle_deg = angle_deg
 
                 return None
 
@@ -141,11 +148,7 @@ class PullUpPhaseTracker:
                     bottom_body_relative_y=body_relative_y,
                 )
 
-            if (
-                angle_deg
-                >= self.config.top_angle_deg
-                + self.config.motion_angle_delta_deg
-            ):
+            if self._lowering_has_started(angle_deg):
                 self._set_phase(
                     RepPhase.LOWERING,
                     timestamp_ms,
@@ -200,6 +203,49 @@ class PullUpPhaseTracker:
             continue_from_bottom=False,
         )
 
+    def _top_is_confirmed(
+        self,
+        *,
+        angle_deg: float,
+        body_relative_y: float | None,
+        face_to_wrist_y: float | None,
+    ) -> bool:
+        # Strong elbow flexion remains sufficient on its own.
+        if angle_deg <= self.config.top_angle_deg:
+            return True
+
+        # For a wide pull-up the elbows may remain relatively open.
+        # In that case we require several independent cues together:
+        #   1. face reference reaches wrist/bar level,
+        #   2. elbows still flexed meaningfully,
+        #   3. shoulders rose substantially from the bottom baseline.
+        if face_to_wrist_y is None:
+            return False
+
+        if (
+            face_to_wrist_y
+            > self.config.face_to_wrist_top_tolerance
+        ):
+            return False
+
+        if (
+            angle_deg
+            > self.config.face_assisted_top_max_angle_deg
+        ):
+            return False
+
+        body_rise_ratio = self._body_rise_ratio(
+            body_relative_y
+        )
+
+        if body_rise_ratio is None:
+            return False
+
+        return (
+            body_rise_ratio
+            >= self.config.face_assisted_top_min_body_rise_ratio
+        )
+
     def _body_rise_is_confirmed(
         self,
         body_relative_y: float | None,
@@ -222,6 +268,40 @@ class PullUpPhaseTracker:
             >= self.config.rep_start_body_rise_threshold
         )
 
+    def _body_rise_ratio(
+        self,
+        body_relative_y: float | None,
+    ) -> float | None:
+        if (
+            body_relative_y is None
+            or self.bottom_body_relative_y is None
+        ):
+            return None
+
+        bottom_distance = abs(self.bottom_body_relative_y)
+
+        if bottom_distance <= 1e-6:
+            return None
+
+        body_rise = (
+            self.bottom_body_relative_y - body_relative_y
+        )
+
+        return body_rise / bottom_distance
+
+    def _lowering_has_started(
+        self,
+        angle_deg: float,
+    ) -> bool:
+        if self.top_entry_angle_deg is None:
+            return False
+
+        return (
+            angle_deg
+            >= self.top_entry_angle_deg
+            + self.config.motion_angle_delta_deg
+        )
+
     def _refresh_bottom_reference(
         self,
         *,
@@ -238,6 +318,7 @@ class PullUpPhaseTracker:
 
         self.top_ms = None
         self.minimum_angle_deg = None
+        self.top_entry_angle_deg = None
 
         self.phase_events = [
             PhaseEvent(
@@ -256,6 +337,7 @@ class PullUpPhaseTracker:
         self.rep_start_ms = timestamp_ms
         self.top_ms = None
         self.minimum_angle_deg = None
+        self.top_entry_angle_deg = None
         self.bottom_body_relative_y = body_relative_y
 
         self.phase_events = [
@@ -336,5 +418,6 @@ class PullUpPhaseTracker:
         self.rep_start_ms = None
         self.top_ms = None
         self.minimum_angle_deg = None
+        self.top_entry_angle_deg = None
         self.bottom_body_relative_y = None
         self.phase_events.clear()

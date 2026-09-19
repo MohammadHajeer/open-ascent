@@ -6,6 +6,10 @@ from typing import Protocol
 
 from app.analyzers.common.geometry import calculate_angle
 
+NOSE = 0
+MOUTH_LEFT = 9
+MOUTH_RIGHT = 10
+
 LEFT_SHOULDER = 11
 RIGHT_SHOULDER = 12
 
@@ -35,6 +39,16 @@ class PullUpFrameMeasurement:
 
     minimum_required_visibility: float
 
+    # Mouth midpoint relative to the wrist midpoint in normalized
+    # image Y coordinates:
+    #
+    #   < 0  -> face reference is above the wrists
+    #   = 0  -> approximately level with the wrists
+    #   > 0  -> face reference is below the wrists
+    #
+    # None means the optional face landmarks were not trustworthy.
+    face_to_wrist_y: float | None = None
+
 
 REQUIRED_LANDMARK_INDEXES = (
     LEFT_SHOULDER,
@@ -46,6 +60,38 @@ REQUIRED_LANDMARK_INDEXES = (
     LEFT_HIP,
     RIGHT_HIP,
 )
+
+FACE_REFERENCE_INDEXES = (
+    MOUTH_LEFT,
+    MOUTH_RIGHT,
+)
+
+
+def _measure_face_to_wrist_y(
+    landmarks: Sequence[PoseLandmark],
+    *,
+    min_visibility: float,
+) -> float | None:
+    if len(landmarks) <= max(FACE_REFERENCE_INDEXES):
+        return None
+
+    if any(
+        landmarks[index].visibility < min_visibility
+        for index in FACE_REFERENCE_INDEXES
+    ):
+        return None
+
+    mouth_center_y = (
+        landmarks[MOUTH_LEFT].y
+        + landmarks[MOUTH_RIGHT].y
+    ) / 2
+
+    wrist_center_y = (
+        landmarks[LEFT_WRIST].y
+        + landmarks[RIGHT_WRIST].y
+    ) / 2
+
+    return mouth_center_y - wrist_center_y
 
 
 def measure_pull_up_frame(
@@ -59,14 +105,16 @@ def measure_pull_up_frame(
     by the pull-up analyzer.
 
     Returns None when the required body landmarks are not reliable
-    enough to use.
+    enough to use. Face evidence is optional and does not make the
+    entire pose frame unusable when the face is temporarily unclear.
     """
 
     if len(landmarks) <= max(REQUIRED_LANDMARK_INDEXES):
         return None
 
     minimum_visibility = min(
-        landmarks[index].visibility for index in REQUIRED_LANDMARK_INDEXES
+        landmarks[index].visibility
+        for index in REQUIRED_LANDMARK_INDEXES
     )
 
     if minimum_visibility < min_visibility:
@@ -93,4 +141,8 @@ def measure_pull_up_frame(
         right_elbow_angle_deg=right_angle,
         average_elbow_angle_deg=(left_angle + right_angle) / 2,
         minimum_required_visibility=minimum_visibility,
+        face_to_wrist_y=_measure_face_to_wrist_y(
+            landmarks,
+            min_visibility=min_visibility,
+        ),
     )
