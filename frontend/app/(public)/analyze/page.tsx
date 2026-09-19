@@ -6,13 +6,15 @@ import { AnalyzeSectionSkeleton } from "@/components/analyze/analyze-section-ske
 import { Badge } from "@/components/ui/badge";
 
 type AnalyzePageProps = {
-  searchParams: Promise<{ movement?: string | string[] }>;
+  searchParams: Promise<{ movement?: string | string[]; analysis?: string | string[] }>;
 };
 
 export default async function AnalyzePage({ searchParams }: AnalyzePageProps) {
-  const query = (await searchParams).movement;
+  const params = await searchParams;
+  const query = params.movement;
   const selectedSlug = typeof query === "string" && query.trim() ? query : null;
   const invalidSelection = query !== undefined && selectedSlug === null;
+  const analysisId = typeof params.analysis === "string" ? params.analysis : null;
 
   return (
     <div className="mx-auto w-full max-w-360 px-4 pb-24 sm:px-5 sm:pb-32">
@@ -28,7 +30,7 @@ export default async function AnalyzePage({ searchParams }: AnalyzePageProps) {
         key={selectedSlug ?? (invalidSelection ? "invalid" : "index")}
         fallback={<AnalyzeSectionSkeleton selected={query !== undefined} />}
       >
-        <AnalyzeMovementSection selectedSlug={selectedSlug} invalidSelection={invalidSelection} />
+        <AnalyzeMovementSection selectedSlug={selectedSlug} invalidSelection={invalidSelection} analysisId={analysisId} />
       </Suspense>
     </div>
   );

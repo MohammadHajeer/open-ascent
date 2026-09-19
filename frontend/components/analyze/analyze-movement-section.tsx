@@ -54,9 +54,11 @@ function MovementSelector({ movements }: { movements: Movement[] }) {
 export async function AnalyzeMovementSection({
   selectedSlug,
   invalidSelection,
+  analysisId,
 }: {
   selectedSlug: string | null;
   invalidSelection: boolean;
+  analysisId: string | null;
 }) {
   const [movementsState, configState, guideState] = await Promise.allSettled([
     getAnalysisMovements(),
@@ -87,7 +89,8 @@ export async function AnalyzeMovementSection({
   const config = configState.value;
   return (
     <GuestAnalysisClient
-      key={guide.slug}
+      key={`${guide.slug}:${analysisId ?? "new"}`}
+      analysisId={analysisId}
       movement={{
         id: guide.id,
         name: guide.name,

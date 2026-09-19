@@ -184,8 +184,8 @@ export function AnalysisResults({
               preload="metadata"
             />
           ) : (
-            <div className="grid size-full place-items-center text-sm text-visual-foreground">
-              Local preview unavailable
+            <div className="grid size-full place-items-center px-8 text-center text-sm text-visual-foreground">
+              Original video preview is unavailable after refreshing this guest session.
             </div>
           )}
           <span className="absolute top-4 left-4 rounded-full bg-visual-surface/80 px-3 py-2 font-mono text-[0.54rem] text-visual-foreground uppercase">

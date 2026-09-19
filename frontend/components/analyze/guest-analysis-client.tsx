@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -17,6 +17,13 @@ import {
   type GuestAccess,
   type GuestResult,
 } from "@/lib/analysis";
+import {
+  analysisUrlWithId,
+  getGuestAnalysisSession,
+  recoveryActionForStatus,
+  removeGuestAnalysisSession,
+  saveGuestAnalysisSession,
+} from "@/lib/guest-analysis-session";
 import { AnalysisResults } from "./analysis-results";
 import { AnalyzeSteps } from "./analyze-steps";
 
@@ -33,27 +40,36 @@ type UploadConfig = {
   safetyAckVersion: string;
 };
 
-type Step = "video" | "ready" | "processing" | "results";
+type Step = "video" | "ready" | "restoring" | "unavailable" | "processing" | "results";
+type RecoveryIssue = "missing" | "invalid" | null;
+
+const INVALID_ACCESS_MESSAGE = "Analysis access has expired or is invalid. Start a new analysis.";
 
 function messageFor(error: unknown) {
   if (error instanceof ApiError && error.status === 401)
-    return "Analysis access has expired or is invalid. Start a new analysis.";
+    return INVALID_ACCESS_MESSAGE;
   return error instanceof Error
     ? error.message
     : "Something went wrong. Please try again.";
 }
 
 export function GuestAnalysisClient({
+  analysisId,
   movement,
   config,
   safetyGuidance,
 }: {
+  analysisId: string | null;
   movement: SelectedMovement;
   config: UploadConfig;
   safetyGuidance: ReactNode;
 }) {
   const router = useRouter();
-  const [step, setStep] = useState<Step>("video");
+  const restorationRef = useRef<{
+    id: string;
+    request: Promise<{ status: AnalysisStatus; result: GuestResult | null }>;
+  } | null>(null);
+  const [step, setStep] = useState<Step>(analysisId ? "restoring" : "video");
   const [file, setFile] = useState<File | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
@@ -63,12 +79,76 @@ export function GuestAnalysisClient({
   const [polling, setPolling] = useState(false);
   const [result, setResult] = useState<GuestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [storageWarning, setStorageWarning] = useState(false);
+  const [recoveryIssue, setRecoveryIssue] = useState<RecoveryIssue>(null);
 
   useEffect(() => {
     return () => {
       if (videoUrl) URL.revokeObjectURL(videoUrl);
     };
   }, [videoUrl]);
+
+  useEffect(() => {
+    if (!analysisId) return;
+    let active = true;
+    const saved = getGuestAnalysisSession(analysisId);
+    if (!saved) {
+      queueMicrotask(() => {
+        if (!active) return;
+        setRecoveryIssue("missing");
+        setStep("unavailable");
+      });
+      return () => { active = false; };
+    }
+
+    if (restorationRef.current?.id !== analysisId) {
+      restorationRef.current = {
+        id: analysisId,
+        request: getGuestStatus(saved).then(async (current) => ({
+          status: current.status,
+          result: current.status === "completed" ? await getGuestResult(saved) : null,
+        })),
+      };
+    }
+
+    restorationRef.current.request.then(
+      ({ status: restoredStatus, result: restoredResult }) => {
+        if (!active) return;
+        setAccess(saved);
+        setStatus(restoredStatus);
+        const action = recoveryActionForStatus(restoredStatus);
+        if (action === "reselect-video") {
+          setStep("video");
+        } else if (action === "poll") {
+          setStep("processing");
+          setPolling(true);
+        } else if (action === "fetch-result") {
+          if (!restoredResult?.result) {
+            setError("The analysis completed without a result.");
+            setStep("processing");
+          } else {
+            setResult(restoredResult);
+            setStep("results");
+          }
+        } else {
+          if (action === "expired") removeGuestAnalysisSession(analysisId);
+          setStep("processing");
+        }
+      },
+      (cause: unknown) => {
+        if (!active) return;
+        if (cause instanceof ApiError && cause.status === 401) {
+          removeGuestAnalysisSession(analysisId);
+          setRecoveryIssue("invalid");
+          setStep("unavailable");
+        } else {
+          setError(messageFor(cause));
+          setStep("processing");
+        }
+      },
+    );
+    return () => { active = false; };
+  }, [analysisId]);
 
   useEffect(() => {
     if (step !== "processing" || !access || !polling) return;
@@ -85,15 +165,25 @@ export function GuestAnalysisClient({
           if (!completed.result)
             throw new Error("The analysis completed without a result.");
           setResult(completed);
+          setPolling(false);
           setStep("results");
-        } else if (current.status !== "failed" && current.status !== "expired") {
+        } else if (current.status === "failed" || current.status === "expired") {
+          setPolling(false);
+          if (current.status === "expired") removeGuestAnalysisSession(access!.analysis_id);
+        } else {
           timer = setTimeout(check, 3000);
         }
       } catch (cause) {
-        if (active) setError(messageFor(cause));
+        if (active) {
+          if (cause instanceof ApiError && cause.status === 401) {
+            removeGuestAnalysisSession(access!.analysis_id);
+            setPolling(false);
+          }
+          setError(messageFor(cause));
+        }
       }
     }
-    timer = setTimeout(check, 1000);
+    timer = setTimeout(check, 3000);
     return () => {
       active = false;
       clearTimeout(timer);
@@ -126,28 +216,70 @@ export function GuestAnalysisClient({
     setStatus("reserved");
     setPolling(false);
     setStep("processing");
+    let currentAccess = access;
     try {
-      const reserved = await reserveGuestAnalysis(
-        movement.id,
-        movement.safetyDocumentationId,
-        config.safetyAckVersion,
-      );
-      setAccess(reserved);
-      await uploadGuestVideo(reserved, file);
+      if (!currentAccess) {
+        currentAccess = await reserveGuestAnalysis(
+          movement.id,
+          movement.safetyDocumentationId,
+          config.safetyAckVersion,
+        );
+        setAccess(currentAccess);
+        if (!saveGuestAnalysisSession(currentAccess)) setStorageWarning(true);
+        window.history.replaceState(
+          null,
+          "",
+          analysisUrlWithId(window.location.href, currentAccess.analysis_id),
+        );
+      }
+      await uploadGuestVideo(currentAccess, file);
       setStatus("queued");
       setPolling(true);
     } catch (cause) {
+      if (cause instanceof ApiError && cause.status === 401 && currentAccess) {
+        removeGuestAnalysisSession(currentAccess.analysis_id);
+      }
       setError(messageFor(cause));
     }
   }
 
-  const accessInvalid = error === "Analysis access has expired or is invalid. Start a new analysis.";
+  function restart() {
+    const currentId = access?.analysis_id ?? analysisId;
+    if (currentId) removeGuestAnalysisSession(currentId);
+    setAccess(null);
+    setFile(null);
+    setVideoUrl(null);
+    setResult(null);
+    setPolling(false);
+    setError(null);
+    setRecoveryIssue(null);
+    setStep("video");
+    router.replace("/analyze");
+  }
+
+  const accessInvalid = error === INVALID_ACCESS_MESSAGE;
 
   return (
     <>
       <AnalyzeSteps activeIndex={step === "video" || step === "ready" ? 1 : 2} />
       <div className="pt-12 sm:pt-16">
         {error && <div className="mb-7 rounded-2xl border border-destructive/35 bg-destructive/10 p-4 text-sm text-foreground" role="alert">{error}</div>}
+        {storageWarning && <div className="mb-7 rounded-2xl border border-border bg-card p-4 text-sm text-foreground-soft" role="status">This browser could not save guest access. The analysis can continue, but it cannot be restored after refresh.</div>}
+        {step === "restoring" && (
+          <section className="rounded-[3px_3px_34px_3px] border border-border bg-card p-8 sm:p-12" role="status" aria-live="polite">
+            <LoaderCircle className="size-6 animate-spin text-primary" aria-hidden="true" />
+            <h2 className="mt-6 text-3xl font-medium tracking-tight">Restoring guest analysis…</h2>
+            <p className="mt-3 text-sm text-foreground-soft">Checking its current status and guest access.</p>
+          </section>
+        )}
+        {step === "unavailable" && (
+          <section className="rounded-[3px_3px_34px_3px] border border-border bg-card p-8 sm:p-12" aria-labelledby="recovery-title">
+            <span className="font-mono text-[0.59rem] font-semibold tracking-widest text-primary uppercase">Guest analysis</span>
+            <h2 id="recovery-title" className="mt-4 text-3xl font-medium tracking-tight">{recoveryIssue === "invalid" ? "Guest access expired." : "This analysis cannot be restored here."}</h2>
+            <p className="mt-4 max-w-xl text-sm leading-6 text-foreground-soft">{recoveryIssue === "invalid" ? "The saved guest credential is expired or invalid." : "This browser session has no matching guest credential. An analysis ID by itself does not grant access."}</p>
+            <Button variant="outline" className="mt-8" onClick={restart}>Start a new analysis</Button>
+          </section>
+        )}
         {(step === "video" || step === "ready") && (
           <>
             <Link href="/analyze" className="mb-6 -ml-2 inline-flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-foreground hover:bg-muted"><ArrowLeft className="size-4" /> Change exercise</Link>
@@ -158,7 +290,7 @@ export function GuestAnalysisClient({
               </div>
               {step === "video" ? (
                 <div className="cv-grid mt-8 grid min-h-90 place-items-center rounded-[3px_3px_34px_3px] border border-border bg-card px-6 py-12 text-center sm:min-h-107.5" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (event.dataTransfer.files[0]) selectFile(event.dataTransfer.files[0]); }}>
-                  <div className="grid max-w-md justify-items-center"><span className="grid size-14 place-items-center rounded-full border border-border bg-background text-primary"><Upload className="size-5" /></span><h3 className="mt-6 text-2xl font-medium tracking-tight">Choose a short video</h3><p className="mt-3 text-sm leading-6 text-foreground-soft">Keep your full movement and equipment visible throughout the set.</p>
+                  <div className="grid max-w-md justify-items-center"><span className="grid size-14 place-items-center rounded-full border border-border bg-background text-primary"><Upload className="size-5" /></span><h3 className="mt-6 text-2xl font-medium tracking-tight">{access ? "Re-select your video" : "Choose a short video"}</h3><p className="mt-3 text-sm leading-6 text-foreground-soft">{access ? "Your reservation is ready. The local file was cleared by refresh, so choose the MP4 again to continue." : "Keep your full movement and equipment visible throughout the set."}</p>
                     <label className="mt-7 cursor-pointer rounded-lg bg-primary px-5 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90">Choose MP4 video<input className="sr-only" type="file" accept="video/mp4,.mp4" onChange={(event) => { if (event.target.files?.[0]) selectFile(event.target.files[0]); event.currentTarget.value = ""; }} /></label>
                     <p className="mt-6 font-mono text-[0.56rem] tracking-[0.08em] text-foreground-faint uppercase">MP4 · Maximum {Math.round(config.maxSizeBytes / 1048576)} MB · {config.maxDurationSeconds} seconds</p>
                   </div>
@@ -169,7 +301,7 @@ export function GuestAnalysisClient({
                   <aside className="flex flex-col border-t border-border p-6 lg:border-t-0 lg:border-l"><span className="font-mono text-[0.58rem] tracking-widest text-foreground-faint uppercase">Upload details</span><h3 className="mt-3 text-2xl font-medium">{movement.name}</h3><p className="mt-5 break-all text-sm text-foreground-soft">{file.name}</p><p className="mt-2 text-sm text-foreground-soft">{duration === null ? "Reading duration…" : `${duration.toFixed(1)} seconds`} · {config.maxDurationSeconds} seconds maximum</p>
                     {duration !== null && duration > config.maxDurationSeconds && <p className="mt-5 text-sm text-destructive" role="alert">This clip is too long. Choose a shorter video.</p>}
                     <label className="mt-7 flex items-start gap-3 text-sm leading-6 text-foreground"><input className="mt-1 accent-primary" type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} />I have read the safety guidance below and understand this analysis is informational.</label>
-                    <Button variant="brand" size="lg" className="mt-6 w-full" disabled={!acknowledged || duration === null || duration > config.maxDurationSeconds} onClick={analyze}>Analyze movement <ScanLine className="size-4" /></Button>
+                    <Button variant="brand" size="lg" className="mt-6 w-full" disabled={!acknowledged || duration === null || duration > config.maxDurationSeconds} onClick={analyze}>{access ? "Continue analysis" : "Analyze movement"} <ScanLine className="size-4" /></Button>
                     <label className="mt-3 cursor-pointer text-center text-sm text-primary underline">Replace video<input className="sr-only" type="file" accept="video/mp4,.mp4" onChange={(event) => { if (event.target.files?.[0]) selectFile(event.target.files[0]); event.currentTarget.value = ""; }} /></label>
                   </aside>
                 </div>
@@ -183,14 +315,14 @@ export function GuestAnalysisClient({
           <section className="overflow-hidden rounded-[3px_3px_34px_3px] border border-border bg-card lg:grid lg:grid-cols-2" role="status" aria-live="polite">
             <div className="relative grid min-h-85 place-items-center bg-background-alt p-8 lg:min-h-140">{movement.illustrationUrl && <div className="relative aspect-square w-full max-w-95"><Image src={movement.illustrationUrl} alt="" fill sizes="40vw" className="object-contain" /></div>}</div>
             <div className="flex flex-col justify-center p-7 sm:p-12"><span className="font-mono text-[0.59rem] font-semibold tracking-widest text-primary uppercase">Step 03 / Analysis</span><h2 className="mt-4 text-[clamp(2.6rem,5vw,4.5rem)] leading-[0.94] font-medium tracking-[-0.06em]">{accessInvalid ? "Guest access expired." : status === "failed" ? "Analysis failed." : status === "expired" ? "Analysis expired." : error ? "Analysis could not continue." : status === "reserved" ? "Uploading video…" : status === "queued" ? "Waiting for analysis…" : "Analyzing movement…"}</h2>
-              <p className="mt-5 text-sm leading-6 text-foreground-soft">{status === "failed" ? "The video could not be processed. This is a processing failure, not a judgment of your movement." : accessInvalid ? "This guest credential no longer grants access to the analysis." : error ? "Start a new analysis to try again." : "The uploaded video is processed privately. Results appear when the worker completes."}</p>
-              <div className="mt-8 grid gap-3 text-sm"><span className="flex items-center gap-3"><Check className="size-4 text-primary" /> Video selected</span><span className="flex items-center gap-3">{status === "reserved" ? <LoaderCircle className="size-4 animate-spin text-primary" /> : <Check className="size-4 text-primary" />} Upload and verification</span><span className="flex items-center gap-3">{status === "running" ? <LoaderCircle className="size-4 animate-spin text-primary" /> : <span className="size-4 rounded-full border border-border" />} Deterministic analysis</span></div>
-              {(error || status === "failed" || status === "expired") && <Button variant="outline" className="mt-8 w-fit" onClick={() => router.push("/analyze")}>Start a new analysis</Button>}
+              <p className="mt-5 text-sm leading-6 text-foreground-soft">{status === "failed" ? "The video could not be processed. This is a processing failure, not a judgment of your movement." : accessInvalid ? "This guest credential no longer grants access to the analysis." : status === "expired" ? "This guest analysis has expired. Start a new analysis to try again." : error ? "Start a new analysis to try again." : "The uploaded video is processed privately. Results appear when the worker completes."}</p>
+              {!error && status !== "failed" && status !== "expired" && <div className="mt-8 grid gap-3 text-sm"><span className="flex items-center gap-3"><Check className="size-4 text-primary" /> Video selected</span><span className="flex items-center gap-3">{status === "reserved" ? <LoaderCircle className="size-4 animate-spin text-primary" /> : <Check className="size-4 text-primary" />} Upload and verification</span><span className="flex items-center gap-3">{status === "running" ? <LoaderCircle className="size-4 animate-spin text-primary" /> : <span className="size-4 rounded-full border border-border" />} Deterministic analysis</span></div>}
+              {(error || status === "failed" || status === "expired") && <Button variant="outline" className="mt-8 w-fit" onClick={restart}>Start a new analysis</Button>}
             </div>
           </section>
         )}
 
-        {step === "results" && result?.result && <AnalysisResults analysis={result} videoUrl={videoUrl} onRestart={() => router.push("/analyze")} />}
+        {step === "results" && result?.result && <AnalysisResults analysis={result} videoUrl={videoUrl} onRestart={restart} />}
       </div>
     </>
   );
