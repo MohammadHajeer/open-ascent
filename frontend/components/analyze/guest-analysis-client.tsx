@@ -55,6 +55,80 @@ function messageFor(error: unknown) {
     : "Something went wrong. Please try again.";
 }
 
+function progressCopy(status: AnalysisStatus, stage: string) {
+  if (status === "failed") return {
+    title: "Analysis could not be completed",
+    description: "We couldn’t process this video successfully. This is a processing issue, not a judgment of your movement.",
+  };
+  if (status === "expired") return {
+    title: "Analysis expired",
+    description: "This guest analysis has expired. Start a new analysis to try again.",
+  };
+  if (status === "reserved") return {
+    title: "Getting your video ready",
+    description: "Your upload is being prepared and checked before analysis.",
+  };
+  if (status === "queued") return {
+    title: "Your analysis is queued",
+    description: "We’ve received your video and it’s waiting to be processed.",
+  };
+  if (status === "completed") return {
+    title: "Your results are ready",
+    description: "Opening your movement analysis results.",
+  };
+  if (stage === "video_loaded") return {
+    title: "Video ready",
+    description: "Your video is ready for movement analysis.",
+  };
+  if (stage === "movement_analysis_started" || stage === "rep_completed") return {
+    title: "Analyzing your movement",
+    description: "We’re reviewing the movement and identifying completed repetitions.",
+  };
+  if (stage === "finalizing") return {
+    title: "Finalizing your results",
+    description: "We’re organizing the detected repetitions and analysis findings.",
+  };
+  return {
+    title: "Preparing your analysis",
+    description: "Your video is being prepared for movement analysis.",
+  };
+}
+
+type ProgressStepState = "completed" | "active" | "upcoming";
+
+function progressSteps(status: AnalysisStatus, stage: string): {
+  label: string;
+  state: ProgressStepState;
+}[] {
+  const uploaded = status !== "reserved";
+  const finalizing = stage === "finalizing" || status === "completed";
+  const analyzing = stage === "movement_analysis_started" || stage === "rep_completed" || finalizing;
+  const preparing = status === "running" && !analyzing;
+
+  return [
+    { label: uploaded ? "Video uploaded" : "Video upload", state: uploaded ? "completed" : "active" },
+    {
+      label: preparing ? "Preparing analysis" : "Movement analysis",
+      state: finalizing ? "completed" : analyzing || preparing ? "active" : "upcoming",
+    },
+    {
+      label: "Results preparation",
+      state: status === "completed" ? "completed" : finalizing ? "active" : "upcoming",
+    },
+  ];
+}
+
+function ProgressStep({ label, state }: { label: string; state: ProgressStepState }) {
+  return (
+    <li className={`flex items-center gap-3 ${state === "upcoming" ? "text-foreground-faint" : "text-foreground"}`}>
+      {state === "completed" ? <Check className="size-4 shrink-0 text-primary" aria-hidden="true" />
+        : state === "active" ? <LoaderCircle className="size-4 shrink-0 animate-spin text-primary" aria-hidden="true" />
+        : <span className="size-4 shrink-0 rounded-full border border-border" aria-hidden="true" />}
+      <span>{label}</span>
+    </li>
+  );
+}
+
 export function GuestAnalysisClient({
   analysisId,
   movement,
@@ -83,7 +157,6 @@ export function GuestAnalysisClient({
   const [observing, setObserving] = useState(false);
   const [stage, setStage] = useState("reserved");
   const [reps, setReps] = useState<{ rep_index: number; outcome: RepOutcome }[]>([]);
-  const [streamRecovering, setStreamRecovering] = useState(false);
   const [result, setResult] = useState<GuestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [storageWarning, setStorageWarning] = useState(false);
@@ -185,7 +258,6 @@ export function GuestAnalysisClient({
 
     async function receive(event: AnalysisProgressEvent) {
       if (!active || settled) return;
-      setStreamRecovering(false);
       if (event.id !== null) {
         if (event.id <= lastEventId.current) return;
         lastEventId.current = event.id;
@@ -236,7 +308,6 @@ export function GuestAnalysisClient({
             return;
           }
           failures += 1;
-          setStreamRecovering(true);
           if (failures >= 3) {
             try {
               const current = await getGuestStatus(access!);
@@ -333,7 +404,6 @@ export function GuestAnalysisClient({
     setVideoUrl(null);
     setResult(null);
     setObserving(false);
-    setStreamRecovering(false);
     setReps([]);
     lastEventId.current = 0;
     currentAttempt.current = 0;
@@ -344,15 +414,15 @@ export function GuestAnalysisClient({
   }
 
   const accessInvalid = error === INVALID_ACCESS_MESSAGE;
+  const copy = progressCopy(status, stage);
   const progressTitle = accessInvalid ? "Guest access expired."
-    : status === "failed" ? "Analysis failed."
-    : status === "expired" ? "Analysis expired."
-    : error ? "Analysis could not continue."
-    : status === "reserved" ? "Uploading video…"
-    : status === "queued" ? "Waiting for analysis…"
-    : stage === "finalizing" ? "Finalizing analysis…"
-    : stage === "processing_started" || stage === "video_loaded" ? "Preparing video…"
-    : "Analyzing movement…";
+    : error && status !== "failed" && status !== "expired" ? "Analysis could not continue."
+    : copy.title;
+  const progressDescription = accessInvalid
+    ? "This guest credential no longer grants access to the analysis."
+    : error && status !== "failed" && status !== "expired"
+      ? "Start a new analysis to try again."
+      : copy.description;
 
   return (
     <>
@@ -410,10 +480,24 @@ export function GuestAnalysisClient({
           <section className="overflow-hidden rounded-[3px_3px_34px_3px] border border-border bg-card lg:grid lg:grid-cols-2" role="status" aria-live="polite">
             <div className="relative grid min-h-85 place-items-center bg-background-alt p-8 lg:min-h-140">{movement.illustrationUrl && <div className="relative aspect-square w-full max-w-95"><Image src={movement.illustrationUrl} alt="" fill sizes="40vw" className="object-contain" /></div>}</div>
             <div className="flex flex-col justify-center p-7 sm:p-12"><span className="font-mono text-[0.59rem] font-semibold tracking-widest text-primary uppercase">Step 03 / Analysis</span><h2 className="mt-4 text-[clamp(2.6rem,5vw,4.5rem)] leading-[0.94] font-medium tracking-[-0.06em]">{progressTitle}</h2>
-              <p className="mt-5 text-sm leading-6 text-foreground-soft">{status === "failed" ? "The video could not be processed. This is a processing failure, not a judgment of your movement." : accessInvalid ? "This guest credential no longer grants access to the analysis." : status === "expired" ? "This guest analysis has expired. Start a new analysis to try again." : error ? "Start a new analysis to try again." : "The uploaded video is processed privately. Results appear when the worker completes."}</p>
-              {streamRecovering && !error && status !== "failed" && status !== "expired" && <p className="mt-4 text-xs text-foreground-soft">Live updates interrupted. Checking saved analysis status…</p>}
-              {!error && status !== "failed" && status !== "expired" && <div className="mt-8 grid gap-3 text-sm"><span className="flex items-center gap-3"><Check className="size-4 text-primary" /> Video selected</span><span className="flex items-center gap-3">{status === "reserved" ? <LoaderCircle className="size-4 animate-spin text-primary" /> : <Check className="size-4 text-primary" />} Upload and verification</span><span className="flex items-center gap-3">{status === "running" ? <LoaderCircle className="size-4 animate-spin text-primary" /> : <span className="size-4 rounded-full border border-border" />} Deterministic analysis</span></div>}
-              {reps.length > 0 && status !== "failed" && status !== "expired" && <div className="mt-8"><h3 className="text-sm font-medium">Reps detected</h3><ol className="mt-3 space-y-2 text-sm text-foreground-soft">{reps.map((rep) => <li key={rep.rep_index}>Rep {rep.rep_index} — <span className="capitalize">{rep.outcome}</span></li>)}</ol></div>}
+              <p className="mt-5 text-sm leading-6 text-foreground-soft">{progressDescription}</p>
+              {!error && status !== "failed" && status !== "expired" && <ol className="mt-8 grid gap-3 text-sm">{progressSteps(status, stage).map((item) => <ProgressStep key={item.label} {...item} />)}</ol>}
+              {reps.length > 0 && status !== "failed" && status !== "expired" && (
+                <div className="mt-8 border-t border-border pt-6">
+                  <div className="flex items-center justify-between gap-4">
+                    <h3 className="font-mono text-[0.59rem] font-semibold tracking-widest text-foreground-faint uppercase">Repetitions detected</h3>
+                    <span className="text-xs text-foreground-soft">{reps.length} {reps.length === 1 ? "rep" : "reps"}</span>
+                  </div>
+                  <ol className="mt-4 grid gap-2">
+                    {reps.map((rep) => (
+                      <li key={rep.rep_index} className="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3">
+                        <span className="font-mono text-sm font-medium text-primary"><span className="sr-only">Rep </span>{String(rep.rep_index).padStart(2, "0")}</span>
+                        <span className="text-sm font-medium text-foreground capitalize">{rep.outcome}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
               {(error || status === "failed" || status === "expired") && <Button variant="outline" className="mt-8 w-fit" onClick={restart}>Start a new analysis</Button>}
             </div>
           </section>
