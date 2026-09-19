@@ -24,8 +24,8 @@ def process_vertical_pull(claim: AnalysisClaim) -> AnalysisProcessingResult:
     with SessionLocal() as db:
         analysis = db.get(Analysis, claim.analysis_id)
         movement = db.get(Movement, analysis.movement_id) if analysis else None
-        if movement is None or movement.slug not in {"pull-up", "chin-up"}:
-            raise ValueError("Unsupported analysis movement.")
+        if movement is None or movement.family_key != "vertical_pull":
+            raise ValueError("Unsupported analysis movement family.")
 
     stop_heartbeat = Event()
 

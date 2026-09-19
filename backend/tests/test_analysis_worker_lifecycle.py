@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
@@ -501,3 +502,42 @@ def test_processing_runs_without_open_db_session(
 
     # Nothing remains open afterwards.
     assert active_sessions == 0
+
+
+def test_processor_exception_is_logged_and_persisted_as_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return None
+
+    claim = AnalysisClaim(
+        analysis_id=uuid.uuid4(),
+        claim_token="current-token",
+        attempt=1,
+        video_path="private/source.mp4",
+    )
+    failures = []
+
+    monkeypatch.setattr(analysis_worker, "SessionLocal", FakeSession)
+    monkeypatch.setattr(analysis_worker, "claim_next_analysis", lambda db: claim)
+
+    def record_failure(db, received_claim, *, error_code):
+        failures.append((received_claim, error_code))
+
+    monkeypatch.setattr(analysis_worker, "fail_analysis", record_failure)
+
+    def fail_processor(received_claim):
+        assert received_claim == claim
+        raise RuntimeError("diagnostic failure")
+
+    with caplog.at_level(logging.ERROR, logger="app.workers.analysis_worker"):
+        assert process_one_analysis(fail_processor) is True
+
+    assert failures == [(claim, "processing_error")]
+    assert str(claim.analysis_id) in caplog.text
+    assert "RuntimeError: diagnostic failure" in caplog.text

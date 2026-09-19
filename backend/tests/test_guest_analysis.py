@@ -134,6 +134,7 @@ def test_guest_reservation_creates_analysis_and_credential(
     )
 
     assert analysis is not None
+    assert analysis.movement_id == movement.id
     assert analysis.owner_kind == "guest"
     assert analysis.status == "reserved"
     assert analysis.stage == "reserved"

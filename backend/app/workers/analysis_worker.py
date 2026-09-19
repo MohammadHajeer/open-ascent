@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -15,6 +16,8 @@ from app.services.analysis_jobs import (
     complete_analysis,
     fail_analysis,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -50,7 +53,12 @@ def process_one_analysis(
     try:
         processing_result = processor(claim)
 
-    except Exception:  # noqa: BLE001
+    except Exception:
+        logger.exception(
+            "Analysis processor failed: analysis_id=%s attempt=%s",
+            claim.analysis_id,
+            claim.attempt,
+        )
         # -----------------------------------------------------
         # 3A. Save failure using a new short DB transaction.
         # -----------------------------------------------------
@@ -63,8 +71,11 @@ def process_one_analysis(
                     error_code="processing_error",
                 )
             except AnalysisClaimLostError:
-                # Another worker already reclaimed the job.
-                pass
+                logger.warning(
+                    "Failed analysis claim was already lost: analysis_id=%s attempt=%s",
+                    claim.analysis_id,
+                    claim.attempt,
+                )
 
         return True
 
@@ -82,8 +93,11 @@ def process_one_analysis(
                 model_version=processing_result.model_version,
             )
         except AnalysisClaimLostError:
-            # This worker no longer owns the analysis.
-            pass
+            logger.warning(
+                "Completed analysis claim was already lost: analysis_id=%s attempt=%s",
+                claim.analysis_id,
+                claim.attempt,
+            )
 
     return True
 
@@ -91,14 +105,14 @@ def process_one_analysis(
 def run_worker(
     processor: AnalysisProcessor,
 ) -> None:
-    print("Open Ascent analysis worker started.")
+    logger.info("Open Ascent analysis worker started.")
 
     while True:
         try:
             found_job = process_one_analysis(processor)
 
-        except SQLAlchemyError as exc:
-            print(f"Worker database error: {exc}")
+        except SQLAlchemyError:
+            logger.exception("Analysis worker database error")
 
             time.sleep(settings.analysis_worker_poll_interval_seconds)
 

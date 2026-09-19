@@ -7,6 +7,11 @@ import {
   getAnalysisMovements,
 } from "@/lib/analysis-public";
 import type { Movement } from "@/lib/analysis";
+import {
+  groupSupportedMovements,
+  movementFamilyLabel,
+  type MovementGroup,
+} from "@/lib/analysis-movement-groups";
 import { AnalyzeSteps } from "./analyze-steps";
 import { GuestAnalysisClient } from "./guest-analysis-client";
 import { SafetyGuidance } from "./safety-guidance";
@@ -26,7 +31,7 @@ function SectionNotice({ title, detail }: { title: string; detail: string }) {
   );
 }
 
-function MovementSelector({ movements }: { movements: Movement[] }) {
+function MovementSelector({ groups }: { groups: MovementGroup<Movement>[] }) {
   return (
     <>
       <AnalyzeSteps activeIndex={0} />
@@ -35,14 +40,21 @@ function MovementSelector({ movements }: { movements: Movement[] }) {
           <span className="font-mono text-[0.59rem] font-semibold tracking-widest text-primary uppercase">Step 01 / Exercise</span>
           <h2 id="exercise-selector-title" className="mt-3 text-[clamp(2rem,4vw,3.6rem)] leading-none font-medium tracking-[-0.055em] text-foreground">What are you performing?</h2>
           <p className="mt-4 max-w-xl text-sm leading-6 text-foreground-soft">Only movements with an available analyzer can be selected.</p>
-          {movements.length ? <div className="mt-8 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-            {movements.map((movement) => (
-              <Link key={movement.id} href={`/analyze?movement=${encodeURIComponent(movement.slug)}`} prefetch={false} className="group overflow-hidden rounded-[3px_3px_24px_3px] border border-border bg-card text-left transition hover:-translate-y-0.5 hover:border-primary focus-visible:ring-2 focus-visible:ring-ring">
-                <span className="relative block aspect-4/3 border-b border-border bg-background-alt">
-                  {movement.illustration_url ? <Image src={movement.illustration_url} alt="" fill sizes="(max-width: 640px) 46vw, 22vw" className="object-contain p-3" /> : <span className="grid size-full place-items-center text-xs text-foreground-faint">Illustration unavailable</span>}
-                </span>
-                <span className="block px-5 py-4"><strong className="block text-sm text-foreground">{movement.name}</strong><span className="mt-1 block text-xs text-foreground-soft">{movement.family_key.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ")}</span></span>
-              </Link>
+          {groups.length ? <div className="mt-10 grid gap-12">
+            {groups.map(({ familyKey, movements }, index) => (
+              <section key={familyKey} aria-labelledby={`movement-family-${index}`}>
+                <h3 id={`movement-family-${index}`} className="text-xl font-medium tracking-tight text-foreground">{movementFamilyLabel(familyKey)} family</h3>
+                <div className="mt-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+                  {movements.map((movement) => (
+                    <Link key={movement.id} href={`/analyze?movement=${encodeURIComponent(movement.slug)}`} prefetch={false} className="group overflow-hidden rounded-[3px_3px_24px_3px] border border-border bg-card text-left transition hover:-translate-y-0.5 hover:border-primary focus-visible:ring-2 focus-visible:ring-ring">
+                      <span className="relative block aspect-4/3 border-b border-border bg-background-alt">
+                        {movement.illustration_url ? <Image src={movement.illustration_url} alt="" fill sizes="(max-width: 640px) 46vw, 22vw" className="object-contain p-3" /> : <span className="grid size-full place-items-center text-xs text-foreground-faint">Illustration unavailable</span>}
+                      </span>
+                      <span className="block px-5 py-4"><strong className="block text-sm text-foreground">{movement.name}</strong><span className="mt-1 block text-xs text-foreground-soft">{movementFamilyLabel(familyKey)}</span></span>
+                    </Link>
+                  ))}
+                </div>
+              </section>
             ))}
           </div> : <p className="mt-8 text-sm text-foreground-soft">No movements are currently available for video analysis.</p>}
         </section>
@@ -70,11 +82,12 @@ export async function AnalyzeMovementSection({
     return <SectionNotice title="Analysis options are unavailable." detail="The movement list or upload requirements could not be loaded. Please try again shortly." />;
   }
 
-  const available = movementsState.value.filter((movement) => movement.upload_analysis_supported);
+  const groups = groupSupportedMovements(movementsState.value);
+  const available = groups.flatMap((group) => group.movements);
   if (invalidSelection) {
     return <SectionNotice title="Movement unavailable." detail="Choose an available movement to start an analysis." />;
   }
-  if (!selectedSlug) return <MovementSelector movements={available} />;
+  if (!selectedSlug) return <MovementSelector groups={groups} />;
 
   const selected = available.find((movement) => movement.slug === selectedSlug);
   if (!selected) {
