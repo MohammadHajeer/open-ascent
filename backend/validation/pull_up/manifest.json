@@ -34,6 +34,13 @@
       "expected": {
         "valid_rep_count": 4
       }
+    },
+    {
+      "name": "negative_standing_arms",
+      "video": "validation/pull_up/clips/pull-up-negative-standing-arms.mp4",
+      "expected": {
+        "valid_rep_count": 0
+      }
     }
   ]
 }

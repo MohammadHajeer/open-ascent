@@ -62,6 +62,11 @@ class PullUpAnalyzerConfig:
     # the elbows flex while the athlete drops away from the bar.
     rep_start_body_rise_threshold: float = 0.008
 
+    hand_labels_are_mirrored: bool = True  # MediaPipe labels assume selfie view
+    min_handedness_confidence: float = 0.6
+    max_wrist_association_distance: float = 0.35
+    hand_crop_forward_offset_ratio: float = 0.12
+
     # ---------------------------------------------------------
     # HANG CONFIRMATION
     # ---------------------------------------------------------
@@ -91,6 +96,41 @@ class PullUpAnalyzerConfig:
     # Allow a very short landmark/tracking failure without
     # immediately destroying an active rep.
     invalid_position_tolerance_seconds: float = 0.12
+
+    # ---------------------------------------------------------
+    # GRIP / MOVEMENT CLASSIFICATION
+    # ---------------------------------------------------------
+
+    # Hand Landmarker is heavier than Pose Landmarker, so we sample
+    # the hands less frequently while the athlete is on the bar.
+    target_hand_analysis_fps: float = 8.0
+
+    # Ignore weak palm-plane orientation. Values near zero usually
+    # mean the hand is edge-on, occluded, or otherwise ambiguous.
+    palm_facing_threshold: float = 0.20
+
+    # Empirical sign calibration inherited from the successful
+    # front-facing pull-up/chin-up prototype.
+    palm_score_direction: float = -1.0
+
+    # MVP grip classification currently assumes the athlete faces
+    # the camera. Rear-facing footage should be treated separately
+    # rather than silently flipping pull-up/chin-up labels.
+    athlete_faces_camera: bool = True
+
+    # Require several usable hand observations inside a rep before
+    # assigning pull-up vs chin-up.
+    min_rep_grip_samples: int = 3
+    rep_grip_majority_ratio: float = 0.70
+
+    # Crop the original-resolution frame around each pose wrist so
+    # Hand Landmarker receives enough hand detail.
+    min_hand_crop_size_px: int = 180
+    max_hand_crop_size_px: int = 520
+    hand_crop_shoulder_multiplier: float = 1.55
+
+    min_hand_detection_confidence: float = 0.45
+    min_hand_presence_confidence: float = 0.45
 
     # ---------------------------------------------------------
     # EVIDENCE QUALITY

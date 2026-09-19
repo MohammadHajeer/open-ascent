@@ -25,6 +25,11 @@ from app.analyzers.pull_up.evidence import (
     calculate_hang_metrics,
     hands_are_above_shoulders,
 )
+from app.analyzers.pull_up.grip import (
+    GripObservation,
+    HandGripDetector,
+    add_grip_variations,
+)
 from app.analyzers.pull_up.measurements import (
     measure_pull_up_frame,
 )
@@ -33,13 +38,15 @@ from app.analyzers.pull_up.phases import (
 )
 
 POSE_MODEL_PATH = Path("models/pose_landmarker_full.task")
+HAND_MODEL_PATH = Path("models/hand_landmarker.task")
 
 
-def analyze_pull_up_video(
+def analyze_vertical_pull_video(
     video_path: Path,
     *,
     config: PullUpAnalyzerConfig = DEFAULT_PULL_UP_CONFIG,
     pose_model_path: Path = POSE_MODEL_PATH,
+    hand_model_path: Path = HAND_MODEL_PATH,
 ) -> MovementAnalysisResult:
     metadata = get_video_metadata(video_path)
 
@@ -91,6 +98,7 @@ def analyze_pull_up_video(
     tracker = PullUpPhaseTracker(config)
 
     reps: list[RepAnalysis] = []
+    grip_observations: list[GripObservation] = []
 
     total_sampled_frames = 0
     usable_pose_frames = 0
@@ -104,258 +112,295 @@ def analyze_pull_up_video(
     invalid_position_frames = 0
     last_timestamp_ms = 0
 
-    for pose_frame in iter_pose_video_frames(
-        video_path,
-        pose_model_path=pose_model_path,
-        target_fps=config.target_pose_fps,
-        max_pose_dimension_px=config.max_pose_dimension_px,
-    ):
-        total_sampled_frames += 1
-        last_timestamp_ms = pose_frame.timestamp_ms
-
-        landmarks = pose_frame.landmarks
-
-        # -----------------------------------------------------
-        # NO POSE
-        # -----------------------------------------------------
-
-        if landmarks is None:
-            if hang_confirmed:
-                invalid_position_frames += 1
-
-                if (
-                    invalid_position_frames
-                    > invalid_position_tolerance_samples
-                ):
-                    uncertain_rep = tracker.interrupt(
-                        timestamp_ms=pose_frame.timestamp_ms,
-                        reason_code="tracking_lost",
-                    )
-
-                    if uncertain_rep is not None:
-                        reps.append(uncertain_rep)
-
-                    hang_confirmed = False
-                    left_wrist_anchor_y = None
-                    right_wrist_anchor_y = None
-
-                    angle_history.clear()
-                    wrist_history.clear()
-
-            if not hang_confirmed:
-                wrist_history.clear()
-                angle_history.clear()
-
-            continue
-
-        # -----------------------------------------------------
-        # FRAME MEASUREMENT / VISIBILITY
-        # -----------------------------------------------------
-
-        measurement = measure_pull_up_frame(
-            landmarks,
-            timestamp_ms=pose_frame.timestamp_ms,
-            min_visibility=config.min_landmark_visibility,
-        )
-
-        if measurement is None:
-            if hang_confirmed:
-                invalid_position_frames += 1
-
-                if (
-                    invalid_position_frames
-                    > invalid_position_tolerance_samples
-                ):
-                    uncertain_rep = tracker.interrupt(
-                        timestamp_ms=pose_frame.timestamp_ms,
-                        reason_code="low_landmark_confidence",
-                    )
-
-                    if uncertain_rep is not None:
-                        reps.append(uncertain_rep)
-
-                    hang_confirmed = False
-                    left_wrist_anchor_y = None
-                    right_wrist_anchor_y = None
-
-                    angle_history.clear()
-                    wrist_history.clear()
-
-            if not hang_confirmed:
-                wrist_history.clear()
-                angle_history.clear()
-
-            continue
-
-        usable_pose_frames += 1
-
-        # -----------------------------------------------------
-        # SMOOTH ELBOW ANGLE
-        # -----------------------------------------------------
-
-        angle_history.append(
-            measurement.average_elbow_angle_deg
-        )
-
-        smoothed_angle = float(
-            median(angle_history)
-        )
-
-        # -----------------------------------------------------
-        # STRICT INITIAL HANG EVIDENCE
-        # -----------------------------------------------------
-        #
-        # The strict geometry below is used only to establish that
-        # the athlete really started from a plausible bar hang.
-        #
-        # Once the hang has been confirmed, we deliberately stop
-        # requiring "wrists above shoulders" and "body under hands"
-        # on every frame. A high pull is expected to leave dead-hang
-        # geometry while the athlete is still legitimately on the bar.
-
-        hands_above_shoulders = (
-            hands_are_above_shoulders(landmarks)
-        )
-
-        body_under_hands = body_is_under_hands(
-            landmarks,
-            alignment_tolerance=(
-                config.body_alignment_tolerance
-            ),
-        )
-
-        wrist_sample = build_wrist_history_sample(
-            landmarks
-        )
-
-        if hang_confirmed or hands_above_shoulders and body_under_hands:
-            wrist_history.append(wrist_sample)
-
-        else:
-            wrist_history.clear()
-            angle_history.clear()
-
-        hang_metrics = calculate_hang_metrics(
-            wrist_history,
-            required_samples=hang_required_samples,
-            wrist_stability_threshold=(
-                config.wrist_stability_threshold
-            ),
-        )
-
-        # -----------------------------------------------------
-        # CONFIRM A REAL HANG
-        # -----------------------------------------------------
-        #
-        # `wrists_stable` is camera-translation tolerant:
-        # evidence.py checks LEFT↔RIGHT wrist geometry instead of
-        # demanding almost-fixed raw screen coordinates. This lets
-        # reasonable camera jitter coexist with a real bar hang.
-
-        if (
-            not hang_confirmed
-            and hands_above_shoulders
-            and body_under_hands
-            and hang_metrics is not None
-            and hang_metrics.wrists_stable
-            and hang_metrics.body_movement_range
-            >= config.body_movement_threshold
+    with HandGripDetector(
+        model_path=hand_model_path,
+        config=config,
+    ) as grip_detector:
+        for pose_frame in iter_pose_video_frames(
+            video_path,
+            pose_model_path=pose_model_path,
+            target_fps=config.target_pose_fps,
+            max_pose_dimension_px=config.max_pose_dimension_px,
         ):
-            hang_confirmed = True
-            ever_confirmed_hang = True
+            total_sampled_frames += 1
+            last_timestamp_ms = pose_frame.timestamp_ms
 
-            left_wrist_anchor_y = float(
-                median(
-                    sample.left_y
-                    for sample in wrist_history
-                )
+            landmarks = pose_frame.landmarks
+
+            # -----------------------------------------------------
+            # NO POSE
+            # -----------------------------------------------------
+
+            if landmarks is None:
+                if hang_confirmed:
+                    invalid_position_frames += 1
+
+                    if (
+                        invalid_position_frames
+                        > invalid_position_tolerance_samples
+                    ):
+                        uncertain_rep = tracker.interrupt(
+                            timestamp_ms=pose_frame.timestamp_ms,
+                            reason_code="tracking_lost",
+                        )
+
+                        if uncertain_rep is not None:
+                            reps.append(
+                                add_grip_variations(
+                                    uncertain_rep,
+                                    grip_observations,
+                                    config=config,
+                                )
+                            )
+
+                        hang_confirmed = False
+                        left_wrist_anchor_y = None
+                        right_wrist_anchor_y = None
+
+                        angle_history.clear()
+                        wrist_history.clear()
+
+                if not hang_confirmed:
+                    wrist_history.clear()
+                    angle_history.clear()
+
+                continue
+
+            # -----------------------------------------------------
+            # FRAME MEASUREMENT / VISIBILITY
+            # -----------------------------------------------------
+
+            measurement = measure_pull_up_frame(
+                landmarks,
+                timestamp_ms=pose_frame.timestamp_ms,
+                min_visibility=config.min_landmark_visibility,
             )
 
-            right_wrist_anchor_y = float(
-                median(
-                    sample.right_y
-                    for sample in wrist_history
-                )
+            if measurement is None:
+                if hang_confirmed:
+                    invalid_position_frames += 1
+
+                    if (
+                        invalid_position_frames
+                        > invalid_position_tolerance_samples
+                    ):
+                        uncertain_rep = tracker.interrupt(
+                            timestamp_ms=pose_frame.timestamp_ms,
+                            reason_code="low_landmark_confidence",
+                        )
+
+                        if uncertain_rep is not None:
+                            reps.append(
+                                add_grip_variations(
+                                    uncertain_rep,
+                                    grip_observations,
+                                    config=config,
+                                )
+                            )
+
+                        hang_confirmed = False
+                        left_wrist_anchor_y = None
+                        right_wrist_anchor_y = None
+
+                        angle_history.clear()
+                        wrist_history.clear()
+
+                if not hang_confirmed:
+                    wrist_history.clear()
+                    angle_history.clear()
+
+                continue
+
+            usable_pose_frames += 1
+
+            # -----------------------------------------------------
+            # SMOOTH ELBOW ANGLE
+            # -----------------------------------------------------
+
+            angle_history.append(
+                measurement.average_elbow_angle_deg
             )
+
+            smoothed_angle = float(
+                median(angle_history)
+            )
+
+            # -----------------------------------------------------
+            # STRICT INITIAL HANG EVIDENCE
+            # -----------------------------------------------------
+            #
+            # The strict geometry below is used only to establish that
+            # the athlete really started from a plausible bar hang.
+            #
+            # Once the hang has been confirmed, we deliberately stop
+            # requiring "wrists above shoulders" and "body under hands"
+            # on every frame. A high pull is expected to leave dead-hang
+            # geometry while the athlete is still legitimately on the bar.
+
+            hands_above_shoulders = (
+                hands_are_above_shoulders(landmarks)
+            )
+
+            body_under_hands = body_is_under_hands(
+                landmarks,
+                alignment_tolerance=(
+                    config.body_alignment_tolerance
+                ),
+            )
+
+            wrist_sample = build_wrist_history_sample(
+                landmarks
+            )
+
+            if hang_confirmed or hands_above_shoulders and body_under_hands:
+                wrist_history.append(wrist_sample)
+
+            else:
+                wrist_history.clear()
+                angle_history.clear()
+
+            hang_metrics = calculate_hang_metrics(
+                wrist_history,
+                required_samples=hang_required_samples,
+                wrist_stability_threshold=(
+                    config.wrist_stability_threshold
+                ),
+            )
+
+            # -----------------------------------------------------
+            # CONFIRM A REAL HANG
+            # -----------------------------------------------------
+            #
+            # `wrists_stable` is camera-translation tolerant:
+            # evidence.py checks LEFT↔RIGHT wrist geometry instead of
+            # demanding almost-fixed raw screen coordinates. This lets
+            # reasonable camera jitter coexist with a real bar hang.
+
+            if (
+                not hang_confirmed
+                and hands_above_shoulders
+                and body_under_hands
+                and hang_metrics is not None
+                and hang_metrics.wrists_stable
+                and hang_metrics.body_movement_range
+                >= config.body_movement_threshold
+            ):
+                hang_confirmed = True
+                ever_confirmed_hang = True
+
+                left_wrist_anchor_y = float(
+                    median(
+                        sample.left_y
+                        for sample in wrist_history
+                    )
+                )
+
+                right_wrist_anchor_y = float(
+                    median(
+                        sample.right_y
+                        for sample in wrist_history
+                    )
+                )
+
+                invalid_position_frames = 0
+
+            if not hang_confirmed:
+                continue
+
+            # -----------------------------------------------------
+            # MAINTAIN THE CONFIRMED BAR SESSION
+            # -----------------------------------------------------
+            #
+            # After initial confirmation, the body is free to move through
+            # high-pull geometry. We keep the session alive as long as the
+            # required pose remains trustworthy and both wrists have not
+            # clearly dropped away from their confirmed bar height.
+
+            wrists_released = False
+
+            if (
+                left_wrist_anchor_y is not None
+                and right_wrist_anchor_y is not None
+            ):
+                wrists_released = (
+                    landmarks[15].y - left_wrist_anchor_y
+                    > config.wrist_release_distance
+                    and landmarks[16].y - right_wrist_anchor_y
+                    > config.wrist_release_distance
+                )
+
+            if wrists_released:
+                invalid_position_frames += 1
+
+                if (
+                    invalid_position_frames
+                    > invalid_position_tolerance_samples
+                ):
+                    uncertain_rep = tracker.interrupt(
+                        timestamp_ms=pose_frame.timestamp_ms,
+                        reason_code="wrist_release_detected",
+                    )
+
+                    if uncertain_rep is not None:
+                        reps.append(
+                            add_grip_variations(
+                                uncertain_rep,
+                                grip_observations,
+                                config=config,
+                            )
+                        )
+
+                    hang_confirmed = False
+                    left_wrist_anchor_y = None
+                    right_wrist_anchor_y = None
+
+                    angle_history.clear()
+                    wrist_history.clear()
+
+                continue
 
             invalid_position_frames = 0
 
-        if not hang_confirmed:
-            continue
+            # -----------------------------------------------------
+            # REP STATE MACHINE
+            # -----------------------------------------------------
+            #
+            # Elbow flexion alone is not enough to begin a rep. The phase
+            # tracker also receives shoulder motion relative to the wrists,
+            # so releasing the bar and bending the elbows while falling does
+            # not look like another upward pull. Once a rep is rising, the
+            # optional mouth-to-wrist measurement can also confirm a valid
+            # wide-grip top even when the elbows never reach the strict
+            # standard/close-grip top angle.
 
-        # -----------------------------------------------------
-        # MAINTAIN THE CONFIRMED BAR SESSION
-        # -----------------------------------------------------
-        #
-        # After initial confirmation, the body is free to move through
-        # high-pull geometry. We keep the session alive as long as the
-        # required pose remains trustworthy and both wrists have not
-        # clearly dropped away from their confirmed bar height.
-
-        wrists_released = False
-
-        if (
-            left_wrist_anchor_y is not None
-            and right_wrist_anchor_y is not None
-        ):
-            wrists_released = (
-                landmarks[15].y - left_wrist_anchor_y
-                > config.wrist_release_distance
-                and landmarks[16].y - right_wrist_anchor_y
-                > config.wrist_release_distance
+            grip_observation = grip_detector.observe(
+                frame_bgr=pose_frame.frame_bgr,
+                pose_landmarks=landmarks,
+                timestamp_ms=pose_frame.timestamp_ms,
             )
 
-        if wrists_released:
-            invalid_position_frames += 1
+            if grip_observation is not None:
+                grip_observations.append(grip_observation)
 
-            if (
-                invalid_position_frames
-                > invalid_position_tolerance_samples
-            ):
-                uncertain_rep = tracker.interrupt(
-                    timestamp_ms=pose_frame.timestamp_ms,
-                    reason_code="wrist_release_detected",
+            completed_rep = tracker.update(
+                timestamp_ms=pose_frame.timestamp_ms,
+                angle_deg=smoothed_angle,
+                body_relative_y=(
+                    wrist_sample.shoulder_relative_y
+                ),
+                face_to_wrist_y=(
+                    measurement.face_to_wrist_y
+                ),
+            )
+
+            if completed_rep is not None:
+                reps.append(
+                    add_grip_variations(
+                        completed_rep,
+                        grip_observations,
+                        config=config,
+                    )
                 )
-
-                if uncertain_rep is not None:
-                    reps.append(uncertain_rep)
-
-                hang_confirmed = False
-                left_wrist_anchor_y = None
-                right_wrist_anchor_y = None
-
-                angle_history.clear()
-                wrist_history.clear()
-
-            continue
-
-        invalid_position_frames = 0
-
-        # -----------------------------------------------------
-        # REP STATE MACHINE
-        # -----------------------------------------------------
-        #
-        # Elbow flexion alone is not enough to begin a rep. The phase
-        # tracker also receives shoulder motion relative to the wrists,
-        # so releasing the bar and bending the elbows while falling does
-        # not look like another upward pull. Once a rep is rising, the
-        # optional mouth-to-wrist measurement can also confirm a valid
-        # wide-grip top even when the elbows never reach the strict
-        # standard/close-grip top angle.
-
-        completed_rep = tracker.update(
-            timestamp_ms=pose_frame.timestamp_ms,
-            angle_deg=smoothed_angle,
-            body_relative_y=(
-                wrist_sample.shoulder_relative_y
-            ),
-            face_to_wrist_y=(
-                measurement.face_to_wrist_y
-            ),
-        )
-
-        if completed_rep is not None:
-            reps.append(completed_rep)
 
     # ---------------------------------------------------------
     # VIDEO ENDED DURING AN ACTIVE REP
@@ -367,7 +412,13 @@ def analyze_pull_up_video(
     )
 
     if final_uncertain_rep is not None:
-        reps.append(final_uncertain_rep)
+        reps.append(
+            add_grip_variations(
+                final_uncertain_rep,
+                grip_observations,
+                config=config,
+            )
+        )
 
     # ---------------------------------------------------------
     # EVIDENCE QUALITY
@@ -458,3 +509,27 @@ def analyze_pull_up_video(
         reps=reps,
         evidence=evidence,
     )
+
+
+def analyze_pull_up_video(
+    video_path: Path,
+    *,
+    config: PullUpAnalyzerConfig = DEFAULT_PULL_UP_CONFIG,
+    pose_model_path: Path = POSE_MODEL_PATH,
+    hand_model_path: Path = HAND_MODEL_PATH,
+) -> MovementAnalysisResult:
+    """
+    Backwards-compatible entry point.
+
+    The underlying detector now analyzes the shared vertical-pulling
+    mechanics and classifies each rep as pull-up, chin-up, or uncertain
+    from per-rep hand-grip evidence.
+    """
+
+    return analyze_vertical_pull_video(
+        video_path,
+        config=config,
+        pose_model_path=pose_model_path,
+        hand_model_path=hand_model_path,
+    )
+
