@@ -68,8 +68,16 @@ class PullUpAnalyzerConfig:
 
     # Roughly equivalent to the original 15-frame window at
     # ~30 analyzed frames per second.
-    hang_confirmation_seconds: float = 0.50
+    hang_confirmation_seconds: float = 0.35
 
+    # During initial hang confirmation we do NOT require the wrists
+    # to stay at the same raw screen x/y coordinates. Camera shake
+    # moves the whole image, so absolute wrist position is not a
+    # reliable anchor cue.
+    #
+    # evidence.py applies this threshold to the change in LEFT↔RIGHT
+    # wrist span instead. Global camera translation moves both wrists
+    # together but preserves their distance.
     wrist_stability_threshold: float = 0.025
 
     body_movement_threshold: float = 0.008

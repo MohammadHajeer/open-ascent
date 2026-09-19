@@ -1,0 +1,39 @@
+{
+  "cases": [
+    {
+      "name": "original",
+      "video": "validation/pull_up/clips/pull-up-original.mp4",
+      "expected": {
+        "valid_rep_count": 4
+      }
+    },
+    {
+      "name": "rotated_8deg",
+      "video": "validation/pull_up/clips/pull-up-rotated-8deg.mp4",
+      "expected": {
+        "valid_rep_count": 4
+      }
+    },
+    {
+      "name": "low_quality",
+      "video": "validation/pull_up/clips/pull-up-low-quality.mp4",
+      "expected": {
+        "valid_rep_count": 4
+      }
+    },
+    {
+      "name": "jitter",
+      "video": "validation/pull_up/clips/pull-up-jitter.mp4",
+      "expected": {
+        "valid_rep_count": 4
+      }
+    },
+    {
+      "name": "15fps",
+      "video": "validation/pull_up/clips/pull-up-15fps.mp4",
+      "expected": {
+        "valid_rep_count": 4
+      }
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -24,9 +25,21 @@ class WristHistorySample:
 
 @dataclass(frozen=True, slots=True)
 class HangMetrics:
+    # Largest raw x/y movement seen across either wrist. This remains
+    # useful for diagnostics, but it is intentionally NOT the value used
+    # to decide whether the hands are anchored because camera shake moves
+    # both wrists together on screen.
     max_wrist_range: float
+
+    # Shoulder movement relative to the wrist midpoint. Translation of the
+    # whole camera cancels out here, so this remains useful under jitter.
     body_movement_range: float
+
+    # True when the geometry between the two wrists stays stable enough.
     wrists_stable: bool
+
+    # Range of the left-to-right wrist distance during the evidence window.
+    wrist_span_range: float = 0.0
 
 
 def hands_are_above_shoulders(
@@ -113,6 +126,20 @@ def calculate_hang_metrics(
 
     max_wrist_range = max(wrist_ranges)
 
+    # Camera shake is approximately a global image translation. Raw wrist
+    # coordinates can therefore move a lot even when both hands remain on
+    # the same fixed bar. The distance BETWEEN the wrists is invariant to
+    # that translation, so it is a better initial anchor cue.
+    wrist_spans = [
+        math.hypot(
+            sample.right_x - sample.left_x,
+            sample.right_y - sample.left_y,
+        )
+        for sample in samples
+    ]
+
+    wrist_span_range = max(wrist_spans) - min(wrist_spans)
+
     body_movement_range = max(sample.shoulder_relative_y for sample in samples) - min(
         sample.shoulder_relative_y for sample in samples
     )
@@ -120,5 +147,8 @@ def calculate_hang_metrics(
     return HangMetrics(
         max_wrist_range=max_wrist_range,
         body_movement_range=body_movement_range,
-        wrists_stable=(max_wrist_range <= wrist_stability_threshold),
+        wrists_stable=(
+            wrist_span_range <= wrist_stability_threshold
+        ),
+        wrist_span_range=wrist_span_range,
     )

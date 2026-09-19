@@ -246,6 +246,11 @@ def analyze_pull_up_video(
         # -----------------------------------------------------
         # CONFIRM A REAL HANG
         # -----------------------------------------------------
+        #
+        # `wrists_stable` is camera-translation tolerant:
+        # evidence.py checks LEFT↔RIGHT wrist geometry instead of
+        # demanding almost-fixed raw screen coordinates. This lets
+        # reasonable camera jitter coexist with a real bar hang.
 
         if (
             not hang_confirmed
