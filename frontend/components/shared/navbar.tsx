@@ -1,7 +1,4 @@
-"use client";
-
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { ArrowUpRight } from "lucide-react";
 
 import { BrandLogo } from "@/components/brand/brand-logo";
@@ -9,6 +6,8 @@ import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { MobileNav } from "./mobile-nav";
+import { NavbarAuthAction } from "./navbar-auth-action";
+import { NavbarLinks } from "./navbar-links";
 import { ThemeToggle } from "./theme-toggle";
 
 const navigation = [
@@ -18,17 +17,6 @@ const navigation = [
 ] as const;
 
 export function Navbar() {
-  const pathname = usePathname();
-  const signInHref = "/login";
-
-  const navigationItems = navigation.map((item) => ({
-    ...item,
-    active:
-      item.href === "/"
-        ? pathname === "/"
-        : pathname === item.href || pathname.startsWith(`${item.href}/`),
-  }));
-
   return (
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/85 backdrop-blur-xl">
       <nav
@@ -57,33 +45,12 @@ export function Navbar() {
           </span>
         </Link>
 
-        <div className="hidden items-center gap-1 rounded-full border border-border/70 bg-background-alt/60 p-1 lg:flex">
-          {navigationItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={item.active ? "page" : undefined}
-              className={cn(
-                "rounded-full px-4 py-2 text-[0.8rem] font-medium transition-colors",
-                item.active
-                  ? "bg-primary-light text-primary"
-                  : "text-foreground-soft hover:bg-background hover:text-foreground",
-              )}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </div>
+        <NavbarLinks navigation={navigation} />
 
         <div className="hidden items-center justify-end gap-3 lg:flex">
           <ThemeToggle />
 
-          <Link
-            href={signInHref}
-            className="rounded-full px-3 py-2 text-[0.8rem] font-medium text-foreground-soft transition-colors hover:text-foreground"
-          >
-            Sign in
-          </Link>
+          <NavbarAuthAction />
 
           <Link
             href="/analyze"
@@ -105,7 +72,7 @@ export function Navbar() {
             <ThemeToggle />
           </div>
 
-          <MobileNav navigation={navigationItems} signInHref={signInHref} />
+          <MobileNav navigation={navigation} />
         </div>
       </nav>
     </header>

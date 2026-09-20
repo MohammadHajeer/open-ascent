@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -13,13 +14,12 @@ from app.models.profile import Profile
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def get_current_profile(
+def get_current_user_id(
     credentials: Annotated[
         HTTPAuthorizationCredentials | None,
         Depends(bearer_scheme),
     ],
-    db: DbSession,
-) -> Profile:
+) -> uuid.UUID:
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -44,7 +44,20 @@ def get_current_profile(
             detail="Invalid or expired access token.",
         )
 
-    profile = db.scalar(select(Profile).where(Profile.id == user.id))
+    try:
+        return uuid.UUID(str(user.id))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired access token.",
+        ) from exc
+
+
+CurrentUserId = Annotated[uuid.UUID, Depends(get_current_user_id)]
+
+
+def get_current_profile(user_id: CurrentUserId, db: DbSession) -> Profile:
+    profile = db.scalar(select(Profile).where(Profile.id == user_id))
 
     if profile is None:
         raise HTTPException(

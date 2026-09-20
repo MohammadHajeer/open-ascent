@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut, Settings, UserRound } from "lucide-react";
+import { toast } from "sonner";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -13,9 +15,27 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { createClient } from "@/lib/supabase/client";
 
 export function DashboardAccountMenu() {
   const router = useRouter();
+  const [signingOut, setSigningOut] = useState(false);
+
+  async function signOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      const { error } = await createClient().auth.signOut();
+      if (error) throw error;
+      router.replace("/");
+      router.refresh();
+    } catch (error) {
+      toast.error("Could not sign out", {
+        description: error instanceof Error ? error.message : "Please try again.",
+      });
+      setSigningOut(false);
+    }
+  }
 
   return (
     <DropdownMenu>
@@ -62,9 +82,9 @@ export function DashboardAccountMenu() {
         <DropdownMenuSeparator />
 
         <DropdownMenuGroup>
-          <DropdownMenuItem disabled>
+          <DropdownMenuItem disabled={signingOut} onClick={() => void signOut()}>
             <LogOut className="size-4" aria-hidden="true" />
-            Sign out connects with session actions
+            {signingOut ? "Signing out…" : "Sign out"}
           </DropdownMenuItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>

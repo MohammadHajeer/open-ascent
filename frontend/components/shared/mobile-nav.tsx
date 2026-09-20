@@ -2,8 +2,11 @@
 
 import { useState, type MouseEvent } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { ArrowUpRight, Menu } from "lucide-react";
 
+import { NavbarAuthAction } from "@/components/shared/navbar-auth-action";
+import { isActiveNavItem } from "@/components/shared/navbar-navigation";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Sheet,
@@ -20,17 +23,15 @@ import { ThemeToggle } from "./theme-toggle";
 type NavItem = {
   label: string;
   href: string;
-  active?: boolean;
 };
 
 export function MobileNav({
   navigation,
-  signInHref,
 }: {
-  navigation: NavItem[];
-  signInHref: string;
+  navigation: readonly NavItem[];
 }) {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
 
   function navigateToSection(
     event: MouseEvent<HTMLAnchorElement>,
@@ -86,10 +87,10 @@ export function MobileNav({
               key={item.href}
               href={item.href}
               onClick={(event) => navigateToSection(event, item.href)}
-              aria-current={item.active ? "page" : undefined}
+              aria-current={isActiveNavItem(pathname, item.href) ? "page" : undefined}
               className={cn(
                 "group flex min-h-16 items-center justify-between border-b border-border text-lg font-medium tracking-[-0.03em] transition-colors hover:text-primary",
-                item.active ? "text-primary" : "text-foreground",
+                isActiveNavItem(pathname, item.href) ? "text-primary" : "text-foreground",
               )}
             >
               <span className="flex items-center gap-4">
@@ -107,16 +108,7 @@ export function MobileNav({
             </Link>
           ))}
 
-          <Link
-            className="flex min-h-16 items-center gap-4 border-b border-border text-lg font-medium tracking-[-0.03em] text-foreground"
-            href={signInHref}
-            onClick={(event) => navigateToSection(event, signInHref)}
-          >
-            <small className="font-mono text-[0.58rem] tracking-wider text-foreground-faint">
-              04
-            </small>
-            Sign in
-          </Link>
+          <NavbarAuthAction mobile onNavigate={() => setOpen(false)} />
         </nav>
 
         <SheetFooter className="gap-5 border-t border-border pt-6">
