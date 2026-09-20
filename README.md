@@ -74,12 +74,21 @@ From `backend`, run `uv run alembic upgrade head`. Then, in the Supabase
 Dashboard, open **Authentication → Hooks (Auth Hooks) → Custom Access Token**.
 Choose **Postgres Function**, select `public.open_ascent_access_token_hook`, and
 enable the hook. New access tokens include `onboarding_complete: boolean`,
-sourced from `profiles.onboarding_completed_at`.
+sourced from `profiles.onboarding_completed_at`, and `user_role`, sourced from
+`profiles.app_role`. Valid application roles are `athlete` and `admin`; an
+unavailable or invalid role produces a `null` claim and never grants admin
+access. This claim does not replace Supabase's built-in `role` claim.
 
 When onboarding later sets `onboarding_completed_at`, the frontend must call
 `await supabase.auth.refreshSession()` before navigating to `/dashboard`. The
 refresh issues a token with the updated claim. FastAPI continues to enforce
 authorization for protected API actions.
+
+After changing `profiles.app_role`, the current JWT keeps its old `user_role`
+until the session refreshes. Call `await supabase.auth.refreshSession()` or
+sign out and sign in again to obtain a token with the new role. FastAPI checks
+the current database profile for admin actions, so its authorization does not
+depend on the potentially stale JWT role.
 
 ## Quality Checks
 

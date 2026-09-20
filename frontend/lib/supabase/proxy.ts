@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   isSessionRoutedPath,
   routeDestination,
+  type RouteDestination,
 } from "@/lib/supabase/proxy-routing";
 
 const cacheHeaders = ["cache-control", "expires", "pragma"] as const;
@@ -77,7 +78,7 @@ export async function updateSession(request: NextRequest) {
     return response;
   }
 
-  function redirect(destination: "/login" | "/onboarding" | "/dashboard") {
+  function redirect(destination: RouteDestination) {
     const url = new URL(destination, request.url);
     if (destination === "/login") {
       url.searchParams.set("next", `${pathname}${request.nextUrl.search}`);

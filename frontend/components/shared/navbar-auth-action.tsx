@@ -5,6 +5,8 @@ import Link from "next/link";
 
 import { createClient } from "@/lib/supabase/client";
 
+type AuthAction = "sign-in" | "dashboard" | "admin";
+
 export function NavbarAuthAction({
   mobile = false,
   onNavigate,
@@ -12,26 +14,47 @@ export function NavbarAuthAction({
   mobile?: boolean;
   onNavigate?: () => void;
 }) {
-  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+  const [action, setAction] = useState<AuthAction | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
     let active = true;
     let authEventReceived = false;
+    let latestRequest = 0;
+
+    function resolveSession(accessToken: string | null) {
+      const request = ++latestRequest;
+      if (!accessToken) {
+        setAction("sign-in");
+        return;
+      }
+
+      setAction(null);
+      void supabase.auth.getClaims(accessToken).then(({ data, error }) => {
+        if (!active || request !== latestRequest) return;
+        if (error || !data?.claims) {
+          setAction("sign-in");
+          return;
+        }
+        setAction(data.claims.user_role === "admin" ? "admin" : "dashboard");
+      }).catch(() => {
+        if (active && request === latestRequest) setAction("sign-in");
+      });
+    }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         authEventReceived = true;
-        if (active) setAuthenticated(Boolean(session));
+        if (active) resolveSession(session?.access_token ?? null);
       },
     );
 
     void supabase.auth.getSession().then(({ data }) => {
       if (active && !authEventReceived) {
-        setAuthenticated(Boolean(data.session));
+        resolveSession(data.session?.access_token ?? null);
       }
     }).catch(() => {
-      if (active && !authEventReceived) setAuthenticated(false);
+      if (active && !authEventReceived) resolveSession(null);
     });
 
     return () => {
@@ -40,7 +63,7 @@ export function NavbarAuthAction({
     };
   }, []);
 
-  if (authenticated === null) {
+  if (action === null) {
     return mobile ? (
       <span aria-hidden="true" className="flex min-h-16 items-center border-b border-border">
         <span className="h-4 w-24 rounded-full bg-border/70" />
@@ -50,8 +73,8 @@ export function NavbarAuthAction({
     );
   }
 
-  const href = authenticated ? "/dashboard" : "/login";
-  const label = authenticated ? "Dashboard" : "Sign in";
+  const href = action === "admin" ? "/admin" : action === "dashboard" ? "/dashboard" : "/login";
+  const label = action === "admin" ? "Admin console" : action === "dashboard" ? "Dashboard" : "Sign in";
 
   if (mobile) {
     return (
