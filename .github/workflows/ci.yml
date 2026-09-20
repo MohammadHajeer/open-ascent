@@ -45,7 +45,7 @@ jobs:
       - name: Install MediaPipe system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libegl1
+          sudo apt-get install -y libegl1 libgles2
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
