@@ -45,6 +45,12 @@ function MovementSelector({ groups }: { groups: MovementGroup<Movement>[] }) {
               <section key={familyKey} aria-labelledby={`movement-family-${index}`}>
                 <h3 id={`movement-family-${index}`} className="text-xl font-medium tracking-tight text-foreground">{movementFamilyLabel(familyKey)} family</h3>
                 <div className="mt-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+                  {familyKey === "vertical_pull" && (
+                    <Link href="/analyze?movement=any-vertical-pull" prefetch={false} className="group col-span-2 flex min-h-36 flex-col justify-center rounded-[3px_3px_24px_3px] border border-primary/40 bg-primary-light p-6 transition hover:border-primary focus-visible:ring-2 focus-visible:ring-ring lg:col-span-1">
+                      <strong className="text-lg text-foreground">Any Vertical Pull</strong>
+                      <span className="mt-2 text-sm leading-5 text-foreground-soft">Perform any supported vertical-pull variation. Open Ascent will classify each rep individually.</span>
+                    </Link>
+                  )}
                   {movements.map((movement) => (
                     <Link key={movement.id} href={`/analyze?movement=${encodeURIComponent(movement.slug)}`} prefetch={false} className="group overflow-hidden rounded-[3px_3px_24px_3px] border border-border bg-card text-left transition hover:-translate-y-0.5 hover:border-primary focus-visible:ring-2 focus-visible:ring-ring">
                       <span className="relative block aspect-4/3 border-b border-border bg-background-alt">
@@ -75,7 +81,7 @@ export async function AnalyzeMovementSection({
   const [movementsState, configState, guideState] = await Promise.allSettled([
     getAnalysisMovements(),
     getAnalysisGuestConfig(),
-    selectedSlug ? getAnalysisMovementGuide(selectedSlug) : Promise.resolve(null),
+    selectedSlug ? getAnalysisMovementGuide(selectedSlug === "any-vertical-pull" ? "pull-up" : selectedSlug) : Promise.resolve(null),
   ]);
 
   if (movementsState.status === "rejected" || configState.status === "rejected") {
@@ -89,7 +95,8 @@ export async function AnalyzeMovementSection({
   }
   if (!selectedSlug) return <MovementSelector groups={groups} />;
 
-  const selected = available.find((movement) => movement.slug === selectedSlug);
+  const familyMode = selectedSlug === "any-vertical-pull";
+  const selected = available.find((movement) => movement.slug === (familyMode ? "pull-up" : selectedSlug));
   if (!selected) {
     return <SectionNotice title="Movement unavailable." detail="This movement is not currently available for video analysis." />;
   }
@@ -102,12 +109,13 @@ export async function AnalyzeMovementSection({
   const config = configState.value;
   return (
     <GuestAnalysisClient
-      key={`${guide.slug}:${analysisId ?? "new"}`}
+      key={`${selectedSlug}:${analysisId ?? "new"}`}
       analysisId={analysisId}
       movement={{
-        id: guide.id,
-        name: guide.name,
-        illustrationUrl: guide.illustration_url,
+        id: familyMode ? null : guide.id,
+        name: familyMode ? "Any Vertical Pull" : guide.name,
+        slug: familyMode ? "any-vertical-pull" : guide.slug,
+        illustrationUrl: familyMode ? null : guide.illustration_url,
         safetyDocumentationId: guide.documentation.id,
       }}
       config={{
@@ -115,7 +123,7 @@ export async function AnalyzeMovementSection({
         maxDurationSeconds: config.max_duration_seconds,
         safetyAckVersion: config.safety_ack_version,
       }}
-      safetyGuidance={<SafetyGuidance safety={guide.documentation.content} movementName={guide.name} />}
+      safetyGuidance={<SafetyGuidance safety={guide.documentation.content} movementName={familyMode ? "Vertical Pull" : guide.name} />}
     />
   );
 }

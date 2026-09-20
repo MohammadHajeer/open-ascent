@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -100,6 +100,76 @@ def create_reservation(
             documentation,
         ),
     )
+
+
+def test_any_vertical_pull_reservation_has_no_specific_movement_target(
+    client: TestClient,
+    db: Session,
+) -> None:
+    movement = db.scalar(select(Movement).where(Movement.slug == "pull-up"))
+    created_movement = movement is None
+    if movement is None:
+        movement = Movement(
+            slug="pull-up",
+            name="Pull-Up",
+            family_key="vertical_pull",
+            upload_analysis_supported=True,
+            live_coach_supported=False,
+        )
+        db.add(movement)
+        db.flush()
+    documentation = db.scalar(
+        select(MovementDocumentation).where(
+            MovementDocumentation.movement_id == movement.id,
+            MovementDocumentation.status == "published",
+        )
+    )
+    created_documentation = documentation is None
+    if documentation is None:
+        documentation = MovementDocumentation(
+            movement_id=movement.id,
+            version=1,
+            status="published",
+            content={"notice": "Use a stable bar."},
+            published_at=datetime.now(UTC),
+        )
+        db.add(documentation)
+        db.flush()
+    db.commit()
+
+    response = client.post(
+        "/analyses/guest",
+        headers={"Idempotency-Key": str(uuid.uuid4())},
+        json={
+            "family_key": "vertical_pull",
+            "safety_documentation_id": str(documentation.id),
+            "safety_ack_version": CURRENT_SAFETY_ACK_VERSION,
+        },
+    )
+    assert response.status_code == 201, response.text
+    analysis_id = uuid.UUID(response.json()["analysis_id"])
+    analysis = db.get(Analysis, analysis_id)
+    assert analysis.movement_id is None
+    assert analysis.family_key == "vertical_pull"
+    assert analysis.safety_documentation_id == documentation.id
+    result = client.get(
+        f"/analyses/{analysis_id}/result",
+        headers={"Authorization": f"Bearer {response.json()['credential']}"},
+    )
+    assert result.status_code == 200
+    assert result.json()["movement"]["name"] == "Any Vertical Pull"
+    assert result.json()["movement"]["id"] is None
+
+    db.execute(delete(Analysis).where(Analysis.id == analysis_id))
+    if created_documentation:
+        db.execute(
+            delete(MovementDocumentation).where(
+                MovementDocumentation.id == documentation.id
+            )
+        )
+    if created_movement:
+        db.execute(delete(Movement).where(Movement.id == movement.id))
+    db.commit()
 
 
 def test_guest_reservation_creates_analysis_and_credential(
@@ -225,7 +295,7 @@ def test_correct_guest_credential_allows_access(
     body = reservation.json()
 
     response = client.get(
-        (f"/analyses/" f"{body['analysis_id']}/status"),
+        (f"/analyses/{body['analysis_id']}/status"),
         headers={
             "Authorization": (f"Bearer {body['credential']}"),
         },
@@ -269,7 +339,7 @@ def test_credential_cannot_access_another_analysis(
     body_b = reservation_b.json()
 
     response = client.get(
-        (f"/analyses/" f"{body_b['analysis_id']}/status"),
+        (f"/analyses/{body_b['analysis_id']}/status"),
         headers={
             "Authorization": (f"Bearer {body_a['credential']}"),
         },
@@ -356,9 +426,9 @@ def test_idempotent_retry_keeps_original_credential_valid(
     assert first_body["credential"] == second_body["credential"]
 
     response = client.get(
-        (f"/analyses/" f"{first_body['analysis_id']}/status"),
+        (f"/analyses/{first_body['analysis_id']}/status"),
         headers={
-            "Authorization": (f"Bearer " f"{first_body['credential']}"),
+            "Authorization": (f"Bearer {first_body['credential']}"),
         },
     )
 
@@ -407,5 +477,5 @@ def test_same_idempotency_key_with_different_request_is_rejected(
     assert body["error"]["code"] == "http_error"
 
     assert body["error"]["message"] == (
-        "Idempotency key was already used " "for a different request."
+        "Idempotency key was already used for a different request."
     )

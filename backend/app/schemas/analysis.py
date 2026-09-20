@@ -11,9 +11,14 @@ from app.schemas.movement_safety import MovementSafetyContentDraft
 
 
 class GuestAnalysisReservationRequest(BaseModel):
-    movement_id: uuid.UUID
+    movement_id: uuid.UUID | None = None
+    family_key: Literal["vertical_pull"] | None = None
     safety_documentation_id: uuid.UUID
     safety_ack_version: str
+
+    @property
+    def family_mode(self) -> bool:
+        return self.movement_id is None and self.family_key == "vertical_pull"
 
 
 class GuestAnalysisConfigResponse(BaseModel):
@@ -68,6 +73,8 @@ class AnalysisRepRead(BaseModel):
     phase_events: list[AnalysisPhaseRead] = Field(default_factory=list)
     reason_codes: list[str] = Field(default_factory=list)
     variations: dict[str, str] = Field(default_factory=dict)
+    target_match: bool | None = None
+    target_deviations: list[dict[str, str]] = Field(default_factory=list)
 
 
 class AnalysisEvidenceRead(BaseModel):
@@ -89,7 +96,7 @@ class DeterministicAnalysisRead(BaseModel):
 
 
 class GuestAnalysisMovementRead(BaseModel):
-    id: uuid.UUID
+    id: uuid.UUID | None
     slug: str
     name: str
     safety: MovementSafetyContentDraft

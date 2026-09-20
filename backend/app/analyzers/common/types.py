@@ -46,6 +46,8 @@ class RepAnalysis:
     reason_codes: list[str] = field(default_factory=list)
 
     variations: dict[str, str] = field(default_factory=dict)
+    target_match: bool | None = None
+    target_deviations: list[dict[str, str]] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)

@@ -3,13 +3,12 @@ import { Check, CircleAlert, RotateCcw, ScanLine } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  detectedGrip,
-  detectedMovement,
   describeReason,
   strongestFindings,
 } from "@/lib/analysis-findings";
 import type { GuestResult, Rep } from "@/lib/analysis";
 import type { GuestAccess } from "@/lib/analysis";
+import { classificationLabels, targetRelation, variationDistribution } from "@/lib/rep-classification";
 import { AnalysisExplanationPanel } from "./analysis-explanation";
 import { SafetyGuidance } from "./safety-guidance";
 
@@ -17,7 +16,7 @@ function seconds(ms: number) {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
-function RepAnalysis({ reps }: { reps: Rep[] }) {
+function RepAnalysis({ reps, familyMode, targetSlug }: { reps: Rep[]; familyMode: boolean; targetSlug: string }) {
   return (
     <section className="mt-16 sm:mt-20" aria-labelledby="rep-analysis-title">
       <span className="font-mono text-[0.58rem] font-semibold tracking-widest text-primary uppercase">
@@ -83,15 +82,13 @@ function RepAnalysis({ reps }: { reps: Rep[] }) {
                     ? ` · top at ${seconds(rep.top_ms)}`
                     : ""}
                 </p>
-                {(rep.variations.movement === "pull_up" ||
-                  rep.variations.movement === "chin_up") && (
-                  <p className="mt-2 text-xs text-foreground-soft">
-                    Detected:{" "}
-                    {rep.variations.movement === "pull_up"
-                      ? "Pull-up"
-                      : "Chin-up"}
-                  </p>
-                )}
+                <p className="mt-3 text-sm font-medium">Detected: {classificationLabels(rep).base}</p>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-foreground-soft">
+                  <span className="rounded-full bg-muted px-2 py-1">{classificationLabels(rep).width}</span>
+                  <span className="rounded-full bg-muted px-2 py-1">{classificationLabels(rep).height}</span>
+                </div>
+                {targetRelation(rep, familyMode, targetSlug) && <p className="mt-3 text-xs text-foreground-soft">{targetRelation(rep, familyMode, targetSlug)}</p>}
+                {!!rep.target_deviations?.length && <p className="mt-1 text-xs text-foreground-soft">{rep.target_deviations.map((item) => `${item.dimension.replaceAll("_", " ")}: ${item.expected.replaceAll("_", " ")} → ${item.detected.replaceAll("_", " ")}`).join(" · ")}</p>}
               </div>
             </article>
           ))}
@@ -147,8 +144,6 @@ export function AnalysisResults({
     ["Partial attempts", String(result.partial_rep_count)],
     ["Uncertain attempts", String(result.uncertain_rep_count)],
     ["Total attempts", String(attempts)],
-    ["Detected movement", detectedMovement(result.reps)],
-    ["Grip evidence", detectedGrip(result.reps)],
     ["Video duration", seconds(result.duration_ms)],
     [
       "Usable pose frames",
@@ -197,17 +192,16 @@ export function AnalysisResults({
           </span>
         </div>
         <aside className="flex flex-col border-t border-border p-5 sm:p-8 lg:border-t-0 lg:border-l lg:p-10">
-          <span className="font-mono text-[0.58rem] tracking-widest text-foreground-faint uppercase">
-            Movement summary
-          </span>
+          <span className="font-mono text-[0.58rem] tracking-widest text-foreground-faint uppercase">{analysis.movement.id ? "Selected target" : "Mode"}</span>
           <h3 className="mt-3 text-3xl font-medium tracking-tight">
             {analysis.movement.name}
           </h3>
           <p className="mt-2 text-sm text-foreground-soft">
-            {result.outcome === "insufficient_evidence"
+            {!analysis.movement.id ? "Each supported rep was classified independently. " : ""}{result.outcome === "insufficient_evidence"
               ? "Movement findings are limited by the recording."
               : "Counts reflect confirmed analyzer outcomes."}
           </p>
+          <div className="mt-5 border-t border-border pt-4 text-xs text-foreground-soft"><strong className="text-foreground">Variation distribution</strong><ul className="mt-2 space-y-1">{variationDistribution(result.reps).map((line) => <li key={line}>{line}</li>)}</ul></div>
           <dl className="mt-8 grid border-t border-border">
             {metrics.map(([label, value], index) => (
               <div
@@ -237,7 +231,7 @@ export function AnalysisResults({
         </aside>
       </div>
 
-      <RepAnalysis reps={result.reps} />
+      <RepAnalysis reps={result.reps} familyMode={!analysis.movement.id} targetSlug={analysis.movement.slug} />
 
       <section
         className="mt-8 rounded-[3px_3px_34px_3px] border border-border bg-card p-6 sm:p-9"

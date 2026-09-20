@@ -38,11 +38,14 @@ def record_analysis_event(
     event_type: str,
     rep_index: int | None = None,
     outcome: str | None = None,
+    variations: dict[str, str] | None = None,
+    target_match: bool | None = None,
+    target_deviations: list[dict[str, str]] | None = None,
 ) -> None:
     if event_type not in PRODUCT_EVENTS:
         raise ValueError("Unknown analysis progress event.")
 
-    payload: dict[str, str | int] = {"attempt": attempt}
+    payload: dict = {"attempt": attempt}
     event_key = f"{attempt}:{event_type}"
     if event_type == "rep_completed":
         if (
@@ -52,6 +55,26 @@ def record_analysis_event(
         ):
             raise ValueError("Invalid completed rep progress.")
         payload.update(rep_index=rep_index, outcome=outcome)
+        if variations is not None:
+            allowed = {
+                "base_movement": {"pull_up", "chin_up", "uncertain"},
+                "grip_width": {"close", "standard", "wide", "uncertain"},
+                "pull_height": {"standard", "high", "uncertain"},
+            }
+            payload["classification"] = {
+                key: variations.get(key, "uncertain")
+                if variations.get(key) in values
+                else "uncertain"
+                for key, values in allowed.items()
+            }
+            payload["target_match"] = target_match
+            payload["target_deviations"] = [
+                item
+                for item in (target_deviations or [])
+                if item.get("dimension") in allowed
+                and item.get("expected") in allowed[item["dimension"]]
+                and item.get("detected") in allowed[item["dimension"]]
+            ]
         event_key += f":{rep_index}"
     elif rep_index is not None or outcome is not None:
         raise ValueError("Unexpected rep progress data.")
@@ -76,6 +99,9 @@ def publish_claim_event(
     *,
     rep_index: int | None = None,
     outcome: str | None = None,
+    variations: dict[str, str] | None = None,
+    target_match: bool | None = None,
+    target_deviations: list[dict[str, str]] | None = None,
 ) -> None:
     if event_type not in INTERMEDIATE_EVENTS:
         raise ValueError("Only intermediate progress can be published here.")
@@ -109,5 +135,8 @@ def publish_claim_event(
         event_type=event_type,
         rep_index=rep_index,
         outcome=outcome,
+        variations=variations,
+        target_match=target_match,
+        target_deviations=target_deviations,
     )
     db.commit()

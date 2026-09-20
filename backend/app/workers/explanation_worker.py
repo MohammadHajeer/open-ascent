@@ -35,19 +35,18 @@ def process_one_explanation() -> bool:
             analysis = db.get(Analysis, claim.analysis_id)
             if analysis is None or analysis.result is None:
                 raise ValueError("Completed analysis result is missing.")
-            movement = db.get(Movement, analysis.movement_id)
+            movement = db.get(Movement, analysis.movement_id) if analysis.movement_id else None
             documentation = db.get(
                 MovementDocumentation, analysis.safety_documentation_id
             )
             if (
-                movement is None
-                or documentation is None
+                documentation is None
                 or documentation.published_at is None
             ):
                 raise ValueError("Published movement guidance is missing.")
             source = build_explanation_input(
                 result_data=analysis.result,
-                movement_name=movement.name,
+                movement_name=movement.name if movement else "Any Vertical Pull",
                 safety_data=documentation.content,
             )
 

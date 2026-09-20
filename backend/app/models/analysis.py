@@ -30,6 +30,10 @@ class Analysis(TimestampMixin, Base):
             name="ck_analyses_status",
         ),
         CheckConstraint(
+            "movement_id IS NOT NULL OR (owner_kind = 'guest' AND family_key = 'vertical_pull')",
+            name="ck_analyses_target_or_family",
+        ),
+        CheckConstraint(
             "ai_feedback_status IN ('pending', 'running', 'completed', 'failed', 'skipped')",
             name="ck_analyses_ai_feedback_status",
         ),
@@ -122,11 +126,12 @@ class Analysis(TimestampMixin, Base):
         ForeignKey("profiles.id", ondelete="CASCADE"),
         nullable=True,
     )
-    movement_id: Mapped[uuid.UUID] = mapped_column(
+    movement_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("movements.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
     )
+    family_key: Mapped[str | None] = mapped_column(Text, nullable=True)
     safety_documentation_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("movement_documentation.id", ondelete="RESTRICT"),

@@ -518,7 +518,7 @@ def seed_movement(
             name=seed["name"],
             family_key=seed["family_key"],
             illustration_path=seed["illustration_path"],
-            upload_analysis_supported=seed["slug"] in {"pull-up", "chin-up"},
+            upload_analysis_supported=seed["family_key"] == "vertical_pull",
             live_coach_supported=False,
         )
 

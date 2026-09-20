@@ -73,6 +73,8 @@ def build_request_fingerprint(
         "safety_documentation_id": str(payload.safety_documentation_id),
         "safety_ack_version": payload.safety_ack_version,
     }
+    if payload.family_key is not None:
+        data["family_key"] = payload.family_key
 
     serialized = json.dumps(
         data,
@@ -272,10 +274,18 @@ def reserve_guest_analysis(
     # 2. Movement validation
     # ---------------------------------------------------------
 
-    movement = _get_valid_movement(
-        db,
-        payload.movement_id,
-    )
+    if payload.family_mode:
+        movement = None
+        # Reuse the published baseline vertical-pull guidance. The selected
+        # intention remains family-only and is never stored as Pull-Up.
+        safety_movement = db.scalar(select(Movement).where(Movement.slug == "pull-up"))
+        if safety_movement is None or safety_movement.family_key != "vertical_pull":
+            raise AnalysisNotSupportedError
+    elif payload.movement_id is not None and payload.family_key is None:
+        movement = _get_valid_movement(db, payload.movement_id)
+        safety_movement = movement
+    else:
+        raise AnalysisNotSupportedError
 
     # ---------------------------------------------------------
     # 3. Safety documentation validation
@@ -284,7 +294,7 @@ def reserve_guest_analysis(
     documentation = _get_valid_safety_documentation(
         db,
         documentation_id=(payload.safety_documentation_id),
-        movement_id=movement.id,
+        movement_id=safety_movement.id,
     )
 
     # ---------------------------------------------------------
@@ -319,7 +329,8 @@ def reserve_guest_analysis(
     # ---------------------------------------------------------
 
     analysis = Analysis(
-        movement_id=movement.id,
+        movement_id=movement.id if movement is not None else None,
+        family_key=safety_movement.family_key,
         safety_documentation_id=documentation.id,
         safety_ack_version=(CURRENT_SAFETY_ACK_VERSION),
         safety_acknowledged_at=now,

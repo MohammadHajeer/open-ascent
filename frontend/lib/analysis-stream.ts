@@ -1,6 +1,6 @@
 import { ApiError, apiUrl } from "./api";
 import { SseParser, type SseMessage } from "./sse-parser";
-import type { AnalysisStatus, ExplanationStatus, GuestAccess, RepOutcome } from "./analysis";
+import type { AnalysisStatus, ExplanationStatus, GuestAccess, RepOutcome, RepClassification } from "./analysis";
 
 type StageEvent = {
   id: number;
@@ -14,6 +14,9 @@ type RepEvent = {
   attempt: number;
   rep_index: number;
   outcome: RepOutcome;
+  classification: RepClassification["variations"];
+  target_match: boolean | null;
+  target_deviations: NonNullable<RepClassification["target_deviations"]>;
 };
 type StateEvent = {
   id: null;
@@ -58,7 +61,10 @@ export function decodeAnalysisProgress(message: SseMessage): AnalysisProgressEve
     if (typeof data.rep_index !== "number" || !Number.isSafeInteger(data.rep_index) || data.rep_index < 1 ||
         typeof data.outcome !== "string" || !outcomes.has(data.outcome)) return null;
     return { id, type: "rep_completed", attempt: data.attempt,
-      rep_index: data.rep_index, outcome: data.outcome as RepOutcome };
+      rep_index: data.rep_index, outcome: data.outcome as RepOutcome,
+      classification: parseClassification(data.classification),
+      target_match: typeof data.target_match === "boolean" ? data.target_match : null,
+      target_deviations: parseDeviations(data.target_deviations) };
   }
   if (stageTypes.has(message.event)) {
     return { id, type: message.event as StageEvent["type"], attempt: data.attempt };
@@ -67,6 +73,22 @@ export function decodeAnalysisProgress(message: SseMessage): AnalysisProgressEve
     return { id, type: message.event as ExplanationEvent["type"], attempt: data.attempt };
   }
   return null;
+}
+
+function parseClassification(value: unknown): RepClassification["variations"] {
+  if (!value || typeof value !== "object") return {};
+  const raw = value as Record<string, unknown>;
+  return {
+    base_movement: ["pull_up", "chin_up", "uncertain"].includes(String(raw.base_movement)) ? String(raw.base_movement) : "uncertain",
+    grip_width: ["close", "standard", "wide", "uncertain"].includes(String(raw.grip_width)) ? String(raw.grip_width) : "uncertain",
+    pull_height: ["standard", "high", "uncertain"].includes(String(raw.pull_height)) ? String(raw.pull_height) : "uncertain",
+  };
+}
+
+function parseDeviations(value: unknown): NonNullable<RepClassification["target_deviations"]> {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is { dimension: string; expected: string; detected: string } =>
+    item && typeof item.dimension === "string" && typeof item.expected === "string" && typeof item.detected === "string");
 }
 
 export async function streamGuestAnalysis(

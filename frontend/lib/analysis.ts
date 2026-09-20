@@ -59,8 +59,14 @@ export type Rep = {
   top_ms: number | null;
   phase_events: { phase: string; timestamp_ms: number }[];
   reason_codes: string[];
-  variations: { movement?: string; grip_orientation?: string };
+  variations: { movement?: string; grip_orientation?: string; base_movement?: string;
+    grip_width?: string; pull_height?: string };
+  target_match?: boolean | null;
+  target_deviations?: TargetDeviation[];
 };
+
+export type TargetDeviation = { dimension: string; expected: string; detected: string };
+export type RepClassification = Pick<Rep, "rep_index" | "outcome" | "variations" | "target_match" | "target_deviations">;
 
 export type DeterministicResult = {
   outcome: AnalysisOutcome;
@@ -91,7 +97,7 @@ export type GuestResult = {
   analysis_id: string;
   status: AnalysisStatus;
   stage: string;
-  movement: { id: string; slug: string; name: string; safety: Safety };
+  movement: { id: string | null; slug: string; name: string; safety: Safety };
   result: DeterministicResult | null;
   explanation_status: ExplanationStatus;
   explanation: AnalysisExplanation | null;
@@ -103,7 +109,7 @@ function authorization(credential: string): HeadersInit {
 }
 
 export function reserveGuestAnalysis(
-  movementId: string,
+  movementId: string | null,
   safetyDocumentationId: string,
   safetyAckVersion: string,
 ) {
@@ -114,7 +120,7 @@ export function reserveGuestAnalysis(
       "Idempotency-Key": crypto.randomUUID(),
     },
     body: JSON.stringify({
-      movement_id: movementId,
+      ...(movementId ? { movement_id: movementId } : { family_key: "vertical_pull" }),
       safety_documentation_id: safetyDocumentationId,
       safety_ack_version: safetyAckVersion,
     }),

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 from threading import Event, Thread
 
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.analyzers.pull_up.analyzer import analyze_vertical_pull_video
+from app.analyzers.pull_up.targets import compare_rep
 from app.core.config import settings
 from app.core.supabase import supabase
 from app.db.database import SessionLocal
@@ -24,9 +26,21 @@ from app.workers.analysis_worker import AnalysisProcessingResult
 def process_vertical_pull(claim: AnalysisClaim) -> AnalysisProcessingResult:
     with SessionLocal() as db:
         analysis = db.get(Analysis, claim.analysis_id)
-        movement = db.get(Movement, analysis.movement_id) if analysis else None
-        if movement is None or movement.family_key != "vertical_pull":
+        movement = (
+            db.get(Movement, analysis.movement_id)
+            if analysis and analysis.movement_id
+            else None
+        )
+        family_key = getattr(analysis, "family_key", None) or (
+            movement.family_key if movement else None
+        )
+        if (
+            family_key != "vertical_pull"
+            or (analysis.movement_id and movement is None)
+            or (movement and movement.family_key != family_key)
+        ):
             raise ValueError("Unsupported analysis movement family.")
+        target_slug = movement.slug if movement else None
 
     stop_heartbeat = Event()
 
@@ -46,11 +60,25 @@ def process_vertical_pull(claim: AnalysisClaim) -> AnalysisProcessingResult:
     heartbeat = Thread(target=keep_lease, daemon=True)
     heartbeat.start()
 
-    def publish(event_type: str, *, rep_index: int | None = None, outcome: str | None = None) -> None:
+    classified_reps = []
+
+    def publish(event_type: str, *, rep=None) -> None:
         with SessionLocal() as db:
             publish_claim_event(
-                db, claim, event_type, rep_index=rep_index, outcome=outcome
+                db,
+                claim,
+                event_type,
+                rep_index=rep.rep_index if rep else None,
+                outcome=rep.outcome.value if rep else None,
+                variations=rep.variations if rep else None,
+                target_match=rep.target_match if rep else None,
+                target_deviations=rep.target_deviations if rep else None,
             )
+
+    def completed_rep(rep):
+        compared = compare_rep(rep, target_slug)
+        classified_reps.append(compared)
+        publish("rep_completed", rep=compared)
 
     try:
         video_bytes = supabase.storage.from_(settings.supabase_video_bucket).download(
@@ -64,19 +92,18 @@ def process_vertical_pull(claim: AnalysisClaim) -> AnalysisProcessingResult:
             publish("movement_analysis_started")
             result = analyze_vertical_pull_video(
                 video_path,
-                on_rep_completed=lambda rep: publish(
-                    "rep_completed",
-                    rep_index=rep.rep_index,
-                    outcome=rep.outcome.value,
-                ),
+                on_rep_completed=completed_rep,
             )
             publish("finalizing")
     finally:
         stop_heartbeat.set()
         heartbeat.join(timeout=1)
 
+    result_data = result.to_dict()
+    if classified_reps:
+        result_data["reps"] = [asdict(rep) for rep in classified_reps]
     return AnalysisProcessingResult(
-        result_data=result.to_dict(),
-        analyzer_version="vertical_pull_v1",
+        result_data=result_data,
+        analyzer_version="vertical_pull_v2",
         model_version="mediapipe_tasks",
     )

@@ -123,6 +123,17 @@ class PullUpAnalyzerConfig:
     min_rep_grip_samples: int = 3
     rep_grip_majority_ratio: float = 0.70
 
+    # Classification only; these never alter the rep phase tracker.
+    min_rep_width_samples: int = 3
+    width_majority_ratio: float = 0.70
+    close_wrist_shoulder_ratio: float = 0.85
+    wide_wrist_shoulder_ratio: float = 1.65
+    min_rep_height_samples: int = 3
+    # A high pull puts the shoulder line near the bar. Expressed in
+    # shoulder-width units to avoid a resolution-dependent pixel threshold.
+    high_shoulder_bar_ratio: float = 0.35
+    standard_shoulder_bar_ratio: float = 0.65
+
     # Crop the original-resolution frame around each pose wrist so
     # Hand Landmarker receives enough hand detail.
     min_hand_crop_size_px: int = 180

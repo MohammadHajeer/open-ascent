@@ -112,8 +112,13 @@ def make_completed(db: Session, analysis: Analysis) -> AnalysisClaim:
     assert claim is not None and claim.analysis_id == analysis.id
     publish_claim_event(db, claim, "video_loaded")
     publish_claim_event(db, claim, "movement_analysis_started")
-    publish_claim_event(db, claim, "rep_completed", rep_index=1, outcome="valid")
-    publish_claim_event(db, claim, "rep_completed", rep_index=2, outcome="partial")
+    publish_claim_event(db, claim, "rep_completed", rep_index=1, outcome="valid",
+        variations={"base_movement": "pull_up", "grip_width": "close", "pull_height": "high"},
+        target_match=True)
+    publish_claim_event(db, claim, "rep_completed", rep_index=2, outcome="partial",
+        variations={"base_movement": "chin_up", "grip_width": "wide", "pull_height": "uncertain"},
+        target_match=False, target_deviations=[{"dimension": "base_movement",
+            "expected": "pull_up", "detected": "chin_up"}])
     publish_claim_event(db, claim, "finalizing")
     complete_analysis(
         db,
@@ -163,6 +168,9 @@ def test_stream_replays_ordered_product_events_without_raw_data(
         (1, "valid"),
         (2, "partial"),
     ]
+    assert rep_payloads[0]["classification"] == {
+        "base_movement": "pull_up", "grip_width": "close", "pull_height": "high"}
+    assert rep_payloads[1]["target_deviations"][0]["detected"] == "chin_up"
     assert "raw_landmarks" not in response.text
     assert "internal_frame" not in response.text
     ids = [
@@ -198,6 +206,8 @@ def test_reconnect_replays_only_missed_events_and_does_not_create_work(
         "state",
     ]
     assert first.text == second.text
+    assert '"base_movement":"chin_up"' in first.text
+    assert '"target_match":false' in first.text
     assert f"id: {cursor}\r\n" not in first.text
     assert (
         db.scalar(

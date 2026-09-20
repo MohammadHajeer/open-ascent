@@ -284,9 +284,9 @@ def get_guest_analysis_result(
     analysis: GuestAnalysisAccess,
     db: DbSession,
 ) -> GuestAnalysisResultResponse:
-    movement = db.get(Movement, analysis.movement_id)
+    movement = db.get(Movement, analysis.movement_id) if analysis.movement_id else None
     documentation = db.get(MovementDocumentation, analysis.safety_documentation_id)
-    if movement is None or documentation is None:
+    if documentation is None or (movement is None and analysis.movement_id is not None):
         raise HTTPException(status_code=404, detail="Analysis guide not found.")
 
     result = None
@@ -306,9 +306,9 @@ def get_guest_analysis_result(
         status=analysis.status,
         stage=analysis.stage,
         movement=GuestAnalysisMovementRead(
-            id=movement.id,
-            slug=movement.slug,
-            name=movement.name,
+            id=movement.id if movement else None,
+            slug=movement.slug if movement else "any-vertical-pull",
+            name=movement.name if movement else "Any Vertical Pull",
             safety=MovementSafetyContentDraft.model_validate(documentation.content),
         ),
         result=result,

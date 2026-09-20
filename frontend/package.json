@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:analysis": "node --experimental-strip-types --test lib/analysis-findings.test.mjs lib/analysis-movement-groups.test.mjs lib/guest-analysis-session.test.mjs lib/sse-parser.test.mjs"
+    "test:analysis": "node --experimental-strip-types --test lib/analysis-findings.test.mjs lib/analysis-movement-groups.test.mjs lib/guest-analysis-session.test.mjs lib/sse-parser.test.mjs lib/rep-classification.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

@@ -16,6 +16,11 @@ from app.analyzers.common.video import (
     get_video_metadata,
     iter_pose_video_frames,
 )
+from app.analyzers.pull_up.classification import (
+    VariationObservation,
+    add_pose_variations,
+    observe_variation,
+)
 from app.analyzers.pull_up.config import (
     DEFAULT_PULL_UP_CONFIG,
     PullUpAnalyzerConfig,
@@ -101,9 +106,11 @@ def analyze_vertical_pull_video(
 
     reps: list[RepAnalysis] = []
     grip_observations: list[GripObservation] = []
+    variation_observations: list[VariationObservation] = []
 
     def record_rep(rep: RepAnalysis) -> None:
         classified = add_grip_variations(rep, grip_observations, config=config)
+        classified = add_pose_variations(classified, variation_observations, config=config)
         reps.append(classified)
         if on_rep_completed is not None:
             on_rep_completed(classified)
@@ -371,6 +378,10 @@ def analyze_vertical_pull_video(
 
             if grip_observation is not None:
                 grip_observations.append(grip_observation)
+
+            variation_observations.append(
+                observe_variation(landmarks, measurement, config=config)
+            )
 
             completed_rep = tracker.update(
                 timestamp_ms=pose_frame.timestamp_ms,
