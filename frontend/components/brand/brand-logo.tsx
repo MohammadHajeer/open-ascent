@@ -7,12 +7,14 @@ type BrandLogoProps = {
   alt?: string;
   className?: string;
   sizes?: string;
+  variant?: "default" | "dashboard";
 };
 
 export function BrandLogo({
   alt = "Open Ascent",
   className,
   sizes = "64px",
+  variant = "default",
 }: BrandLogoProps) {
   const isDecorative = alt.length === 0;
 
@@ -28,7 +30,11 @@ export function BrandLogo({
       aria-hidden={isDecorative || undefined}
     >
       <Image
-        src={assets.brand.symbol.light}
+        src={
+          variant === "dashboard"
+            ? assets.brand.symbol.lightOlive
+            : assets.brand.symbol.light
+        }
         alt=""
         fill
         sizes={sizes}

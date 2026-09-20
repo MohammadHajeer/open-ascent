@@ -36,7 +36,10 @@ function appIcon<const S extends number>(size: S) {
 /** Public URLs only: no React, theme provider, SVG loader or client boundary. */
 export const assets = {
   brand: {
-    symbol: themed("brand/symbol", 1024, 1024),
+    symbol: {
+      ...themed("brand/symbol", 1024, 1024),
+      lightOlive: `${ROOT}/brand/symbol-light-olive.svg`,
+    },
     icons: {
       favicon32: appIcon(32),
       favicon48: appIcon(48),
