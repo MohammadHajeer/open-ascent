@@ -5,6 +5,7 @@ import Link from "next/link";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LoaderCircle, MailCheck, MoveRight } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
+import { toast } from "sonner";
 
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -15,13 +16,14 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 import {
   forgotPasswordSchema,
   type ForgotPasswordValues,
 } from "@/lib/validations/auth";
 
 export function ForgotPasswordForm() {
-  const [submitted, setSubmitted] = useState(false);
+  const [submittedEmail, setSubmittedEmail] = useState<string | null>(null);
 
   const form = useForm<ForgotPasswordValues>({
     resolver: zodResolver(forgotPasswordSchema),
@@ -29,12 +31,24 @@ export function ForgotPasswordForm() {
     mode: "onBlur",
   });
 
-  async function onSubmit() {
-    await new Promise((resolve) => window.setTimeout(resolve, 800));
-    setSubmitted(true);
+  async function onSubmit(values: ForgotPasswordValues) {
+    const supabase = createClient();
+    const redirectTo = `${window.location.origin}/auth/callback?next=/reset-password`;
+
+    const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
+      redirectTo,
+    });
+
+    if (error) {
+      toast.error("We could not send the recovery email. Please try again.");
+      return;
+    }
+
+    setSubmittedEmail(values.email);
+    toast.success("Recovery instructions sent.");
   }
 
-  if (submitted) {
+  if (submittedEmail) {
     return (
       <div
         className="mt-8 rounded-[3px_3px_26px_3px] border border-border bg-muted/40 p-5 sm:p-6"
@@ -45,15 +59,16 @@ export function ForgotPasswordForm() {
         </span>
 
         <span className="mt-5 block font-mono text-[0.55rem] font-semibold tracking-[0.17em] text-primary uppercase">
-          Reset unavailable
+          Recovery email sent
         </span>
 
         <h2 className="mt-2.5 text-xl font-medium tracking-[-0.035em] text-foreground">
-          No email was sent.
+          Check your inbox.
         </h2>
 
         <p className="mt-2 text-sm leading-6 text-foreground-soft">
-          Password reset is not connected yet.
+          If an Open Ascent account exists for {submittedEmail}, you’ll receive
+          a password recovery link shortly.
         </p>
 
         <div className="mt-6 grid gap-3">
@@ -65,10 +80,11 @@ export function ForgotPasswordForm() {
           </Link>
 
           <Button
+            type="button"
             variant="ghost"
             className="h-12 w-full"
             onClick={() => {
-              setSubmitted(false);
+              setSubmittedEmail(null);
               form.reset();
             }}
           >
@@ -113,7 +129,7 @@ export function ForgotPasswordForm() {
           {form.formState.isSubmitting ? (
             <>
               <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />
-              Preparing instructions…
+              Sending instructions…
             </>
           ) : (
             <>

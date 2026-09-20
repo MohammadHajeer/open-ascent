@@ -1,19 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
-import {
-  CircleAlert,
-  LoaderCircle,
-  MoveRight,
-  ShieldCheck,
-} from "lucide-react";
+import { CircleAlert, LoaderCircle, MoveRight } from "lucide-react";
 import { Controller, useForm } from "react-hook-form";
+import { toast } from "sonner";
 
 import { PasswordInput } from "@/components/auth/password-input";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   Field,
   FieldDescription,
@@ -22,14 +18,12 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 import { registerSchema, type RegisterValues } from "@/lib/validations/auth";
 
-type SubmissionState = "idle" | "success" | "error";
-
 export function RegisterForm() {
-  const [submissionState, setSubmissionState] =
-    useState<SubmissionState>("idle");
+  const router = useRouter();
+  const [authError, setAuthError] = useState<string | null>(null);
 
   const form = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
@@ -43,62 +37,52 @@ export function RegisterForm() {
   });
 
   async function onSubmit(values: RegisterValues) {
-    setSubmissionState("idle");
-    await new Promise((resolve) => window.setTimeout(resolve, 900));
+    setAuthError(null);
 
-    if (values.email.toLowerCase() === "coach@error.test") {
-      setSubmissionState("error");
+    const supabase = createClient();
+    const emailRedirectTo = `${window.location.origin}/auth/callback?next=/onboarding`;
+
+    const { data, error } = await supabase.auth.signUp({
+      email: values.email,
+      password: values.password,
+      options: {
+        emailRedirectTo,
+        data: {
+          name: values.name.trim(),
+        },
+      },
+    });
+
+    if (error) {
+      const message =
+        error.message || "We could not create your account. Please try again.";
+
+      setAuthError(message);
+      toast.error(message);
       return;
     }
 
-    setSubmissionState("success");
-  }
+    // Some development Supabase projects disable email confirmation. In that
+    // case signUp immediately returns a session and verification is unnecessary.
+    if (data.session) {
+      toast.success("Your Open Ascent account is ready.");
+      router.replace("/onboarding");
+      router.refresh();
+      return;
+    }
 
-  if (submissionState === "success") {
-    return (
-      <div
-        className="mt-8 rounded-[3px_3px_26px_3px] border border-border bg-muted/40 p-5 sm:p-6"
-        role="status"
-      >
-        <span className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground">
-          <ShieldCheck className="size-4.5" aria-hidden="true" />
-        </span>
-
-        <span className="mt-5 block font-mono text-[0.55rem] font-semibold tracking-[0.17em] text-primary uppercase">
-          Registration unavailable
-        </span>
-
-        <h2 className="mt-2.5 text-xl font-medium tracking-[-0.035em] text-foreground">
-          No account was created.
-        </h2>
-
-        <p className="mt-2 text-sm leading-6 text-foreground-soft">
-          Registration is not connected yet.
-        </p>
-
-        <Link
-          href="/login"
-          className={cn(
-            buttonVariants({ variant: "brand" }),
-            "mt-6 h-12 w-full",
-          )}
-        >
-          Continue to sign in
-        </Link>
-      </div>
-    );
+    toast.success("Check your inbox to verify your email.");
+    router.push(`/verify-email?email=${encodeURIComponent(values.email)}`);
   }
 
   return (
     <form className="mt-8" onSubmit={form.handleSubmit(onSubmit)} noValidate>
       <FieldGroup className="gap-5">
-        {submissionState === "error" ? (
+        {authError ? (
           <Alert className="mb-1">
             <CircleAlert aria-hidden="true" />
             <AlertTitle>Unable to create the account</AlertTitle>
-            <AlertDescription>
-              Review your details and try again.
-            </AlertDescription>
+            <AlertDescription>{authError}</AlertDescription>
           </Alert>
         ) : null}
 

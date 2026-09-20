@@ -3,20 +3,20 @@ import Link from "next/link";
 import { ArrowLeft, KeyRound } from "lucide-react";
 
 import { AuthPanel } from "@/components/auth/auth-panel";
-import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
+import { ResetPasswordForm } from "@/components/auth/reset-password-form";
 
 export const metadata: Metadata = {
-  title: "Forgot password",
-  description: "Reset your Open Ascent account password.",
+  title: "Set a new password",
+  description: "Set a new password for your Open Ascent account.",
 };
 
-export default function ForgotPasswordPage() {
+export default function ResetPasswordPage() {
   return (
     <AuthPanel
       icon={KeyRound}
       eyebrow="Account recovery"
-      title="Reset your password."
-      description="We’ll send recovery instructions to your email."
+      title="Set a new password."
+      description="Choose a new password for your Open Ascent account."
       footer={
         <Link
           href="/login"
@@ -27,7 +27,7 @@ export default function ForgotPasswordPage() {
         </Link>
       }
     >
-      <ForgotPasswordForm />
+      <ResetPasswordForm />
     </AuthPanel>
   );
 }

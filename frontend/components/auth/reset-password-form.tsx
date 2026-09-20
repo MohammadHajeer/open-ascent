@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { CircleAlert, LoaderCircle, MoveRight } from "lucide-react";
@@ -13,79 +12,56 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Field,
+  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
-import { loginSchema, type LoginValues } from "@/lib/validations/auth";
+import {
+  resetPasswordSchema,
+  type ResetPasswordValues,
+} from "@/lib/validations/auth";
 
-function getSafeNextPath() {
-  const next = new URLSearchParams(window.location.search).get("next");
-
-  if (!next || !next.startsWith("/") || next.startsWith("//")) {
-    return "/dashboard";
-  }
-
-  return next;
-}
-
-export function LoginForm() {
+export function ResetPasswordForm() {
   const router = useRouter();
   const [authError, setAuthError] = useState<string | null>(null);
 
-  const form = useForm<LoginValues>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: { email: "", password: "" },
+  const form = useForm<ResetPasswordValues>({
+    resolver: zodResolver(resetPasswordSchema),
+    defaultValues: {
+      password: "",
+      confirmPassword: "",
+    },
     mode: "onBlur",
   });
 
-  useEffect(() => {
-    const url = new URL(window.location.href);
-    const callbackError = url.searchParams.get("auth_error");
-
-    if (!callbackError) {
-      return;
-    }
-
-    const message =
-      "That authentication link is invalid or has expired. Please try again.";
-
-    requestAnimationFrame(() => setAuthError(message));
-    toast.error(message);
-
-    url.searchParams.delete("auth_error");
-    window.history.replaceState(
-      {},
-      "",
-      `${url.pathname}${url.search}${url.hash}`,
-    );
-  }, []);
-
-  async function onSubmit(values: LoginValues) {
+  async function onSubmit(values: ResetPasswordValues) {
     setAuthError(null);
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
-      email: values.email,
+    const { error } = await supabase.auth.updateUser({
       password: values.password,
     });
 
     if (error) {
-      const message = error.message
-        .toLowerCase()
-        .includes("email not confirmed")
-        ? "Verify your email before signing in."
-        : "Check your email and password, then try again.";
+      const message =
+        error.message.toLowerCase().includes("session") ||
+        error.message.toLowerCase().includes("jwt")
+          ? "Your recovery link is invalid or has expired. Request a new one."
+          : "We could not update your password. Please try again.";
 
       setAuthError(message);
       toast.error(message);
       return;
     }
 
-    toast.success("Signed in to Open Ascent.");
-    router.replace(getSafeNextPath());
+    // Recovery establishes a temporary authenticated session. End it so the
+    // user explicitly signs in again using the new password.
+    await supabase.auth.signOut();
+
+    toast.success("Password updated. Sign in with your new password.");
+    router.replace("/login");
     router.refresh();
   }
 
@@ -95,27 +71,25 @@ export function LoginForm() {
         {authError ? (
           <Alert className="mb-1">
             <CircleAlert aria-hidden="true" />
-            <AlertTitle>Unable to sign in</AlertTitle>
+            <AlertTitle>Unable to reset password</AlertTitle>
             <AlertDescription>{authError}</AlertDescription>
           </Alert>
         ) : null}
 
         <Controller
           control={form.control}
-          name="email"
+          name="password"
           render={({ field, fieldState }) => (
             <Field data-invalid={fieldState.invalid}>
-              <FieldLabel htmlFor={field.name}>Email</FieldLabel>
-              <Input
+              <FieldLabel htmlFor={field.name}>New password</FieldLabel>
+              <PasswordInput
                 {...field}
                 id={field.name}
-                type="email"
-                autoComplete="email"
-                inputMode="email"
-                placeholder="you@example.com"
+                autoComplete="new-password"
                 className="h-12"
                 aria-invalid={fieldState.invalid}
               />
+              <FieldDescription>Use at least 8 characters.</FieldDescription>
               {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
             </Field>
           )}
@@ -123,22 +97,14 @@ export function LoginForm() {
 
         <Controller
           control={form.control}
-          name="password"
+          name="confirmPassword"
           render={({ field, fieldState }) => (
             <Field data-invalid={fieldState.invalid}>
-              <div className="flex items-center justify-between gap-4">
-                <FieldLabel htmlFor={field.name}>Password</FieldLabel>
-                <Link
-                  href="/forgot-password"
-                  className="text-xs font-medium text-primary transition-opacity hover:opacity-75"
-                >
-                  Forgot password?
-                </Link>
-              </div>
+              <FieldLabel htmlFor={field.name}>Confirm new password</FieldLabel>
               <PasswordInput
                 {...field}
                 id={field.name}
-                autoComplete="current-password"
+                autoComplete="new-password"
                 className="h-12"
                 aria-invalid={fieldState.invalid}
               />
@@ -157,11 +123,11 @@ export function LoginForm() {
           {form.formState.isSubmitting ? (
             <>
               <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none" />
-              Signing in…
+              Updating password…
             </>
           ) : (
             <>
-              Sign in <MoveRight className="size-4" />
+              Update password <MoveRight className="size-4" />
             </>
           )}
         </Button>
