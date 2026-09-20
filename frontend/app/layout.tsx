@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/shared/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { createOpenAscentMetadata } from "@/lib/metadata";
@@ -35,7 +36,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <TooltipProvider delay={100}>{children}</TooltipProvider>
           <Toaster richColors position="bottom-right" />
         </ThemeProvider>
       </body>
