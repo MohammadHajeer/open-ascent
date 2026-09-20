@@ -56,6 +56,8 @@
   --destructive: #b94040;
 
   --input: #d8cfc0;
+  --input-surface: var(--popover);
+  --input-focus-surface: color-mix(in srgb, var(--popover) 95%, var(--primary));
 
   /* ==================================================
      Charts
@@ -334,6 +336,11 @@
   ::selection {
     background: var(--primary);
     color: var(--primary-foreground);
+  }
+
+  [data-slot="input"]:-webkit-autofill {
+    -webkit-text-fill-color: var(--foreground);
+    caret-color: var(--foreground);
   }
 }
 
