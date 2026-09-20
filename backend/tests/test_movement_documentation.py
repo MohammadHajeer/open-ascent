@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Generator
 
 import pytest
 from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.core.supabase import supabase
 from app.models.movement import Movement
 from app.models.profile import Profile
 from app.schemas.movement_documentation import (
@@ -24,26 +22,12 @@ from app.services.movement_documentation import (
 )
 
 
-@pytest.fixture(scope="module")
-def auth_user_id() -> Generator[uuid.UUID, None, None]:
-    email = f"open-ascent-safety-{uuid.uuid4().hex}@example.com"
-
-    response = supabase.auth.admin.create_user(
-        {
-            "email": email,
-            "email_confirm": True,
-        }
-    )
-
-    if response.user is None:
-        raise RuntimeError("Failed to create temporary Supabase Auth test user.")
-
-    user_id = uuid.UUID(str(response.user.id))
-
-    try:
-        yield user_id
-    finally:
-        supabase.auth.admin.delete_user(str(user_id))
+@pytest.fixture
+def auth_user_id(db: Session) -> uuid.UUID:
+    # Fake Auth provisioning in the CI database; the profile FK stays real.
+    user_id = uuid.uuid4()
+    db.execute(text("INSERT INTO auth.users (id) VALUES (:id)"), {"id": user_id})
+    return user_id
 
 
 @pytest.fixture

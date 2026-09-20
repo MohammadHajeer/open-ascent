@@ -76,6 +76,8 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
+      - name: Generate Next.js route types
+        run: pnpm --dir frontend exec next typegen
       - name: TypeScript
         run: pnpm --dir frontend exec tsc --noEmit
       - name: ESLint

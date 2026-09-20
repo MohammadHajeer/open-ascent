@@ -6,6 +6,7 @@ EXPECTED_APPLICATION_TABLES = {
     "movements",
     "movement_documentation",
     "analyses",
+    "analysis_events",
     "workout_sessions",
     "workout_sets",
     "training_plans",
