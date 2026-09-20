@@ -271,7 +271,12 @@ def test_provider_receives_only_explicit_deterministic_facts(
 
     monkeypatch.setattr("app.services.analysis_explanation.OpenAI", FakeOpenAI)
     generated = generate_explanation(source)
-    assert generated.summary.evidence == ["outcome"]
+    assert generated.summary.evidence == [
+        "count:valid",
+        "count:partial",
+        "count:uncertain",
+        "count:total",
+    ]
     assert generated.safety_note is not None
     assert generated.safety_note.text == "Sharp pain"
     format_schema = captured["text_format"].model_json_schema()
@@ -282,8 +287,10 @@ def test_provider_receives_only_explicit_deterministic_facts(
             == expected_ids
         )
     assert format_schema["properties"]["finding_ids"]["maxItems"] == 3
+    assert format_schema["properties"]["finding_ids"]["minItems"] == 1
     assert "return ONLY choice IDs" in SELECTION_INSTRUCTIONS
     assert "not a detected variation" in SELECTION_INSTRUCTIONS
+    assert "meaningful partial or uncertain attempts" in SELECTION_INSTRUCTIONS
     assert '"allowed_evidence_ids"' in captured["input"][1]["content"]
     assert '"choices"' in captured["input"][1]["content"]
     assert "private_debug" not in captured["input"][1]["content"]
@@ -318,6 +325,159 @@ def test_backend_renders_only_catalog_text_and_rejects_duplicate_choices() -> No
         )
     with pytest.raises(ValueError, match="unsupported choice"):
         render_selection(selected | {"focus_id": "focus:invented"}, source)
+
+
+def test_clean_set_explanation_is_useful_without_invented_criticism() -> None:
+    result = make_result("completed")
+    result["reps"] = [result["reps"][0] | {"rep_index": index} for index in range(1, 5)]
+    result["valid_rep_count"] = 4
+    source = build_explanation_input(
+        result_data=result,
+        movement_name="Pull-up",
+        safety_data={"cautions": ["Use control"], "stop_conditions": ["Sharp pain"]},
+    )
+    assert [item["id"] for item in source["choices"]["findings"]] == [
+        "finding:consistent_completion"
+    ]
+    assert [item["id"] for item in source["choices"]["focus"]] == [
+        "focus:maintain_completion"
+    ]
+    explanation = render_selection(
+        {
+            "summary_id": "summary:outcome",
+            "finding_ids": ["finding:consistent_completion"],
+            "focus_id": "focus:maintain_completion",
+            "safety_id": "safety:none",
+        },
+        source,
+    )
+    assert "without partial or uncertain attempts" in explanation.summary.text
+    assert "consistent" in explanation.key_findings[0].text
+    assert (
+        "Maintain the same complete movement pattern" in explanation.next_set_focus.text
+    )
+    assert explanation.next_set_focus.evidence == [
+        "count:valid",
+        "count:partial",
+        "count:uncertain",
+        "count:total",
+    ]
+    assert not any(
+        term in str(source["choices"]).lower()
+        for term in ("pull-up movement", "starting hang", "review the published")
+    )
+
+
+def test_partial_rep_explanation_names_specific_grounded_cause_and_focus() -> None:
+    result = make_result("completed")
+    valid = result["reps"][0]
+    result["reps"] = [valid | {"rep_index": index} for index in range(1, 4)] + [
+        valid
+        | {
+            "rep_index": 4,
+            "outcome": "partial",
+            "reason_codes": ["did_not_reach_top"],
+        }
+    ]
+    result["valid_rep_count"] = 3
+    result["partial_rep_count"] = 1
+    source = build_explanation_input(
+        result_data=result, movement_name="Pull-up", safety_data={}
+    )
+    assert [item["id"] for item in source["choices"]["findings"]] == [
+        "finding:rep:4:outcome"
+    ]
+    explanation = render_selection(
+        {
+            "summary_id": "summary:outcome",
+            "finding_ids": ["finding:rep:4:outcome"],
+            "focus_id": "focus:partial:did_not_reach_top",
+            "safety_id": "safety:none",
+        },
+        source,
+    )
+    assert "partial attempts" in explanation.summary.text
+    assert "fourth attempt was partial" in explanation.key_findings[0].text
+    assert "before the required top position" in explanation.key_findings[0].text
+    assert explanation.key_findings[0].evidence == [
+        "rep:4:outcome",
+        "rep:4:reason:did_not_reach_top",
+    ]
+    assert "before lowering" in explanation.next_set_focus.text
+    assert explanation.next_set_focus.evidence == explanation.key_findings[0].evidence
+
+
+def test_uncertain_rep_explains_evidence_limit_without_bad_form_claim() -> None:
+    result = make_result("completed")
+    valid = result["reps"][0]
+    result["reps"].append(
+        valid
+        | {
+            "rep_index": 2,
+            "outcome": "uncertain",
+            "reason_codes": ["tracking_lost"],
+        }
+    )
+    result["uncertain_rep_count"] = 1
+    source = build_explanation_input(
+        result_data=result, movement_name="Pull-up", safety_data={}
+    )
+    explanation = render_selection(
+        {
+            "summary_id": "summary:outcome",
+            "finding_ids": ["finding:rep:2:outcome"],
+            "focus_id": "focus:uncertain:tracking_lost",
+            "safety_id": "safety:none",
+        },
+        source,
+    )
+    assert "uncertain attempts" in explanation.summary.text
+    assert "body tracking was interrupted" in explanation.key_findings[0].text
+    assert "bad form" not in str(explanation).lower()
+    assert explanation.key_findings[0].evidence == [
+        "rep:2:outcome",
+        "rep:2:reason:tracking_lost",
+    ]
+    assert explanation.next_set_focus.evidence == explanation.key_findings[0].evidence
+
+
+def test_no_unsupported_timing_or_positive_tracking_claim_is_offered() -> None:
+    result = make_result("completed")
+    result["reps"].append(result["reps"][0] | {"rep_index": 2})
+    result["valid_rep_count"] = 2
+    result["evidence"]["usable_pose_ratio"] = 0.95
+    source = build_explanation_input(
+        result_data=result, movement_name="Pull-up", safety_data={}
+    )
+    offered_text = " ".join(
+        option["text"] for category in source["choices"].values() for option in category
+    ).lower()
+    assert "timing" not in offered_text
+    assert "reliable throughout" not in offered_text
+    assert "strong tracking" not in offered_text
+    assert "hang" not in offered_text
+    assert "movement was a pull-up" not in offered_text
+
+
+def test_limited_evidence_quality_is_explained_only_from_reason_code() -> None:
+    result = make_result("insufficient_evidence")
+    source = build_explanation_input(
+        result_data=result, movement_name="Pull-up", safety_data={}
+    )
+    explanation = render_selection(
+        {
+            "summary_id": "summary:outcome",
+            "finding_ids": ["finding:evidence:low_usable_pose_ratio"],
+            "focus_id": "focus:evidence:low_usable_pose_ratio",
+            "safety_id": "safety:none",
+        },
+        source,
+    )
+    assert "limited body tracking" in explanation.key_findings[0].text
+    assert explanation.key_findings[0].evidence == [
+        "evidence:reason:low_usable_pose_ratio"
+    ]
+    assert explanation.next_set_focus.evidence == explanation.key_findings[0].evidence
 
 
 @pytest.mark.parametrize(
@@ -379,8 +539,14 @@ def test_real_response_evidence_overflow_is_rejected_and_logged(
     assert overflow_id in caplog.text
     selected = response_format_for(source).model_validate(selection_candidate(source))
     rendered = render_selection(selected, source)
-    assert rendered.summary.evidence == ["outcome"]
-    assert len(rendered.key_findings[0].evidence) == 1
+    assert rendered.summary.evidence == [
+        "count:valid",
+        "count:partial",
+        "count:uncertain",
+        "count:total",
+    ]
+    assert 1 <= len(rendered.key_findings[0].evidence) <= 4
+    assert set(rendered.key_findings[0].evidence) <= set(source["allowed_evidence_ids"])
     assert rendered.safety_note is not None
     assert rendered.safety_note.evidence == ["safety:stop:1"]
 
