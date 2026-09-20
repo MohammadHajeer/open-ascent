@@ -68,6 +68,19 @@ and `uv run python -m scripts.seed_movements` when setting up an environment.
 The worker reads private videos and uses the MediaPipe task files in
 `backend/models`.
 
+## Auth Hook Setup
+
+From `backend`, run `uv run alembic upgrade head`. Then, in the Supabase
+Dashboard, open **Authentication → Hooks (Auth Hooks) → Custom Access Token**.
+Choose **Postgres Function**, select `public.open_ascent_access_token_hook`, and
+enable the hook. New access tokens include `onboarding_complete: boolean`,
+sourced from `profiles.onboarding_completed_at`.
+
+When onboarding later sets `onboarding_completed_at`, the frontend must call
+`await supabase.auth.refreshSession()` before navigating to `/dashboard`. The
+refresh issues a token with the updated claim. FastAPI continues to enforce
+authorization for protected API actions.
+
 ## Quality Checks
 
 ```bash
