@@ -9,7 +9,7 @@ export function createOpenAscentMetadata(siteUrl: string | URL): Metadata {
   }
 
   const title = "Open Ascent";
-  const description = "AI Calisthenics Coach. Train with clarity.";
+  const description = "Open Ascent. Train with clarity.";
   const og = assets.social.openGraph;
 
   return {

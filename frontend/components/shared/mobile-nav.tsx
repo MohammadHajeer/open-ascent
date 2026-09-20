@@ -72,7 +72,7 @@ export function MobileNav({
       <SheetContent className="p-6 pt-8">
         <SheetHeader className="border-b border-border pb-6 pr-12">
           <SheetTitle className="text-left text-base">
-            AI Calisthenics
+            Open Ascent
           </SheetTitle>
 
           <SheetDescription className="text-left font-mono text-[0.62rem] tracking-widest uppercase">
