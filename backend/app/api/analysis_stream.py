@@ -20,16 +20,17 @@ from app.models.analysis import Analysis
 from app.models.analysis_event import AnalysisEvent
 
 router = APIRouter(prefix="/analyses", tags=["Analysis"])
-TERMINAL_STATUSES = frozenset({"completed", "failed", "expired"})
+TERMINAL_STATUSES = frozenset({"failed", "expired"})
+TERMINAL_EXPLANATION_STATUSES = frozenset({"completed", "failed", "skipped"})
 
 
 def read_progress(
     analysis_id: uuid.UUID, cursor: int
-) -> tuple[list[AnalysisEvent], str, str, datetime | None]:
+) -> tuple[list[AnalysisEvent], str, str, str, datetime | None]:
     with SessionLocal() as db:
         analysis = db.get(Analysis, analysis_id)
         if analysis is None:
-            return [], "expired", "expired", None
+            return [], "expired", "expired", "skipped", None
         events = list(
             db.scalars(
                 select(AnalysisEvent)
@@ -41,15 +42,25 @@ def read_progress(
                 .limit(100)
             )
         )
-        return events, analysis.status, analysis.stage, analysis.access_expires_at
+        return (
+            events,
+            analysis.status,
+            analysis.stage,
+            analysis.ai_feedback_status,
+            analysis.access_expires_at,
+        )
 
 
 async def stream_progress(request: Request, analysis_id: uuid.UUID, cursor: int):
     sent_state = False
     while not await request.is_disconnected():
-        events, status, stage, access_expires_at = await asyncio.to_thread(
-            read_progress, analysis_id, cursor
-        )
+        (
+            events,
+            status,
+            stage,
+            explanation_status,
+            access_expires_at,
+        ) = await asyncio.to_thread(read_progress, analysis_id, cursor)
         if access_expires_at is not None and access_expires_at <= datetime.now(UTC):
             return
         for item in events:
@@ -69,11 +80,21 @@ async def stream_progress(request: Request, analysis_id: uuid.UUID, cursor: int)
         if not sent_state:
             yield {
                 "event": "state",
-                "data": json.dumps({"status": status, "stage": stage}, separators=(",", ":")),
+                "data": json.dumps(
+                    {
+                        "status": status,
+                        "stage": stage,
+                        "explanation_status": explanation_status,
+                    },
+                    separators=(",", ":"),
+                ),
             }
             sent_state = True
 
-        if status in TERMINAL_STATUSES:
+        if status in TERMINAL_STATUSES or (
+            status == "completed"
+            and explanation_status in TERMINAL_EXPLANATION_STATUSES
+        ):
             return
         await asyncio.sleep(1)
 
@@ -82,9 +103,7 @@ async def stream_progress(request: Request, analysis_id: uuid.UUID, cursor: int)
 def get_guest_analysis_events(
     analysis_id: uuid.UUID,
     request: Request,
-    credentials: Annotated[
-        HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
-    ],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
     last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
 ) -> EventSourceResponse:
     # Authenticate before opening the stream. Its database session closes here;
@@ -94,15 +113,21 @@ def get_guest_analysis_events(
         try:
             cursor = int(last_event_id) if last_event_id else 0
         except ValueError as exc:
-            raise HTTPException(status_code=400, detail="Invalid event cursor.") from exc
+            raise HTTPException(
+                status_code=400, detail="Invalid event cursor."
+            ) from exc
         if cursor < 0:
             raise HTTPException(status_code=400, detail="Invalid event cursor.")
-        if cursor and db.scalar(
-            select(AnalysisEvent.id).where(
-                AnalysisEvent.analysis_id == analysis_id,
-                AnalysisEvent.id == cursor,
+        if (
+            cursor
+            and db.scalar(
+                select(AnalysisEvent.id).where(
+                    AnalysisEvent.analysis_id == analysis_id,
+                    AnalysisEvent.id == cursor,
+                )
             )
-        ) is None:
+            is None
+        ):
             cursor = 0
 
     return EventSourceResponse(

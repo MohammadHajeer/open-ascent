@@ -20,6 +20,9 @@ PRODUCT_EVENTS = frozenset(
         "finalizing",
         "completed",
         "failed",
+        "explanation_started",
+        "explanation_ready",
+        "explanation_failed",
     }
 )
 INTERMEDIATE_EVENTS = frozenset(
@@ -42,9 +45,11 @@ def record_analysis_event(
     payload: dict[str, str | int] = {"attempt": attempt}
     event_key = f"{attempt}:{event_type}"
     if event_type == "rep_completed":
-        if rep_index is None or rep_index < 1 or outcome not in {
-            "valid", "partial", "uncertain"
-        }:
+        if (
+            rep_index is None
+            or rep_index < 1
+            or outcome not in {"valid", "partial", "uncertain"}
+        ):
             raise ValueError("Invalid completed rep progress.")
         payload.update(rep_index=rep_index, outcome=outcome)
         event_key += f":{rep_index}"
@@ -77,7 +82,11 @@ def publish_claim_event(
 
     # The conditional update locks the analysis row. The event and stage then
     # commit together, and an expired/reclaimed worker cannot publish progress.
-    values = {"stage": event_type} if event_type != "rep_completed" else {"stage": Analysis.stage}
+    values = (
+        {"stage": event_type}
+        if event_type != "rep_completed"
+        else {"stage": Analysis.stage}
+    )
     result = db.execute(
         update(Analysis)
         .where(

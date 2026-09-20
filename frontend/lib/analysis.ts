@@ -78,12 +78,24 @@ export type DeterministicResult = {
   };
 };
 
+export type ExplanationStatus = "pending" | "running" | "completed" | "failed" | "skipped";
+export type GroundedText = { text: string; evidence: string[] };
+export type AnalysisExplanation = {
+  summary: GroundedText;
+  key_findings: GroundedText[];
+  next_set_focus: GroundedText;
+  safety_note: GroundedText | null;
+};
+
 export type GuestResult = {
   analysis_id: string;
   status: AnalysisStatus;
   stage: string;
   movement: { id: string; slug: string; name: string; safety: Safety };
   result: DeterministicResult | null;
+  explanation_status: ExplanationStatus;
+  explanation: AnalysisExplanation | null;
+  explanation_retry_available: boolean;
 };
 
 function authorization(credential: string): HeadersInit {
@@ -163,3 +175,9 @@ export const getGuestResult = (access: GuestAccess) =>
     headers: authorization(access.credential),
     cache: "no-store",
   });
+
+export const retryGuestExplanation = (access: GuestAccess) =>
+  apiFetch<{ explanation_status: "pending" | "running" }>(
+    `/analyses/${access.analysis_id}/explanation/retry`,
+    { method: "POST", headers: authorization(access.credential) },
+  );

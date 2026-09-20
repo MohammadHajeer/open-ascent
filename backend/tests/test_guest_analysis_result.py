@@ -2,18 +2,37 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.api import analysis_stream
 from app.core.config import settings
 from app.core.guest_credentials import hash_guest_token
 from app.models.analysis import Analysis
+from app.models.analysis_event import AnalysisEvent
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
+from app.services.analysis_explanation import (
+    SELECTION_INSTRUCTIONS,
+    build_explanation_input,
+    generate_explanation,
+    render_selection,
+    response_format_for,
+    validate_explanation,
+)
+from app.services.explanation_jobs import (
+    MAX_EXPLANATION_ATTEMPTS,
+    ExplanationClaimLostError,
+    claim_next_explanation,
+    complete_explanation,
+    fail_explanation,
+)
+from app.workers import explanation_worker
 
 
 @pytest.fixture
@@ -192,3 +211,529 @@ def test_failed_analysis_has_no_result_or_internal_error(
     assert response.json()["status"] == "failed"
     assert response.json()["result"] is None
     assert "processing_error" not in response.text
+
+
+def grounded_candidate() -> dict:
+    return {
+        "summary": {
+            "text": "The analyzer confirmed a completed attempt.",
+            "evidence": ["rep:1:outcome"],
+        },
+        "key_findings": [],
+        "next_set_focus": {
+            "text": "Keep the same controlled setup.",
+            "evidence": ["safety:caution:1"],
+        },
+        "safety_note": {"text": "Sharp pain", "evidence": ["safety:stop:1"]},
+    }
+
+
+def explanation_source() -> dict:
+    return build_explanation_input(
+        result_data=make_result("completed"),
+        movement_name="Pull-up",
+        safety_data={"cautions": ["Use control"], "stop_conditions": ["Sharp pain"]},
+    )
+
+
+def selection_candidate(source: dict) -> dict:
+    return {
+        "summary_id": source["choices"]["summary"][0]["id"],
+        "finding_ids": [source["choices"]["findings"][0]["id"]],
+        "focus_id": source["choices"]["focus"][0]["id"],
+        "safety_id": source["choices"]["safety"][0]["id"],
+    }
+
+
+def test_provider_receives_only_explicit_deterministic_facts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = explanation_source()
+    assert source["counts"]["valid"] == 1
+    assert any(fact["id"] == "rep:1:outcome" for fact in source["facts"])
+    assert "private_debug" not in str(source)
+    assert "internal_only" not in str(source)
+    assert "landmarks" not in str(source)
+    assert "private/source.mp4" not in str(source)
+
+    captured = {}
+
+    class FakeResponses:
+        def parse(self, **kwargs):
+            captured.update(kwargs)
+            parsed = kwargs["text_format"].model_validate(selection_candidate(source))
+            return type("Response", (), {"output_parsed": parsed})()
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            assert "api_key" in kwargs
+            self.responses = FakeResponses()
+
+    monkeypatch.setattr("app.services.analysis_explanation.OpenAI", FakeOpenAI)
+    generated = generate_explanation(source)
+    assert generated.summary.evidence == ["outcome"]
+    assert generated.safety_note is not None
+    assert generated.safety_note.text == "Sharp pain"
+    format_schema = captured["text_format"].model_json_schema()
+    for category in ("summary", "findings", "focus", "safety"):
+        expected_ids = [choice["id"] for choice in source["choices"][category]]
+        assert (
+            format_schema["$defs"][f"{category.capitalize()}ChoiceId"]["enum"]
+            == expected_ids
+        )
+    assert format_schema["properties"]["finding_ids"]["maxItems"] == 3
+    assert "return ONLY choice IDs" in SELECTION_INSTRUCTIONS
+    assert "not a detected variation" in SELECTION_INSTRUCTIONS
+    assert '"allowed_evidence_ids"' in captured["input"][1]["content"]
+    assert '"choices"' in captured["input"][1]["content"]
+    assert "private_debug" not in captured["input"][1]["content"]
+    assert "landmarks" not in captured["input"][1]["content"]
+
+
+def test_structured_schema_rejects_ids_not_in_exact_input() -> None:
+    source = explanation_source()
+    response_format = response_format_for(source)
+    with pytest.raises(ValueError):
+        response_format.model_validate(
+            selection_candidate(source) | {"finding_ids": ["finding:invented"]}
+        )
+    with pytest.raises(ValueError):
+        response_format.model_validate(
+            selection_candidate(source)
+            | {"finding_ids": [source["choices"]["findings"][0]["id"]] * 4}
+        )
+    with pytest.raises(ValueError, match="do not match supplied facts"):
+        response_format_for(source | {"allowed_evidence_ids": ["outcome"]})
+
+
+def test_backend_renders_only_catalog_text_and_rejects_duplicate_choices() -> None:
+    source = explanation_source()
+    selected = selection_candidate(source)
+    rendered = render_selection(selected, source)
+    assert rendered.summary.text == source["choices"]["summary"][0]["text"]
+    assert rendered.key_findings[0].text == source["choices"]["findings"][0]["text"]
+    with pytest.raises(ValueError, match="duplicate findings"):
+        render_selection(
+            selected | {"finding_ids": selected["finding_ids"] * 2}, source
+        )
+    with pytest.raises(ValueError, match="unsupported choice"):
+        render_selection(selected | {"focus_id": "focus:invented"}, source)
+
+
+@pytest.mark.parametrize(
+    ("section", "overflow_id"),
+    [
+        ("summary", "count:total"),
+        ("key_findings[0]", "rep:3:movement"),
+    ],
+)
+def test_real_response_evidence_overflow_is_rejected_and_logged(
+    caplog: pytest.LogCaptureFixture, section: str, overflow_id: str
+) -> None:
+    # The live reproduction supplied five summary references and eight
+    # per-rep references. Every ID existed; the per-section cap still applies.
+    summary_ids = [
+        "outcome",
+        "count:valid",
+        "count:partial",
+        "count:uncertain",
+        "count:total",
+    ]
+    finding_ids = [
+        f"rep:{index}:{kind}" for index in range(1, 5) for kind in ("movement", "grip")
+    ]
+    result_data = make_result("completed")
+    result_data["reps"] = [
+        result_data["reps"][0] | {"rep_index": index} for index in range(1, 5)
+    ]
+    result_data["valid_rep_count"] = 4
+    source = build_explanation_input(
+        result_data=result_data,
+        movement_name="Close-Grip Pull-Up",
+        safety_data={
+            "notice": "Use controlled technique.",
+            "prerequisites": ["Secure bar", "Stable hang", "Controlled setup"],
+            "cautions": ["Avoid swinging", "Use control", "Lower steadily"],
+            "stop_conditions": ["Sharp pain", "Grip loss", "Loss of control"],
+            "easier_option": "Use assistance.",
+        },
+    )
+    assert set(summary_ids + finding_ids) <= set(source["allowed_evidence_ids"])
+    candidate = {
+        "summary": {
+            "text": "The set was analyzed.",
+            "evidence": summary_ids if section == "summary" else ["outcome"],
+        },
+        "key_findings": [
+            {
+                "text": "Movement and grip were recorded.",
+                "evidence": finding_ids if section != "summary" else ["rep:1:movement"],
+            }
+        ],
+        "next_set_focus": {"text": "Keep a controlled setup.", "evidence": ["outcome"]},
+        "safety_note": None,
+    }
+    with pytest.raises(ValueError, match="Explanation evidence is out of bounds"):
+        validate_explanation(candidate, source)
+    assert f"section={section}" in caplog.text
+    assert overflow_id in caplog.text
+    selected = response_format_for(source).model_validate(selection_candidate(source))
+    rendered = render_selection(selected, source)
+    assert rendered.summary.evidence == ["outcome"]
+    assert len(rendered.key_findings[0].evidence) == 1
+    assert rendered.safety_note is not None
+    assert rendered.safety_note.evidence == ["safety:stop:1"]
+
+
+def test_duplicate_evidence_id_is_rejected_and_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    candidate = grounded_candidate()
+    candidate["summary"]["evidence"] = ["rep:1:outcome", "rep:1:outcome"]
+    with pytest.raises(ValueError, match="Explanation evidence is out of bounds"):
+        validate_explanation(candidate, explanation_source())
+    assert "duplicate_ids=['rep:1:outcome']" in caplog.text
+
+
+def test_selected_exercise_name_is_grounded_without_detected_variation() -> None:
+    source = build_explanation_input(
+        result_data=make_result("completed"),
+        movement_name="Close-Grip Pull-Up",
+        safety_data={"cautions": ["Use control"], "stop_conditions": ["Sharp pain"]},
+    )
+    candidate = grounded_candidate()
+    candidate["summary"] = {
+        "text": "Your selected Close-Grip Pull-Up was analyzed.",
+        "evidence": ["movement:requested", "outcome"],
+    }
+    explanation = validate_explanation(candidate, source)
+    assert explanation.summary.evidence == ["movement:requested", "outcome"]
+    candidate["summary"]["text"] = "The Close-Grip Pull-Up set was analyzed."
+    assert validate_explanation(candidate, source).summary.evidence == [
+        "movement:requested",
+        "outcome",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("text", "evidence"),
+    [
+        ("The analyzer detected a Close-Grip Pull-Up.", ["movement:requested"]),
+        ("Your selected Wide-Grip Pull-Up was analyzed.", ["movement:requested"]),
+        ("Your selected Close-Grip Pull-Up was analyzed.", ["outcome"]),
+    ],
+)
+def test_variation_claim_without_selected_exercise_grounding_is_rejected(
+    caplog: pytest.LogCaptureFixture, text: str, evidence: list[str]
+) -> None:
+    source = build_explanation_input(
+        result_data=make_result("completed"),
+        movement_name="Close-Grip Pull-Up",
+        safety_data={"cautions": ["Use control"], "stop_conditions": ["Sharp pain"]},
+    )
+    candidate = grounded_candidate()
+    candidate["summary"] = {"text": text, "evidence": evidence}
+    with pytest.raises(ValueError, match="unsupported claim"):
+        validate_explanation(candidate, source)
+    assert "Rejected explanation variation claim: section=summary" in caplog.text
+
+
+def test_rejected_claim_logs_term_section_and_evidence_ids(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    candidate = grounded_candidate()
+    candidate["next_set_focus"] = {
+        "text": "Keep the next set pain-free.",
+        "evidence": ["safety:caution:1"],
+    }
+    with pytest.raises(ValueError, match="unsupported claim"):
+        validate_explanation(candidate, explanation_source())
+    assert "section=next_set_focus" in caplog.text
+    assert "term='pain'" in caplog.text
+    assert "evidence_ids=['safety:caution:1']" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {
+            "summary": {
+                "text": "An extra rep was valid.",
+                "evidence": ["rep:99:outcome"],
+            }
+        },
+        {"summary": {"text": "The score was 90.", "evidence": ["rep:1:outcome"]}},
+        {
+            "next_set_focus": {
+                "text": "Ignore pain and continue.",
+                "evidence": ["safety:caution:1"],
+            }
+        },
+        {"summary": {"text": "All reps were valid.", "evidence": ["rep:1:outcome"]}},
+        {"key_findings": [{"text": "Good.", "evidence": ["rep:1:outcome"]}] * 4},
+        {"safety_note": {"text": "Ignore pain.", "evidence": ["safety:stop:1"]}},
+        {"extra": "unsupported"},
+    ],
+)
+def test_ungrounded_or_unbounded_output_is_rejected(change: dict) -> None:
+    candidate = grounded_candidate() | change
+    with pytest.raises(ValueError):
+        validate_explanation(candidate, explanation_source())
+
+
+def test_explanation_worker_persists_separately_and_reconnects_without_regeneration(
+    client: TestClient,
+    db: Session,
+    guest_result_analysis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    analysis, credential = guest_result_analysis
+
+    @contextmanager
+    def same_session():
+        yield db
+
+    monkeypatch.setattr(explanation_worker, "SessionLocal", same_session)
+    monkeypatch.setattr(analysis_stream, "SessionLocal", same_session)
+    calls = []
+
+    def fake_generate(source):
+        calls.append(source)
+        return validate_explanation(grounded_candidate(), source)
+
+    monkeypatch.setattr(explanation_worker, "generate_explanation", fake_generate)
+    assert explanation_worker.process_one_explanation() is True
+    assert explanation_worker.process_one_explanation() is False
+    db.refresh(analysis)
+    assert analysis.status == "completed"
+    assert analysis.result["valid_rep_count"] == 1
+    assert analysis.ai_feedback_status == "completed"
+    assert analysis.ai_feedback_attempts == 1
+    assert len(calls) == 1
+    response = client.get(
+        result_url(analysis), headers={"Authorization": f"Bearer {credential}"}
+    )
+    assert response.status_code == 200
+    assert (
+        response.json()["explanation"]["summary"]["text"]
+        == grounded_candidate()["summary"]["text"]
+    )
+    assert response.json()["result"]["valid_rep_count"] == 1
+    events = list(
+        db.scalars(
+            select(AnalysisEvent)
+            .where(AnalysisEvent.analysis_id == analysis.id)
+            .order_by(AnalysisEvent.id)
+        )
+    )
+    assert [event.event_type for event in events] == [
+        "explanation_started",
+        "explanation_ready",
+    ]
+    replay = client.get(
+        f"/analyses/{analysis.id}/events",
+        headers={
+            "Authorization": f"Bearer {credential}",
+            "Last-Event-ID": str(events[0].id),
+        },
+    )
+    assert "event: explanation_ready" in replay.text
+    assert "event: explanation_started" not in replay.text
+    assert grounded_candidate()["summary"]["text"] not in replay.text
+    assert (
+        db.scalar(
+            select(func.count())
+            .select_from(AnalysisEvent)
+            .where(AnalysisEvent.analysis_id == analysis.id)
+        )
+        == 2
+    )
+
+
+@pytest.mark.parametrize(
+    "provider_error", [TimeoutError("timeout"), ValueError("ungrounded output")]
+)
+def test_explanation_failure_preserves_deterministic_result(
+    client: TestClient,
+    db: Session,
+    guest_result_analysis,
+    monkeypatch: pytest.MonkeyPatch,
+    provider_error: Exception,
+) -> None:
+    analysis, credential = guest_result_analysis
+
+    @contextmanager
+    def same_session():
+        yield db
+
+    monkeypatch.setattr(explanation_worker, "SessionLocal", same_session)
+    monkeypatch.setattr(analysis_stream, "SessionLocal", same_session)
+
+    def fail_provider(_source):
+        raise provider_error
+
+    monkeypatch.setattr(explanation_worker, "generate_explanation", fail_provider)
+    assert explanation_worker.process_one_explanation() is True
+    db.refresh(analysis)
+    assert analysis.status == "completed"
+    assert analysis.ai_feedback_status == "failed"
+    body = client.get(
+        result_url(analysis), headers={"Authorization": f"Bearer {credential}"}
+    ).json()
+    assert body["result"]["valid_rep_count"] == 1
+    assert body["movement"]["safety"]["stop_conditions"] == ["Sharp pain"]
+    assert body["explanation_status"] == "failed"
+    assert body["explanation"] is None
+    assert body["explanation_retry_available"] is True
+    stream = client.get(
+        f"/analyses/{analysis.id}/events",
+        headers={"Authorization": f"Bearer {credential}"},
+    )
+    assert "event: explanation_started" in stream.text
+    assert "event: explanation_failed" in stream.text
+    assert str(provider_error) not in stream.text
+
+
+def test_guest_retry_only_requeues_explanation_and_reuses_events(
+    client: TestClient, db: Session, guest_result_analysis
+) -> None:
+    analysis, credential = guest_result_analysis
+    original_result = analysis.result.copy()
+    original_video_path = analysis.video_path
+    first = claim_next_explanation(db)
+    assert first is not None
+    fail_explanation(db, first)
+
+    endpoint = f"/analyses/{analysis.id}/explanation/retry"
+    assert client.post(endpoint).status_code == 401
+    assert (
+        client.post(endpoint, headers={"Authorization": "Bearer wrong"}).status_code
+        == 401
+    )
+    headers = {"Authorization": f"Bearer {credential}"}
+    retried = client.post(endpoint, headers=headers)
+    assert retried.status_code == 200
+    assert retried.json() == {"explanation_status": "pending"}
+    duplicate = client.post(endpoint, headers=headers)
+    assert duplicate.status_code == 200
+    assert duplicate.json() == retried.json()
+    db.refresh(analysis)
+    assert analysis.ai_feedback_attempts == 1
+    assert analysis.status == "completed"
+    assert analysis.stage == "completed"
+    assert analysis.result == original_result
+    assert analysis.video_path == original_video_path
+    assert analysis.ai_explanation is None
+
+    second = claim_next_explanation(db)
+    assert second is not None and second.attempt == 2
+    assert client.post(endpoint, headers=headers).json() == {
+        "explanation_status": "running"
+    }
+    complete_explanation(db, second, grounded_candidate())
+    result = client.get(result_url(analysis), headers=headers).json()
+    assert result["explanation_status"] == "completed"
+    assert result["explanation_retry_available"] is False
+    assert result["result"] is not None
+    assert (
+        result["explanation"]["summary"]["text"]
+        == grounded_candidate()["summary"]["text"]
+    )
+    assert client.post(endpoint, headers=headers).status_code == 409
+    events = list(
+        db.scalars(
+            select(AnalysisEvent)
+            .where(AnalysisEvent.analysis_id == analysis.id)
+            .order_by(AnalysisEvent.id)
+        )
+    )
+    assert [(event.attempt, event.event_type) for event in events] == [
+        (1, "explanation_started"),
+        (1, "explanation_failed"),
+        (2, "explanation_started"),
+        (2, "explanation_ready"),
+    ]
+
+
+def test_explanation_retry_limit_and_refresh_never_queue_work(
+    client: TestClient, db: Session, guest_result_analysis
+) -> None:
+    analysis, credential = guest_result_analysis
+    headers = {"Authorization": f"Bearer {credential}"}
+    endpoint = f"/analyses/{analysis.id}/explanation/retry"
+    for attempt in range(1, MAX_EXPLANATION_ATTEMPTS + 1):
+        claim = claim_next_explanation(db)
+        assert claim is not None and claim.attempt == attempt
+        fail_explanation(db, claim)
+        for _ in range(2):
+            result = client.get(result_url(analysis), headers=headers).json()
+            assert result["result"]["valid_rep_count"] == 1
+            assert result["explanation_status"] == "failed"
+            assert result["explanation_retry_available"] is (
+                attempt < MAX_EXPLANATION_ATTEMPTS
+            )
+        if attempt < MAX_EXPLANATION_ATTEMPTS:
+            assert client.post(endpoint, headers=headers).status_code == 200
+    assert client.post(endpoint, headers=headers).status_code == 409
+    db.refresh(analysis)
+    assert analysis.ai_feedback_attempts == MAX_EXPLANATION_ATTEMPTS
+    assert claim_next_explanation(db) is None
+
+
+def test_expired_final_explanation_claim_becomes_retryable_unavailable(
+    client: TestClient, db: Session, guest_result_analysis
+) -> None:
+    analysis, credential = guest_result_analysis
+    endpoint = f"/analyses/{analysis.id}/explanation/retry"
+    headers = {"Authorization": f"Bearer {credential}"}
+    for attempt in range(1, MAX_EXPLANATION_ATTEMPTS + 1):
+        claim = claim_next_explanation(db)
+        assert claim is not None and claim.attempt == attempt
+        if attempt < MAX_EXPLANATION_ATTEMPTS:
+            analysis.ai_feedback_lease_expires_at = datetime.now(UTC) - timedelta(
+                minutes=1
+            )
+            db.commit()
+    analysis.ai_feedback_lease_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    db.commit()
+    assert claim_next_explanation(db) is None
+    db.refresh(analysis)
+    assert analysis.status == "completed"
+    assert analysis.ai_feedback_status == "failed"
+    assert analysis.ai_feedback_attempts == MAX_EXPLANATION_ATTEMPTS
+    assert (
+        client.get(result_url(analysis), headers=headers).json()[
+            "explanation_retry_available"
+        ]
+        is False
+    )
+    assert client.post(endpoint, headers=headers).status_code == 409
+    events = list(
+        db.scalars(
+            select(AnalysisEvent)
+            .where(AnalysisEvent.analysis_id == analysis.id)
+            .order_by(AnalysisEvent.id)
+        )
+    )
+    assert [(event.attempt, event.event_type) for event in events][-2:] == [
+        (MAX_EXPLANATION_ATTEMPTS, "explanation_started"),
+        (MAX_EXPLANATION_ATTEMPTS, "explanation_failed"),
+    ]
+
+
+def test_expired_explanation_claim_cannot_overwrite_newer_attempt(
+    db: Session, guest_result_analysis
+) -> None:
+    analysis, _ = guest_result_analysis
+    old = claim_next_explanation(db)
+    assert old is not None and old.analysis_id == analysis.id
+    analysis.ai_feedback_lease_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    db.commit()
+    new = claim_next_explanation(db)
+    assert new is not None and new.attempt == 2
+    with pytest.raises(ExplanationClaimLostError):
+        complete_explanation(db, old, grounded_candidate())
+    complete_explanation(db, new, grounded_candidate())
+    db.refresh(analysis)
+    assert analysis.ai_feedback_status == "completed"
+    assert analysis.ai_feedback_attempts == 2

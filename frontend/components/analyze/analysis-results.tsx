@@ -9,6 +9,8 @@ import {
   strongestFindings,
 } from "@/lib/analysis-findings";
 import type { GuestResult, Rep } from "@/lib/analysis";
+import type { GuestAccess } from "@/lib/analysis";
+import { AnalysisExplanationPanel } from "./analysis-explanation";
 import { SafetyGuidance } from "./safety-guidance";
 
 function seconds(ms: number) {
@@ -105,10 +107,12 @@ function RepAnalysis({ reps }: { reps: Rep[] }) {
 
 export function AnalysisResults({
   analysis,
+  access,
   videoUrl,
   onRestart,
 }: {
   analysis: GuestResult;
+  access: GuestAccess | null;
   videoUrl: string | null;
   onRestart: () => void;
 }) {
@@ -298,6 +302,7 @@ export function AnalysisResults({
         safety={analysis.movement.safety}
         movementName={analysis.movement.name}
       />
+      <AnalysisExplanationPanel initial={analysis} access={access} />
       <div className="mt-8 flex justify-end">
         <Button variant="outline" size="lg" onClick={onRestart}>
           <RotateCcw className="size-4" /> Analyze another video

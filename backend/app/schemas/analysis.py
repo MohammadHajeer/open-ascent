@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.analysis_explanation import AnalysisExplanation
 from app.schemas.movement_safety import MovementSafetyContentDraft
 
 
@@ -100,3 +101,10 @@ class GuestAnalysisResultResponse(BaseModel):
     stage: str
     movement: GuestAnalysisMovementRead
     result: DeterministicAnalysisRead | None = None
+    explanation_status: Literal["pending", "running", "completed", "failed", "skipped"]
+    explanation: AnalysisExplanation | None = None
+    explanation_retry_available: bool = False
+
+
+class GuestExplanationRetryResponse(BaseModel):
+    explanation_status: Literal["pending", "running"]

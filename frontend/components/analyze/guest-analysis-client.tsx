@@ -268,6 +268,7 @@ export function GuestAnalysisClient({
         if (["completed", "failed", "expired"].includes(event.status)) await finish(event.status);
         return;
       }
+      if (event.type.startsWith("explanation_")) return;
       if (event.attempt < currentAttempt.current) return;
       if (event.attempt > currentAttempt.current) {
         currentAttempt.current = event.attempt;
@@ -503,7 +504,7 @@ export function GuestAnalysisClient({
           </section>
         )}
 
-        {step === "results" && result?.result && <AnalysisResults analysis={result} videoUrl={videoUrl} onRestart={restart} />}
+        {step === "results" && result?.result && <AnalysisResults analysis={result} access={access} videoUrl={videoUrl} onRestart={restart} />}
       </div>
     </>
   );

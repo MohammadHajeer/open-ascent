@@ -1,6 +1,6 @@
 import { ApiError, apiUrl } from "./api";
 import { SseParser, type SseMessage } from "./sse-parser";
-import type { AnalysisStatus, GuestAccess, RepOutcome } from "./analysis";
+import type { AnalysisStatus, ExplanationStatus, GuestAccess, RepOutcome } from "./analysis";
 
 type StageEvent = {
   id: number;
@@ -20,8 +20,14 @@ type StateEvent = {
   type: "state";
   status: AnalysisStatus;
   stage: string;
+  explanation_status: ExplanationStatus;
 };
-export type AnalysisProgressEvent = StageEvent | RepEvent | StateEvent;
+type ExplanationEvent = {
+  id: number;
+  type: "explanation_started" | "explanation_ready" | "explanation_failed";
+  attempt: number;
+};
+export type AnalysisProgressEvent = StageEvent | RepEvent | StateEvent | ExplanationEvent;
 
 const stageTypes = new Set([
   "analysis_queued", "processing_started", "video_loaded",
@@ -31,6 +37,8 @@ const statuses = new Set([
   "reserved", "queued", "running", "completed", "failed", "expired",
 ]);
 const outcomes = new Set(["valid", "partial", "uncertain"]);
+const explanationTypes = new Set(["explanation_started", "explanation_ready", "explanation_failed"]);
+const explanationStatuses = new Set(["pending", "running", "completed", "failed", "skipped"]);
 
 export function decodeAnalysisProgress(message: SseMessage): AnalysisProgressEvent | null {
   const value: unknown = JSON.parse(message.data);
@@ -38,8 +46,10 @@ export function decodeAnalysisProgress(message: SseMessage): AnalysisProgressEve
   const data = value as Record<string, unknown>;
   if (message.event === "state") {
     if (typeof data.status !== "string" || !statuses.has(data.status) ||
-        typeof data.stage !== "string") return null;
-    return { id: null, type: "state", status: data.status as AnalysisStatus, stage: data.stage };
+        typeof data.stage !== "string" || typeof data.explanation_status !== "string" ||
+        !explanationStatuses.has(data.explanation_status)) return null;
+    return { id: null, type: "state", status: data.status as AnalysisStatus, stage: data.stage,
+      explanation_status: data.explanation_status as ExplanationStatus };
   }
   const id = Number(message.id);
   if (!message.id || !Number.isSafeInteger(id) || id < 1 ||
@@ -52,6 +62,9 @@ export function decodeAnalysisProgress(message: SseMessage): AnalysisProgressEve
   }
   if (stageTypes.has(message.event)) {
     return { id, type: message.event as StageEvent["type"], attempt: data.attempt };
+  }
+  if (explanationTypes.has(message.event)) {
+    return { id, type: message.event as ExplanationEvent["type"], attempt: data.attempt };
   }
   return null;
 }

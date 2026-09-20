@@ -35,6 +35,14 @@ class Analysis(TimestampMixin, Base):
         ),
         CheckConstraint("attempts >= 0", name="ck_analyses_attempts"),
         CheckConstraint(
+            "ai_feedback_attempts >= 0", name="ck_analyses_ai_feedback_attempts"
+        ),
+        CheckConstraint(
+            "ai_feedback_status <> 'running' OR "
+            "(ai_feedback_claim_token IS NOT NULL AND ai_feedback_lease_expires_at IS NOT NULL)",
+            name="ck_analyses_ai_feedback_running_claim",
+        ),
+        CheckConstraint(
             """
             (
                 owner_kind = 'guest'
@@ -145,6 +153,14 @@ class Analysis(TimestampMixin, Base):
         Text,
         nullable=False,
         server_default=text("'pending'"),
+    )
+    ai_explanation: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    ai_feedback_attempts: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    ai_feedback_claim_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ai_feedback_lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     analyzer_version: Mapped[str | None] = mapped_column(Text, nullable=True)
     model_version: Mapped[str | None] = mapped_column(Text, nullable=True)

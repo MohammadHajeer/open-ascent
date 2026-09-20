@@ -22,7 +22,9 @@ from app.schemas.analysis import (
     GuestAnalysisResultResponse,
     GuestAnalysisStatusResponse,
     GuestAnalysisUploadAuthorizationResponse,
+    GuestExplanationRetryResponse,
 )
+from app.schemas.analysis_explanation import AnalysisExplanation
 from app.schemas.movement_safety import MovementSafetyContentDraft
 from app.services.analysis import (
     AnalysisNotSupportedError,
@@ -44,6 +46,11 @@ from app.services.analysis_storage import (
     UploadReservationExpiredError,
     create_guest_upload_authorization,
     finalize_guest_analysis_upload,
+)
+from app.services.explanation_jobs import (
+    MAX_EXPLANATION_ATTEMPTS,
+    ExplanationRetryUnavailableError,
+    retry_failed_explanation,
 )
 
 router = APIRouter(
@@ -279,6 +286,14 @@ def get_guest_analysis_result(
     if analysis.status == "completed" and analysis.result is not None:
         result = DeterministicAnalysisRead.model_validate(analysis.result)
 
+    explanation = None
+    if (
+        result is not None
+        and analysis.ai_feedback_status == "completed"
+        and analysis.ai_explanation is not None
+    ):
+        explanation = AnalysisExplanation.model_validate(analysis.ai_explanation)
+
     return GuestAnalysisResultResponse(
         analysis_id=analysis.id,
         status=analysis.status,
@@ -290,4 +305,30 @@ def get_guest_analysis_result(
             safety=MovementSafetyContentDraft.model_validate(documentation.content),
         ),
         result=result,
+        explanation_status=analysis.ai_feedback_status,
+        explanation=explanation,
+        explanation_retry_available=(
+            result is not None
+            and analysis.ai_feedback_status == "failed"
+            and analysis.ai_feedback_attempts < MAX_EXPLANATION_ATTEMPTS
+        ),
     )
+
+
+@router.post(
+    "/{analysis_id}/explanation/retry",
+    response_model=GuestExplanationRetryResponse,
+)
+def retry_guest_analysis_explanation(
+    analysis_id: uuid.UUID,
+    analysis: GuestAnalysisAccess,
+    db: DbSession,
+) -> GuestExplanationRetryResponse:
+    try:
+        explanation_status = retry_failed_explanation(db, analysis.id)
+    except ExplanationRetryUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    return GuestExplanationRetryResponse(explanation_status=explanation_status)
