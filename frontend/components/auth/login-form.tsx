@@ -90,7 +90,7 @@ export function LoginForm() {
   }
 
   return (
-    <form className="mt-8" onSubmit={form.handleSubmit(onSubmit)} noValidate>
+    <form className="mt-7" onSubmit={form.handleSubmit(onSubmit)} noValidate>
       <FieldGroup className="gap-5">
         {authError ? (
           <Alert className="mb-1">
@@ -151,7 +151,7 @@ export function LoginForm() {
           type="submit"
           variant="brand"
           size="lg"
-          className="mt-2 h-12 w-full"
+          className="mt-3 h-13 w-full font-semibold tracking-[-0.01em]"
           disabled={form.formState.isSubmitting}
         >
           {form.formState.isSubmitting ? (

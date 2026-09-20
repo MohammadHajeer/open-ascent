@@ -344,6 +344,11 @@
   }
 }
 
+/* Soften idle auth fields without changing shared focus or error states. */
+[data-auth-panel] [data-slot="input"]:not([aria-invalid="true"]):not(:focus-visible) {
+  border-color: color-mix(in srgb, var(--input) 72%, transparent);
+}
+
 /*
   Open Ascent tracking grid
 */

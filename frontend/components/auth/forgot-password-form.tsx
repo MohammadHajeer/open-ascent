@@ -51,7 +51,7 @@ export function ForgotPasswordForm() {
   if (submittedEmail) {
     return (
       <div
-        className="mt-8 rounded-[3px_3px_26px_3px] border border-border bg-muted/40 p-5 sm:p-6"
+        className="mt-7 border-t border-border/50 pt-6"
         role="status"
       >
         <span className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground">
@@ -96,7 +96,7 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <form className="mt-8" onSubmit={form.handleSubmit(onSubmit)} noValidate>
+    <form className="mt-7" onSubmit={form.handleSubmit(onSubmit)} noValidate>
       <FieldGroup className="gap-5">
         <Controller
           control={form.control}
@@ -123,7 +123,7 @@ export function ForgotPasswordForm() {
           type="submit"
           variant="brand"
           size="lg"
-          className="mt-2 h-12 w-full"
+          className="mt-3 h-13 w-full font-semibold tracking-[-0.01em]"
           disabled={form.formState.isSubmitting}
         >
           {form.formState.isSubmitting ? (

@@ -12,16 +12,16 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
         className="pointer-events-none absolute inset-0 -z-10 overflow-hidden"
         aria-hidden="true"
       >
-        <div className="cv-grid cv-grid-radial absolute inset-0 opacity-45 dark:opacity-60" />
+        <div className="cv-grid cv-grid-radial absolute inset-0 opacity-30 dark:opacity-40" />
 
         {/* Oversized tracking arcs */}
-        <div className="absolute -top-104 -left-80 hidden size-192 rounded-full border border-border sm:block" />
-        <div className="absolute -top-76 -left-52 hidden size-136 rounded-full border border-border/55 sm:block" />
-        <div className="absolute -right-96 -bottom-112 hidden size-208 rounded-full border border-primary/15 lg:block" />
+        <div className="absolute -top-104 -left-96 hidden size-192 rounded-full border border-border/65 sm:block" />
+        <div className="absolute -top-76 -left-64 hidden size-136 rounded-full border border-border/40 sm:block" />
+        <div className="absolute -right-96 -bottom-112 hidden size-208 rounded-full border border-primary/10 lg:block" />
 
         {/* Technical hairlines */}
-        <div className="absolute inset-x-0 top-[21%] h-px bg-linear-to-r from-transparent via-border to-transparent" />
-        <div className="absolute inset-x-0 bottom-[16%] h-px bg-linear-to-r from-transparent via-primary/20 to-transparent" />
+        <div className="absolute inset-x-0 top-[21%] h-px bg-linear-to-r from-transparent via-border/65 to-transparent" />
+        <div className="absolute inset-x-0 bottom-[16%] h-px bg-linear-to-r from-transparent via-primary/12 to-transparent" />
       </div>
 
       <header className="relative z-10 flex shrink-0 items-center justify-between gap-4 px-5 py-5 sm:px-8 sm:py-6 lg:px-12">
@@ -60,7 +60,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      <main className="relative z-10 flex flex-1 items-center justify-center px-5 py-8 sm:px-8 sm:py-12">
+      <main className="relative z-10 flex flex-1 items-center justify-center px-4 py-7 sm:px-8 sm:py-11">
         <div className="w-full max-w-120">{children}</div>
       </main>
 

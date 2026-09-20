@@ -47,7 +47,7 @@ export function VerifyEmailStatus() {
   }
 
   return (
-    <div className="mt-8 rounded-[3px_3px_26px_3px] border border-border bg-muted/40 p-5 sm:p-6">
+    <div className="mt-7 border-t border-border/50 pt-6">
       <span className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground">
         <MailCheck className="size-4.5" aria-hidden="true" />
       </span>
