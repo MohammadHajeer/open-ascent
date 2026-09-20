@@ -45,24 +45,28 @@ export function LoginForm() {
   if (submissionState === "success") {
     return (
       <div
-        className="mt-8 rounded-[3px_3px_28px_3px] border border-border bg-card p-6 sm:p-8"
+        className="mt-8 rounded-[3px_3px_26px_3px] border border-border bg-muted/40 p-5 sm:p-6"
         role="status"
       >
-        <span className="grid size-11 place-items-center rounded-full bg-primary text-primary-foreground">
-          <ShieldCheck className="size-5" aria-hidden="true" />
+        <span className="grid size-10 place-items-center rounded-full bg-primary text-primary-foreground">
+          <ShieldCheck className="size-4.5" aria-hidden="true" />
         </span>
-        <span className="mt-7 block font-mono text-[0.57rem] font-semibold tracking-widest text-primary uppercase">
+
+        <span className="mt-5 block font-mono text-[0.55rem] font-semibold tracking-[0.17em] text-primary uppercase">
           Sign-in unavailable
         </span>
-        <h2 className="mt-3 text-3xl font-medium tracking-[-0.052em] text-foreground">
+
+        <h2 className="mt-2.5 text-xl font-medium tracking-[-0.035em] text-foreground">
           No session was created.
         </h2>
-        <p className="mt-4 text-sm leading-6 text-foreground-soft">
+
+        <p className="mt-2 text-sm leading-6 text-foreground-soft">
           Authentication is not connected yet.
         </p>
+
         <Button
           variant="outline"
-          className="mt-7 w-full"
+          className="mt-6 h-12 w-full"
           onClick={() => {
             setSubmissionState("idle");
             form.reset();
@@ -75,14 +79,10 @@ export function LoginForm() {
   }
 
   return (
-    <form
-      className="mt-8"
-      onSubmit={form.handleSubmit(onSubmit)}
-      noValidate
-    >
-      <FieldGroup className="gap-4">
+    <form className="mt-8" onSubmit={form.handleSubmit(onSubmit)} noValidate>
+      <FieldGroup className="gap-5">
         {submissionState === "error" ? (
-          <Alert className="mb-5">
+          <Alert className="mb-1">
             <CircleAlert aria-hidden="true" />
             <AlertTitle>Unable to sign in</AlertTitle>
             <AlertDescription>
@@ -104,11 +104,10 @@ export function LoginForm() {
                 autoComplete="email"
                 inputMode="email"
                 placeholder="you@example.com"
+                className="h-12"
                 aria-invalid={fieldState.invalid}
               />
-              {fieldState.invalid && (
-                <FieldError errors={[fieldState.error]} />
-              )}
+              {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
             </Field>
           )}
         />
@@ -131,11 +130,10 @@ export function LoginForm() {
                 {...field}
                 id={field.name}
                 autoComplete="current-password"
+                className="h-12"
                 aria-invalid={fieldState.invalid}
               />
-              {fieldState.invalid && (
-                <FieldError errors={[fieldState.error]} />
-              )}
+              {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
             </Field>
           )}
         />
@@ -144,7 +142,7 @@ export function LoginForm() {
           type="submit"
           variant="brand"
           size="lg"
-          className="mt-3 w-full"
+          className="mt-2 h-12 w-full"
           disabled={form.formState.isSubmitting}
         >
           {form.formState.isSubmitting ? (
@@ -158,16 +156,6 @@ export function LoginForm() {
             </>
           )}
         </Button>
-
-        <p className="mt-2 text-center text-sm text-foreground-soft">
-          New to Open Ascent?{" "}
-          <Link
-            href="/signup"
-            className="font-semibold text-foreground hover:text-primary"
-          >
-            Create an account
-          </Link>
-        </p>
       </FieldGroup>
     </form>
   );

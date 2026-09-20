@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { UserRoundPlus } from "lucide-react";
 
+import { AuthPanel } from "@/components/auth/auth-panel";
 import { RegisterForm } from "@/components/auth/register-form";
-import { Badge } from "@/components/ui/badge";
 
 export const metadata: Metadata = {
   title: "Create account",
@@ -12,17 +13,24 @@ export const metadata: Metadata = {
 
 export default function SignupPage() {
   return (
-    <div className="w-full max-w-125 self-start">
-      <Badge variant="secondary">
-        <UserRoundPlus aria-hidden="true" /> Athlete account
-      </Badge>
-      <h1 className="mt-5 text-[clamp(3rem,7vw,5.2rem)] leading-[0.88] font-medium tracking-[-0.07em] text-foreground">
-        Your training, remembered.
-      </h1>
-      <p className="mt-5 max-w-md text-sm leading-6 text-foreground-soft sm:text-base sm:leading-7">
-        Build your training record with saved analyses and progress over time.
-      </p>
+    <AuthPanel
+      icon={UserRoundPlus}
+      eyebrow="Athlete account"
+      title="Create your account."
+      description="Build your training history."
+      footer={
+        <>
+          Already have an account?{" "}
+          <Link
+            href="/login"
+            className="font-semibold text-foreground transition-colors hover:text-primary"
+          >
+            Sign in
+          </Link>
+        </>
+      }
+    >
       <RegisterForm />
-    </div>
+    </AuthPanel>
   );
 }
