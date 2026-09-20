@@ -32,6 +32,7 @@ def claim_next_analysis(
         select(Analysis)
         .where(
             Analysis.video_path.is_not(None),
+            or_(Analysis.owner_kind != "guest", Analysis.access_expires_at > func.now()),
             or_(
                 Analysis.status == "queued",
                 and_(
@@ -131,6 +132,14 @@ def complete_analysis(
 ) -> None:
     from app.services.analysis_events import record_analysis_event
 
+    outcome = result_data.get("outcome")
+    if outcome not in {"completed", "zero_valid_reps", "insufficient_evidence"}:
+        outcome = None
+
+    def count(name: str) -> int | None:
+        value = result_data.get(name)
+        return value if type(value) is int and value >= 0 else None
+
     result = db.execute(
         update(Analysis)
         .where(
@@ -143,6 +152,11 @@ def complete_analysis(
             status="completed",
             stage="completed",
             result=result_data,
+            terminal_outcome=outcome,
+            valid_rep_count=count("valid_rep_count"),
+            partial_rep_count=count("partial_rep_count"),
+            uncertain_rep_count=count("uncertain_rep_count"),
+            completed_at=func.now(),
             analyzer_version=analyzer_version,
             model_version=model_version,
             error_code=None,
@@ -184,6 +198,7 @@ def fail_analysis(
             status="failed",
             stage="failed",
             error_code=error_code,
+            failed_at=func.now(),
             claim_token=None,
             lease_expires_at=None,
         )

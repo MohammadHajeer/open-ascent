@@ -28,6 +28,7 @@ from app.schemas.analysis_explanation import AnalysisExplanation
 from app.schemas.movement_safety import MovementSafetyContentDraft
 from app.services.analysis import (
     AnalysisNotSupportedError,
+    GuestRateLimitExceededError,
     IdempotencyConflictError,
     MovementNotFoundError,
     ReservationExpiredError,
@@ -148,6 +149,12 @@ def create_guest_analysis_reservation(
         raise HTTPException(
             status_code=status.HTTP_410_GONE,
             detail="The existing reservation is no longer available.",
+        )
+
+    except GuestRateLimitExceededError:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Guest analysis limit reached. Please try again later.",
         )
 
     return GuestAnalysisReservationResponse(

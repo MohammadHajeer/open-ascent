@@ -35,6 +35,7 @@ def claim_next_explanation(db: Session) -> ExplanationClaim | None:
         select(Analysis)
         .where(
             Analysis.status == "completed",
+            or_(Analysis.owner_kind != "guest", Analysis.access_expires_at > func.now()),
             Analysis.ai_feedback_status == "running",
             Analysis.ai_feedback_lease_expires_at <= func.now(),
             Analysis.ai_feedback_attempts >= MAX_EXPLANATION_ATTEMPTS,
@@ -61,6 +62,7 @@ def claim_next_explanation(db: Session) -> ExplanationClaim | None:
         select(Analysis)
         .where(
             Analysis.status == "completed",
+            or_(Analysis.owner_kind != "guest", Analysis.access_expires_at > func.now()),
             Analysis.result.is_not(None),
             Analysis.ai_feedback_attempts < MAX_EXPLANATION_ATTEMPTS,
             or_(

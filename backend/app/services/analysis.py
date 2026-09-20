@@ -4,7 +4,7 @@ import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -29,6 +29,10 @@ class IdempotencyConflictError(Exception):
 
 
 class ReservationExpiredError(Exception):
+    pass
+
+
+class GuestRateLimitExceededError(Exception):
     pass
 
 
@@ -240,6 +244,29 @@ def reserve_guest_analysis(
 
     if existing_reservation is not None:
         return existing_reservation
+
+    # Serialize reservations from the same signed network prefix. The key is
+    # already an HMAC, so neither the prefix nor the original IP is stored.
+    lock_key = int.from_bytes(bytes.fromhex(guest_rate_key[:16]), "big", signed=True)
+    db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_key})
+    # A concurrent request with the same operation may have committed while
+    # waiting for the lock.
+    existing_reservation = _handle_existing_reservation(
+        db, operation_key=operation_key,
+        request_fingerprint=request_fingerprint, now=now,
+    )
+    if existing_reservation is not None:
+        return existing_reservation
+    recent_count = db.scalar(
+        select(func.count(Analysis.id)).where(
+            Analysis.owner_kind == "guest",
+            Analysis.guest_rate_key == guest_rate_key,
+            Analysis.created_at >= now - timedelta(minutes=settings.guest_rate_window_minutes),
+        )
+    )
+    if recent_count >= settings.guest_reservations_per_window:
+        db.rollback()
+        raise GuestRateLimitExceededError
 
     # ---------------------------------------------------------
     # 2. Movement validation

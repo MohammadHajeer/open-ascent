@@ -35,6 +35,29 @@ class Analysis(TimestampMixin, Base):
         ),
         CheckConstraint("attempts >= 0", name="ck_analyses_attempts"),
         CheckConstraint(
+            "terminal_outcome IS NULL OR terminal_outcome IN "
+            "('completed', 'zero_valid_reps', 'insufficient_evidence')",
+            name="ck_analyses_terminal_outcome",
+        ),
+        CheckConstraint(
+            "(valid_rep_count IS NULL OR valid_rep_count >= 0) AND "
+            "(partial_rep_count IS NULL OR partial_rep_count >= 0) AND "
+            "(uncertain_rep_count IS NULL OR uncertain_rep_count >= 0)",
+            name="ck_analyses_rep_counts",
+        ),
+        CheckConstraint(
+            "(guest_cleaned_at IS NULL AND safety_documentation_id IS NOT NULL "
+            "AND safety_ack_version IS NOT NULL AND safety_acknowledged_at IS NOT NULL "
+            "AND reservation_operation_key IS NOT NULL AND request_fingerprint IS NOT NULL "
+            "AND reservation_expires_at IS NOT NULL) OR "
+            "(guest_cleaned_at IS NOT NULL AND owner_kind = 'guest' "
+            "AND safety_documentation_id IS NULL AND safety_ack_version IS NULL "
+            "AND safety_acknowledged_at IS NULL AND reservation_operation_key IS NULL "
+            "AND request_fingerprint IS NULL AND reservation_expires_at IS NULL "
+            "AND video_path IS NULL AND result IS NULL AND ai_explanation IS NULL)",
+            name="ck_analyses_cleanup_shape",
+        ),
+        CheckConstraint(
             "ai_feedback_attempts >= 0", name="ck_analyses_ai_feedback_attempts"
         ),
         CheckConstraint(
@@ -47,16 +70,26 @@ class Analysis(TimestampMixin, Base):
             (
                 owner_kind = 'guest'
                 AND user_id IS NULL
-                AND guest_token_hash IS NOT NULL
-                AND guest_rate_key IS NOT NULL
-                AND access_expires_at IS NOT NULL
-                AND purge_after IS NOT NULL
                 AND feature_usage_id IS NULL
+                AND (
+                    (guest_cleaned_at IS NULL
+                     AND guest_token_hash IS NOT NULL
+                     AND guest_rate_key IS NOT NULL
+                     AND access_expires_at IS NOT NULL
+                     AND purge_after IS NOT NULL)
+                    OR
+                    (guest_cleaned_at IS NOT NULL
+                     AND guest_token_hash IS NULL
+                     AND guest_rate_key IS NULL
+                     AND access_expires_at IS NULL
+                     AND purge_after IS NULL)
+                )
             )
             OR
             (
                 owner_kind = 'authenticated'
                 AND user_id IS NOT NULL
+                AND guest_cleaned_at IS NULL
                 AND guest_token_hash IS NULL
                 AND guest_rate_key IS NULL
                 AND access_expires_at IS NULL
@@ -71,6 +104,12 @@ class Analysis(TimestampMixin, Base):
         ),
         Index("ix_analyses_worker_queue", "status", "created_at"),
         Index("ix_analyses_guest_abuse_window", "guest_rate_key", "created_at"),
+        Index(
+            "ix_analyses_guest_cleanup",
+            "owner_kind",
+            "guest_cleaned_at",
+            "access_expires_at",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -88,15 +127,15 @@ class Analysis(TimestampMixin, Base):
         ForeignKey("movements.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    safety_documentation_id: Mapped[uuid.UUID] = mapped_column(
+    safety_documentation_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("movement_documentation.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
     )
-    safety_ack_version: Mapped[str] = mapped_column(Text, nullable=False)
-    safety_acknowledged_at: Mapped[datetime] = mapped_column(
+    safety_ack_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    safety_acknowledged_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
-        nullable=False,
+        nullable=True,
     )
     feature_usage_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -114,13 +153,13 @@ class Analysis(TimestampMixin, Base):
     video_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     guest_token_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     guest_rate_key: Mapped[str | None] = mapped_column(Text, nullable=True)
-    reservation_operation_key: Mapped[str] = mapped_column(
-        Text, nullable=False, unique=True
+    reservation_operation_key: Mapped[str | None] = mapped_column(
+        Text, nullable=True, unique=True
     )
-    request_fingerprint: Mapped[str] = mapped_column(Text, nullable=False)
-    reservation_expires_at: Mapped[datetime] = mapped_column(
+    request_fingerprint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reservation_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
-        nullable=False,
+        nullable=True,
     )
     access_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
@@ -134,6 +173,19 @@ class Analysis(TimestampMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    guest_cleaned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    failed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    terminal_outcome: Mapped[str | None] = mapped_column(Text, nullable=True)
+    valid_rep_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    partial_rep_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    uncertain_rep_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     attempts: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )

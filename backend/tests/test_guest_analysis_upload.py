@@ -6,18 +6,18 @@ from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.safety import CURRENT_SAFETY_ACK_VERSION
 from app.models.analysis import Analysis
+from app.models.analysis_event import AnalysisEvent
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.services import analysis_storage
 from app.services.analysis_storage import (
     UploadedVideoNotFoundError,
-    UploadedVideoTooLargeError,
     UploadedVideoTooLongError,
 )
 
@@ -400,6 +400,7 @@ def test_valid_video_finalization_queues_analysis(
 
 def test_finalize_retry_is_idempotent(
     client: TestClient,
+    db: Session,
     analysis_test_data: tuple[
         Movement,
         MovementDocumentation,
@@ -463,6 +464,40 @@ def test_finalize_retry_is_idempotent(
     # The retry returns the already-finalized analysis
     # instead of processing the uploaded object again.
     assert download_count == 1
+    analysis_id = uuid.UUID(body["analysis_id"])
+    assert db.scalar(
+        select(func.count(AnalysisEvent.id)).where(
+            AnalysisEvent.analysis_id == analysis_id,
+            AnalysisEvent.event_type == "analysis_queued",
+        )
+    ) == 1
+    assert db.get(Analysis, analysis_id).attempts == 0
+
+
+def test_finalize_rejects_invalid_state_without_queueing_again(
+    client: TestClient,
+    db: Session,
+    analysis_test_data: tuple[Movement, MovementDocumentation],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    movement, documentation = analysis_test_data
+    reservation = create_reservation(client, movement, documentation)
+    body = reservation.json()
+    analysis = db.get(Analysis, uuid.UUID(body["analysis_id"]))
+    analysis.status = "failed"
+    db.commit()
+    monkeypatch.setattr(
+        analysis_storage, "_download_uploaded_video",
+        lambda path: pytest.fail("Invalid state must not download or enqueue."),
+    )
+    response = client.post(
+        f"/analyses/{analysis.id}/finalize",
+        headers={"Authorization": f"Bearer {body['credential']}"},
+    )
+    assert response.status_code == 409
+    assert db.scalar(select(func.count(AnalysisEvent.id)).where(
+        AnalysisEvent.analysis_id == analysis.id,
+    )) == 0
 
 
 def test_invalid_video_is_rejected(
@@ -521,21 +556,10 @@ def test_oversized_video_is_rejected(
 
     body = reservation.json()
 
+    monkeypatch.setattr(settings, "guest_video_max_size_mb", 0)
     monkeypatch.setattr(
-        analysis_storage,
-        "_download_uploaded_video",
-        lambda path: b"video",
-    )
-
-    def reject_size(
-        video_bytes: bytes,
-    ) -> None:
-        raise UploadedVideoTooLargeError
-
-    monkeypatch.setattr(
-        analysis_storage,
-        "_validate_video_bytes",
-        reject_size,
+        analysis_storage, "_download_uploaded_video",
+        lambda path: b"0" * 13,
     )
 
     response = client.post(

@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     guest_reservation_ttl_minutes: int = 15
     guest_access_ttl_minutes: int = 60
     guest_purge_ttl_hours: int = 24
+    guest_rate_window_minutes: int = 60
+    guest_reservations_per_window: int = 5
+    guest_cleanup_batch_size: int = 50
+    guest_cleanup_interval_seconds: int = 900
 
     guest_video_max_size_mb: int = 50
     guest_video_max_duration_seconds: int = 60
