@@ -42,6 +42,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install MediaPipe system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
