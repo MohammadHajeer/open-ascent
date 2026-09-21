@@ -1,8 +1,8 @@
-import { Dumbbell } from "lucide-react";
+import { Info } from "lucide-react";
 
-import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
+import { AdminMovementsClient } from "@/components/admin/admin-movements-client";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
-import { DashboardSection } from "@/components/dashboard/dashboard-section";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export default function AdminMovementsPage() {
   return (
@@ -10,20 +10,20 @@ export default function AdminMovementsPage() {
       <DashboardPageHeader
         eyebrow="Admin / Movement library"
         title="Movement catalog."
-        description="Manage movement definitions and their availability from one workspace."
+        description="Inspect movement definitions and product capabilities from the existing catalog contract."
       />
 
-      <DashboardSection
-        eyebrow="Catalog"
-        title="Movements"
-        description="The movement list and management actions will connect here."
-      >
-        <DashboardEmptyState
-          icon={<Dumbbell className="size-5" aria-hidden="true" />}
-          title="No movement records to display yet."
-          description="Catalog entries will appear here when the admin movement data is connected."
-        />
-      </DashboardSection>
+      <Alert>
+        <Info />
+        <AlertDescription>
+          Movement create/update endpoints are not present in the current
+          FastAPI contract, so this page intentionally stays read-only.
+          Documentation management remains available below and uses the admin
+          lifecycle endpoints.
+        </AlertDescription>
+      </Alert>
+
+      <AdminMovementsClient />
     </div>
   );
 }

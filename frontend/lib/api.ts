@@ -8,6 +8,7 @@ type ApiErrorBody = {
     message?: string;
     details?: unknown;
   };
+  detail?: string | { message?: string };
 };
 
 export class ApiError extends Error {
@@ -39,11 +40,13 @@ export async function apiFetch<T>(
 
   if (!response.ok) {
     const error = data as ApiErrorBody;
+    const detailMessage =
+      typeof error.detail === "string" ? error.detail : error.detail?.message;
 
     throw new ApiError(
       response.status,
       error.error?.code ?? "unknown_error",
-      error.error?.message ?? "Something went wrong",
+      error.error?.message ?? detailMessage ?? "Something went wrong",
       error.error?.details,
     );
   }
