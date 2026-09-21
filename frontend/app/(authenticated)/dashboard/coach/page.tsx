@@ -1,8 +1,8 @@
-import { Bot } from "lucide-react";
-
 import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
+import { ThemedAsset } from "@/components/shared/themed-asset";
+import { assets } from "@/lib/assets";
 
 export default function CoachPage() {
   return (
@@ -19,9 +19,15 @@ export default function CoachPage() {
         description="The coach will use your context and grounded analysis to help turn observations into useful next steps."
       >
         <DashboardEmptyState
-          icon={<Bot className="size-5" aria-hidden="true" />}
           title="Your coaching space is not active yet."
           description="There are no conversations to display. Coaching will appear here when the experience is ready."
+          visual={
+            <ThemedAsset
+              asset={assets.emptyStates.noCoachConversations}
+              alt=""
+              width={176}
+            />
+          }
         />
       </DashboardSection>
     </div>

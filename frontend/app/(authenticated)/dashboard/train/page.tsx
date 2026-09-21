@@ -1,10 +1,12 @@
 import Link from "next/link";
-import { ArrowUpRight, Dumbbell } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 
 import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
+import { ThemedAsset } from "@/components/shared/themed-asset";
 import { buttonVariants } from "@/components/ui/button";
+import { assets } from "@/lib/assets";
 import { cn } from "@/lib/utils";
 
 const analyzeAction = (
@@ -32,10 +34,16 @@ export default function TrainPage() {
         description="Start with a movement analysis today. Structured training workflows will connect here in a later release."
       >
         <DashboardEmptyState
-          icon={<Dumbbell className="size-5" aria-hidden="true" />}
           title="No training sessions yet."
           description="There is no session data to show yet, so this space stays focused on what comes next."
           action={analyzeAction}
+          visual={
+            <ThemedAsset
+              asset={assets.emptyStates.noTrainingPlan}
+              alt=""
+              width={176}
+            />
+          }
         />
       </DashboardSection>
     </div>
