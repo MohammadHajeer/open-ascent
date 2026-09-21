@@ -3,8 +3,18 @@ import { MonitorCog, ShieldCheck, SlidersHorizontal, UserRound } from "lucide-re
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
+import { PlanBilling } from "@/features/subscription/plan-billing";
+import type { CheckoutReturnState } from "@/features/subscription/presentation";
 
-export default function SettingsPage() {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ checkout?: string | string[] }>;
+}) {
+  const checkout = (await searchParams).checkout;
+  const checkoutReturn: CheckoutReturnState =
+    checkout === "success" || checkout === "cancelled" ? checkout : null;
+
   return (
     <div className="space-y-8">
       <DashboardPageHeader
@@ -12,6 +22,8 @@ export default function SettingsPage() {
         title="Your workspace."
         description="A quiet place for account and training preferences as they become available."
       />
+
+      <PlanBilling checkoutReturn={checkoutReturn} />
 
       <div className="grid gap-5 xl:grid-cols-2">
         <DashboardSection eyebrow="Appearance" title="Display preference">

@@ -9,6 +9,7 @@ import {
 import { CoachingModes } from "./coaching-modes";
 import { Difference } from "./difference";
 import { FinalCTA } from "./final-cta";
+import { Plans } from "./plans";
 
 export {
   Hero,
@@ -20,4 +21,5 @@ export {
   CoachingModes,
   Difference,
   FinalCTA,
+  Plans,
 };

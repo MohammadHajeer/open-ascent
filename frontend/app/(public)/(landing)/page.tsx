@@ -8,6 +8,7 @@ import {
   MovementAnalysisSkeleton,
   CoachingModes,
   Difference,
+  Plans,
   FinalCTA,
 } from "./_components";
 
@@ -27,6 +28,8 @@ export default function Home() {
       </Suspense>
 
       <CoachingModes />
+
+      <Plans />
 
       <Difference />
 
