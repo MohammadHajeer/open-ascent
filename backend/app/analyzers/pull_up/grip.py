@@ -238,6 +238,41 @@ def summarize_rep_grip(
     ]
 
     if len(usable) < config.min_rep_grip_samples:
+        strong_threshold = (
+            config.palm_facing_threshold
+            * config.strong_rep_grip_score_multiplier
+        )
+        strong_frame_grips: list[str] = []
+        for observation in rep_observations:
+            strong_labels = {
+                label
+                for label, score in (
+                    (observation.left_grip, observation.left_score),
+                    (observation.right_grip, observation.right_score),
+                )
+                if label in CONFIDENT_GRIPS
+                and score is not None
+                and abs(score) >= strong_threshold
+            }
+            if len(strong_labels) == 1:
+                strong_frame_grips.append(next(iter(strong_labels)))
+
+        if (
+            len(strong_frame_grips)
+            >= config.min_strong_rep_grip_samples
+        ):
+            counts = Counter(strong_frame_grips)
+            winner, winner_count = counts.most_common(1)[0]
+            agreement = winner_count / len(strong_frame_grips)
+            if agreement >= config.strong_rep_grip_majority_ratio:
+                return GripSummary(
+                    grip=winner,
+                    movement=movement_from_grip(winner),
+                    usable_samples=len(strong_frame_grips),
+                    total_samples=len(rep_observations),
+                    agreement=agreement,
+                )
+
         return GripSummary(
             grip="uncertain",
             movement="uncertain",

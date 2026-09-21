@@ -140,6 +140,104 @@ def test_not_enough_grip_evidence_stays_uncertain() -> None:
     assert summary.movement == "uncertain"
 
 
+def test_two_unanimous_high_margin_hand_frames_resolve_pull_up() -> None:
+    config = PullUpAnalyzerConfig()
+    observations = [
+        GripObservation(
+            timestamp_ms=100,
+            grip="pronated",
+            left_grip="not_detected",
+            right_grip="pronated",
+            left_score=None,
+            right_score=0.52,
+        ),
+        GripObservation(
+            timestamp_ms=200,
+            grip="asymmetric",
+            left_grip="supinated",
+            right_grip="pronated",
+            left_score=-0.21,
+            right_score=0.49,
+        ),
+    ]
+
+    summary = summarize_rep_grip(
+        observations,
+        start_ms=50,
+        end_ms=250,
+        config=config,
+    )
+
+    assert summary.grip == "pronated"
+    assert summary.movement == "pull_up"
+    assert summary.usable_samples == 2
+    assert summary.agreement == 1.0
+
+
+def test_two_unanimous_high_margin_hand_frames_resolve_chin_up() -> None:
+    config = PullUpAnalyzerConfig()
+    observations = [
+        GripObservation(
+            timestamp_ms=100,
+            grip="supinated",
+            left_grip="supinated",
+            right_grip="not_detected",
+            left_score=-0.58,
+            right_score=None,
+        ),
+        GripObservation(
+            timestamp_ms=200,
+            grip="supinated",
+            left_grip="not_detected",
+            right_grip="supinated",
+            left_score=None,
+            right_score=-0.47,
+        ),
+    ]
+
+    summary = summarize_rep_grip(
+        observations,
+        start_ms=50,
+        end_ms=250,
+        config=config,
+    )
+
+    assert summary.grip == "supinated"
+    assert summary.movement == "chin_up"
+
+
+def test_sparse_near_threshold_hand_evidence_stays_uncertain() -> None:
+    config = PullUpAnalyzerConfig()
+    observations = [
+        GripObservation(
+            timestamp_ms=100,
+            grip="pronated",
+            left_grip="pronated",
+            right_grip="not_detected",
+            left_score=0.25,
+            right_score=None,
+        ),
+        GripObservation(
+            timestamp_ms=200,
+            grip="pronated",
+            left_grip="not_detected",
+            right_grip="pronated",
+            left_score=None,
+            right_score=0.30,
+        ),
+    ]
+
+    summary = summarize_rep_grip(
+        observations,
+        start_ms=50,
+        end_ms=250,
+        config=config,
+    )
+
+    assert summary.grip == "uncertain"
+    assert summary.movement == "uncertain"
+
+
 def test_rep_receives_grip_variations() -> None:
     config = PullUpAnalyzerConfig()
 

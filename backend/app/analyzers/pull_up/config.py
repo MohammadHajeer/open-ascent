@@ -122,10 +122,20 @@ class PullUpAnalyzerConfig:
     # assigning pull-up vs chin-up.
     min_rep_grip_samples: int = 3
     rep_grip_majority_ratio: float = 0.70
+    # When ordinary frame votes are too sparse, two temporally distinct
+    # single-hand observations may still resolve orientation if both have
+    # twice the minimum palm-plane margin and agree unanimously. This keeps
+    # near-threshold hand extrapolations from deciding the movement.
+    min_strong_rep_grip_samples: int = 2
+    strong_rep_grip_score_multiplier: float = 2.0
+    strong_rep_grip_majority_ratio: float = 1.0
 
     # Classification only; these never alter the rep phase tracker.
     min_rep_width_samples: int = 3
     width_majority_ratio: float = 0.70
+    # A winning width must also be supported by a clear majority of every
+    # frame in the rep, including frames that fell in a threshold gap.
+    width_min_total_support_ratio: float = 0.60
     close_wrist_shoulder_ratio: float = 0.85
     wide_wrist_shoulder_ratio: float = 1.65
     min_rep_height_samples: int = 3

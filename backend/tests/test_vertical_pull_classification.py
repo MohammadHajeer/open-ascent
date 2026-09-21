@@ -205,6 +205,35 @@ def test_one_noisy_width_frame_does_not_overturn_consistent_rep():
     assert classified.variations["grip_width"] == "close"
 
 
+def test_uncertain_width_frames_count_against_semantic_confidence():
+    samples = [observation(1.8, 0.4, time) for time in range(110, 190, 10)]
+    samples += [observation(1.5, 0.4, time) for time in range(190, 290, 10)]
+    candidate = replace(rep("pull_up"), end_ms=300)
+
+    classified = add_pose_variations(
+        candidate,
+        samples,
+        config=PullUpAnalyzerConfig(),
+    )
+
+    assert classified.variations["grip_width"] == "uncertain"
+
+
+def test_coherent_width_majority_survives_some_uncertain_frames():
+    samples = [observation(1.2, 0.4, time) for time in range(110, 410, 10)]
+    samples += [observation(1.5, 0.4, time) for time in range(410, 550, 10)]
+    samples.append(observation(0.7, 0.4, 550))
+    candidate = replace(rep("pull_up"), end_ms=600)
+
+    classified = add_pose_variations(
+        candidate,
+        samples,
+        config=PullUpAnalyzerConfig(),
+    )
+
+    assert classified.variations["grip_width"] == "standard"
+
+
 def test_private_diagnostic_explains_decision_without_entering_result():
     samples = [observation(1.2, 0.4, time) for time in (110, 120, 130)]
     classified = add_pose_variations(

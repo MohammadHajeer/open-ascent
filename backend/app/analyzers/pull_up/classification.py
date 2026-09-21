@@ -107,12 +107,27 @@ def observe_variation(
     )
 
 
-def _vote(values: list[str], *, minimum: int, majority: float) -> str:
+def _vote(
+    values: list[str],
+    *,
+    minimum: int,
+    majority: float,
+    minimum_total_support: float,
+) -> str:
     usable = [value for value in values if value != "uncertain"]
     if len(usable) < minimum:
         return "uncertain"
     winner, count = Counter(usable).most_common(1)[0]
-    return winner if count / len(usable) >= majority else "uncertain"
+    # Uncertain frames are missing evidence, not votes that can be discarded.
+    # Keep the classifiable-frame agreement rule, then separately require a
+    # clear majority across the full rep so a small classifiable minority
+    # cannot become a falsely confident semantic label.
+    if (
+        count / len(usable) >= majority
+        and count / len(values) >= minimum_total_support
+    ):
+        return winner
+    return "uncertain"
 
 
 def _height_phase(
@@ -256,6 +271,7 @@ def add_pose_variations(
                 [item.width for item in own],
                 minimum=config.min_rep_width_samples,
                 majority=config.width_majority_ratio,
+                minimum_total_support=config.width_min_total_support_ratio,
             ),
             "pull_height": height["decision"],
         },
@@ -282,7 +298,7 @@ def build_variation_diagnostic(
     if usable_width < config.min_rep_width_samples:
         width_reason = "too_few_classifiable_frames"
     elif rep.variations.get("grip_width") == "uncertain":
-        width_reason = "split_vote"
+        width_reason = "insufficient_overall_support"
     else:
         width_reason = "majority_supported"
 
@@ -319,6 +335,7 @@ def build_variation_diagnostic(
                 "wide_min": config.wide_wrist_shoulder_ratio,
                 "minimum_votes": config.min_rep_width_samples,
                 "majority": config.width_majority_ratio,
+                "minimum_total_support": config.width_min_total_support_ratio,
             },
         },
         "height": {
