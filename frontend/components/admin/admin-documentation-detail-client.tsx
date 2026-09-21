@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
 import { AdminDataError } from "@/components/admin/admin-movements-client";
+import { DocumentationDetailSkeleton } from "@/components/admin/admin-skeletons";
 import { DocumentationEditor } from "@/components/admin/documentation-editor";
 import { DocumentationStatusBadge } from "@/components/admin/documentation-status-badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -56,7 +57,7 @@ export function AdminDocumentationDetailClient({ id }: { id: string }) {
   }
 
   if (documentation.isPending) {
-    return <div className="h-155 animate-pulse rounded-[1.6rem] bg-muted/50" />;
+    return <DocumentationDetailSkeleton />;
   }
 
   if (documentation.isError) {

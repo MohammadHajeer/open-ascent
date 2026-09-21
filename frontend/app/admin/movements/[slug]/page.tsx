@@ -19,7 +19,7 @@ export default async function AdminMovementDetailPage({
       <DashboardPageHeader
         eyebrow="Admin / Movement library / Detail"
         title="Movement workspace."
-        description="Movement details and availability from the current movement guide endpoint."
+        description="Edit movement metadata while keeping documentation as a separate workflow."
         action={
           <Link
             href="/admin/movements"

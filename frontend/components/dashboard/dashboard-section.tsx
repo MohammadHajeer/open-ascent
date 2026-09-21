@@ -6,8 +6,8 @@ export function DashboardSection({
   children,
 }: {
   eyebrow: string;
-  title: string;
-  description?: string;
+  title: React.ReactNode;
+  description?: React.ReactNode;
   aside?: React.ReactNode;
   children: React.ReactNode;
 }) {

@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 
 import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
+import { MovementListSkeleton } from "@/components/admin/admin-skeletons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { buttonVariants } from "@/components/ui/button";
@@ -48,12 +49,13 @@ export function AdminMovementsClient() {
       <DashboardSection
         eyebrow="Catalog"
         title="Movements"
-        description="The API currently exposes movements with published guides through the public catalog endpoint."
+        description="Movement metadata and product capabilities managed by admins."
       >
         <DashboardEmptyState
           icon={<Dumbbell className="size-5" aria-hidden="true" />}
-          title="No published movement records"
-          description="No movement records are available from the current backend contract. Admin movement list/create/update endpoints are not implemented yet."
+          title="No movement records"
+          description="Create the first movement to start building the catalog."
+          action={<Link href="/admin/movements/new" className={buttonVariants({ variant: "brand" })}>New movement</Link>}
         />
       </DashboardSection>
     );
@@ -63,18 +65,16 @@ export function AdminMovementsClient() {
     <DashboardSection
       eyebrow="Catalog"
       title={`${movements.data.length} movement${movements.data.length === 1 ? "" : "s"}`}
-      description="Read-only catalog data from the existing movement endpoint. Metadata editing will become available when admin movement write endpoints exist."
+      description="Movement metadata and analyzer availability from the admin catalog."
       aside={
-        <label className="relative block w-full sm:w-64">
-          <span className="sr-only">Search movements</span>
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-foreground-faint" aria-hidden="true" />
-          <Input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search catalog"
-            className="h-9 pl-9"
-          />
-        </label>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <label className="relative block w-full sm:w-64">
+            <span className="sr-only">Search movements</span>
+            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-foreground-faint" aria-hidden="true" />
+            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search catalog" className="h-9 pl-9" />
+          </label>
+          <Link href="/admin/movements/new" className={buttonVariants({ variant: "brand", size: "sm" })}>New movement</Link>
+        </div>
       }
     >
       {!filteredMovements.length ? (
@@ -120,7 +120,7 @@ export function AdminMovementsClient() {
                     {movement.family_key}
                   </td>
                   <td className="px-5 py-4 capitalize text-foreground-soft sm:px-7">
-                    {movement.difficulty}
+                    {movement.difficulty ?? "—"}
                   </td>
                   <td className="px-5 py-4 sm:px-7">
                     <CapabilityValue value={movement.upload_analysis_supported} label="Upload" />
@@ -150,18 +150,6 @@ function CapabilityValue({ value, label }: { value: boolean; label: string }) {
       {value ? <Check className="size-3.5" aria-hidden="true" /> : <X className="size-3.5" aria-hidden="true" />}
       {label}
     </span>
-  );
-}
-
-function MovementListSkeleton() {
-  return (
-    <DashboardSection eyebrow="Catalog" title="Loading movements…">
-      <div className="space-y-3 p-5 sm:p-7">
-        {[1, 2, 3].map((item) => (
-          <div key={item} className="h-16 animate-pulse rounded-xl bg-muted/50" />
-        ))}
-      </div>
-    </DashboardSection>
   );
 }
 

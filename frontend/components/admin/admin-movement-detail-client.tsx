@@ -2,26 +2,25 @@
 
 import Link from "next/link";
 import { ArrowUpRight, Check, Dumbbell, ExternalLink, X } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
+import { MovementDetailSkeleton } from "@/components/admin/admin-skeletons";
+import { MovementForm } from "@/components/admin/movement-form";
 import { AdminDataError } from "@/components/admin/admin-movements-client";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { getAdminErrorMessage } from "@/features/admin/errors";
-import { useAdminMovement } from "@/features/admin/movements/hooks";
-import { cn } from "@/lib/utils";
+import { useAdminMovement, useUpdateAdminMovement } from "@/features/admin/movements/hooks";
 
 export function AdminMovementDetailClient({ slug }: { slug: string }) {
+  const router = useRouter();
   const movement = useAdminMovement(slug);
+  const updateMovement = useUpdateAdminMovement();
 
   if (movement.isPending) {
-    return (
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.7fr)]">
-        <div className="h-96 animate-pulse rounded-[1.6rem] bg-muted/50" />
-        <div className="h-72 animate-pulse rounded-[1.6rem] bg-muted/50" />
-      </div>
-    );
+    return <MovementDetailSkeleton />;
   }
 
   if (movement.isError) {
@@ -40,27 +39,26 @@ export function AdminMovementDetailClient({ slug }: { slug: string }) {
 
   const record = movement.data;
 
+  async function handleSubmit(payload: Parameters<React.ComponentProps<typeof MovementForm>["onSubmit"]>[0]) {
+    try {
+      const updated = await updateMovement.mutateAsync({
+        movementId: record.id,
+        slug: record.slug,
+        payload,
+      });
+      if (updated.slug !== record.slug) {
+        router.replace(`/admin/movements/${encodeURIComponent(updated.slug)}`);
+      }
+    } catch {
+      // The mutation hook provides toast feedback; keep the editor mounted.
+    }
+  }
+
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.7fr)]">
-      <DashboardSection eyebrow="Movement record" title={record.name} description="Catalog metadata returned by the existing movement guide endpoint.">
-        <div className="grid gap-px bg-border/60 sm:grid-cols-2">
-          <Detail label="Slug" value={record.slug} mono />
-          <Detail label="Family key" value={record.family_key} mono />
-          <Detail label="Difficulty" value={record.difficulty} />
-          <Detail label="Live coach" value={record.live_coach_supported ? "Supported" : "Not supported"} />
-          <Detail label="Upload analysis" value={record.upload_analysis_supported ? "Supported" : "Not supported"} />
-          <Detail label="Published guide" value={`Version ${record.documentation.version}`} />
-        </div>
-        <div className="flex flex-wrap gap-3 border-t border-border/70 px-5 py-5 sm:px-7">
-          <Link href={`/admin/documentation/${record.documentation.id}`} className={buttonVariants({ variant: "brand" })}>
-            Open documentation
-            <ArrowUpRight className="size-4" aria-hidden="true" />
-          </Link>
-          <Link href={`/movements/${encodeURIComponent(record.slug)}`} className={buttonVariants({ variant: "outline" })}>
-            Public guide
-            <ExternalLink className="size-4" aria-hidden="true" />
-          </Link>
-        </div>
+      <DashboardSection eyebrow="Movement record" title={record.name} description="Edit catalog metadata and the product capabilities controlled by this movement record.">
+        <MovementForm key={`${record.id}-${record.slug}`} movement={record} saving={updateMovement.isPending} onSubmit={handleSubmit} />
+        {updateMovement.isError ? <p className="border-t border-destructive/20 bg-destructive/5 px-5 py-3 text-sm text-destructive sm:px-7">{getAdminErrorMessage(updateMovement.error)}</p> : null}
       </DashboardSection>
 
       <div className="space-y-5">
@@ -70,21 +68,22 @@ export function AdminMovementDetailClient({ slug }: { slug: string }) {
             <Capability label="Live coach" value={record.live_coach_supported} />
           </div>
         </DashboardSection>
-        <DashboardSection eyebrow="Admin API gap" title="Metadata editing unavailable">
-          <p className="px-5 py-6 text-sm leading-6 text-foreground-soft sm:px-7">
-            The backend currently exposes movement data through public read endpoints only. No admin movement list, create, or update endpoint exists, so this surface intentionally does not offer a fake edit action.
-          </p>
+        <DashboardSection eyebrow="Documentation" title="Guide connection">
+          <div className="space-y-4 px-5 py-6 sm:px-7">
+            <div>
+              <p className="text-xs text-foreground-faint">Published guide</p>
+              <p className="mt-1 text-sm text-foreground-soft">
+                {record.published_documentation_version ? `Version ${record.published_documentation_version}` : "No published guide yet"}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {record.published_documentation_id ? <Link href={`/admin/documentation/${record.published_documentation_id}`} className={buttonVariants({ variant: "brand", size: "sm" })}>Open documentation<ArrowUpRight className="size-3.5" aria-hidden="true" /></Link> : null}
+              {record.published_documentation_id ? <Link href={`/movements/${encodeURIComponent(record.slug)}`} className={buttonVariants({ variant: "outline", size: "sm" })}>Public guide<ExternalLink className="size-3.5" aria-hidden="true" /></Link> : null}
+            </div>
+            {!record.published_documentation_id ? <p className="text-xs leading-5 text-foreground-faint">Create a documentation draft separately when this movement is ready for guidance content.</p> : null}
+          </div>
         </DashboardSection>
       </div>
-    </div>
-  );
-}
-
-function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="bg-card/75 px-5 py-5 sm:px-7">
-      <dt className="font-mono text-[0.58rem] font-semibold tracking-[0.13em] text-foreground-faint uppercase">{label}</dt>
-      <dd className={cn("mt-2 text-sm text-foreground-soft", mono && "font-mono text-xs")}>{value}</dd>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-stat
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
 import { AdminDataError } from "@/components/admin/admin-movements-client";
 import { DocumentationStatusBadge } from "@/components/admin/documentation-status-badge";
+import { DocumentationListSkeleton } from "@/components/admin/admin-skeletons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -189,10 +190,6 @@ function DocumentationTable({ records }: { records: AdminDocumentationRecord[] }
       </table>
     </div>
   );
-}
-
-function DocumentationListSkeleton() {
-  return <div className="h-96 animate-pulse rounded-[1.6rem] bg-muted/50" />;
 }
 
 function formatDate(value: string) {
