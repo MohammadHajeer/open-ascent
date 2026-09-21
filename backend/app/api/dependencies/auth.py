@@ -14,19 +14,13 @@ from app.models.profile import Profile
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def get_current_user_id(
-    credentials: Annotated[
-        HTTPAuthorizationCredentials | None,
-        Depends(bearer_scheme),
-    ],
-) -> uuid.UUID:
-    if credentials is None:
+def verify_access_token(token: str) -> uuid.UUID:
+    """Return the verified Supabase principal for a raw access token."""
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required.",
         )
-
-    token = credentials.credentials
 
     try:
         response = supabase.auth.get_user(token)
@@ -51,6 +45,21 @@ def get_current_user_id(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired access token.",
         ) from exc
+
+
+def get_current_user_id(
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None,
+        Depends(bearer_scheme),
+    ],
+) -> uuid.UUID:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required.",
+        )
+
+    return verify_access_token(credentials.credentials)
 
 
 CurrentUserId = Annotated[uuid.UUID, Depends(get_current_user_id)]

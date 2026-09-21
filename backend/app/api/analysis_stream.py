@@ -13,7 +13,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from app.api.dependencies.analysis_access import (
     bearer_scheme,
-    require_guest_analysis_access,
+    require_analysis_access,
 )
 from app.db.database import SessionLocal
 from app.models.analysis import Analysis
@@ -100,7 +100,7 @@ async def stream_progress(request: Request, analysis_id: uuid.UUID, cursor: int)
 
 
 @router.get("/{analysis_id}/events")
-def get_guest_analysis_events(
+def get_analysis_events(
     analysis_id: uuid.UUID,
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
@@ -109,7 +109,7 @@ def get_guest_analysis_events(
     # Authenticate before opening the stream. Its database session closes here;
     # each later read gets its own short-lived session.
     with SessionLocal() as db:
-        require_guest_analysis_access(analysis_id, db, credentials)
+        require_analysis_access(analysis_id, db, credentials)
         try:
             cursor = int(last_event_id) if last_event_id else 0
         except ValueError as exc:

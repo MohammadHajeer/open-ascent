@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select, text
@@ -154,6 +155,22 @@ def _validate_safety_acknowledgement(
         raise SafetyAcknowledgementOutdatedError
 
 
+def _resolve_movement_target(
+    db: Session,
+    payload: GuestAnalysisReservationRequest,
+) -> tuple[Movement | None, Movement]:
+    if payload.family_mode:
+        movement = None
+        safety_movement = db.scalar(select(Movement).where(Movement.slug == "pull-up"))
+        if safety_movement is None or safety_movement.family_key != "vertical_pull":
+            raise AnalysisNotSupportedError
+        return movement, safety_movement
+    if payload.movement_id is not None and payload.family_key is None:
+        movement = _get_valid_movement(db, payload.movement_id)
+        return movement, movement
+    raise AnalysisNotSupportedError
+
+
 def _validate_existing_reservation(
     analysis: Analysis,
     *,
@@ -254,8 +271,10 @@ def reserve_guest_analysis(
     # A concurrent request with the same operation may have committed while
     # waiting for the lock.
     existing_reservation = _handle_existing_reservation(
-        db, operation_key=operation_key,
-        request_fingerprint=request_fingerprint, now=now,
+        db,
+        operation_key=operation_key,
+        request_fingerprint=request_fingerprint,
+        now=now,
     )
     if existing_reservation is not None:
         return existing_reservation
@@ -263,7 +282,8 @@ def reserve_guest_analysis(
         select(func.count(Analysis.id)).where(
             Analysis.owner_kind == "guest",
             Analysis.guest_rate_key == guest_rate_key,
-            Analysis.created_at >= now - timedelta(minutes=settings.guest_rate_window_minutes),
+            Analysis.created_at
+            >= now - timedelta(minutes=settings.guest_rate_window_minutes),
         )
     )
     if recent_count >= settings.guest_reservations_per_window:
@@ -274,18 +294,7 @@ def reserve_guest_analysis(
     # 2. Movement validation
     # ---------------------------------------------------------
 
-    if payload.family_mode:
-        movement = None
-        # Reuse the published baseline vertical-pull guidance. The selected
-        # intention remains family-only and is never stored as Pull-Up.
-        safety_movement = db.scalar(select(Movement).where(Movement.slug == "pull-up"))
-        if safety_movement is None or safety_movement.family_key != "vertical_pull":
-            raise AnalysisNotSupportedError
-    elif payload.movement_id is not None and payload.family_key is None:
-        movement = _get_valid_movement(db, payload.movement_id)
-        safety_movement = movement
-    else:
-        raise AnalysisNotSupportedError
+    movement, safety_movement = _resolve_movement_target(db, payload)
 
     # ---------------------------------------------------------
     # 3. Safety documentation validation
@@ -398,3 +407,92 @@ def reserve_guest_analysis(
     db.refresh(analysis)
 
     return analysis, credential
+
+
+def _validate_existing_authenticated_reservation(
+    analysis: Analysis,
+    *,
+    user_id: uuid.UUID,
+    request_fingerprint: str,
+    now: datetime,
+) -> None:
+    if analysis.request_fingerprint != request_fingerprint:
+        raise IdempotencyConflictError
+    if (
+        analysis.owner_kind != "authenticated"
+        or analysis.user_id != user_id
+        or analysis.status != "reserved"
+        or analysis.reservation_expires_at is None
+        or analysis.reservation_expires_at <= now
+    ):
+        raise ReservationExpiredError
+
+
+def reserve_authenticated_analysis(
+    db: Session,
+    payload: GuestAnalysisReservationRequest,
+    *,
+    operation_key: str,
+    user_id: uuid.UUID,
+) -> Analysis:
+    """Reserve an authenticated analysis on the same row/pipeline as guests."""
+    now = datetime.now(UTC)
+    request_fingerprint = build_request_fingerprint(payload)
+    existing = db.scalar(
+        select(Analysis)
+        .where(Analysis.reservation_operation_key == operation_key)
+        .with_for_update()
+    )
+    if existing is not None:
+        _validate_existing_authenticated_reservation(
+            existing,
+            user_id=user_id,
+            request_fingerprint=request_fingerprint,
+            now=now,
+        )
+        return existing
+
+    movement, safety_movement = _resolve_movement_target(db, payload)
+    documentation = _get_valid_safety_documentation(
+        db,
+        documentation_id=payload.safety_documentation_id,
+        movement_id=safety_movement.id,
+    )
+    _validate_safety_acknowledgement(payload.safety_ack_version)
+
+    analysis = Analysis(
+        user_id=user_id,
+        movement_id=movement.id if movement is not None else None,
+        family_key=safety_movement.family_key,
+        safety_documentation_id=documentation.id,
+        safety_ack_version=CURRENT_SAFETY_ACK_VERSION,
+        safety_acknowledged_at=now,
+        owner_kind="authenticated",
+        status="reserved",
+        stage="reserved",
+        reservation_operation_key=operation_key,
+        request_fingerprint=request_fingerprint,
+        reservation_expires_at=now
+        + timedelta(minutes=settings.guest_reservation_ttl_minutes),
+    )
+    db.add(analysis)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.scalar(
+            select(Analysis)
+            .where(Analysis.reservation_operation_key == operation_key)
+            .with_for_update()
+        )
+        if existing is None:
+            raise
+        _validate_existing_authenticated_reservation(
+            existing,
+            user_id=user_id,
+            request_fingerprint=request_fingerprint,
+            now=now,
+        )
+        return existing
+    db.refresh(analysis)
+    return analysis

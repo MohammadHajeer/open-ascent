@@ -32,7 +32,9 @@ def claim_next_analysis(
         select(Analysis)
         .where(
             Analysis.video_path.is_not(None),
-            or_(Analysis.owner_kind != "guest", Analysis.access_expires_at > func.now()),
+            or_(
+                Analysis.owner_kind != "guest", Analysis.access_expires_at > func.now()
+            ),
             or_(
                 Analysis.status == "queued",
                 and_(
@@ -157,6 +159,10 @@ def complete_analysis(
             partial_rep_count=count("partial_rep_count"),
             uncertain_rep_count=count("uncertain_rep_count"),
             completed_at=func.now(),
+            video_delete_after=case(
+                (Analysis.owner_kind == "authenticated", func.now()),
+                else_=Analysis.video_delete_after,
+            ),
             analyzer_version=analyzer_version,
             model_version=model_version,
             error_code=None,
@@ -199,6 +205,10 @@ def fail_analysis(
             stage="failed",
             error_code=error_code,
             failed_at=func.now(),
+            video_delete_after=case(
+                (Analysis.owner_kind == "authenticated", func.now()),
+                else_=Analysis.video_delete_after,
+            ),
             claim_token=None,
             lease_expires_at=None,
         )

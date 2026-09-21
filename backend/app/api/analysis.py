@@ -3,16 +3,22 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, Header, HTTPException, Query, Request, status
+from sqlalchemy import select
 
-from app.api.dependencies.analysis_access import GuestAnalysisAccess
+from app.api.dependencies.analysis_access import AnalysisAccess
+from app.api.dependencies.auth import AthleteProfile
 from app.core.config import settings
 from app.core.guest_rate_limit import build_guest_rate_key
 from app.core.safety import CURRENT_SAFETY_ACK_VERSION
 from app.db.database import DbSession
+from app.models.analysis import Analysis
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.schemas.analysis import (
+    AnalysisHistoryItem,
+    AnalysisHistoryMovementRead,
+    AuthenticatedAnalysisReservationResponse,
     DeterministicAnalysisRead,
     GuestAnalysisConfigResponse,
     GuestAnalysisFinalizeResponse,
@@ -36,6 +42,7 @@ from app.services.analysis import (
     SafetyDocumentationMismatchError,
     SafetyDocumentationNotFoundError,
     SafetyDocumentationNotPublishedError,
+    reserve_authenticated_analysis,
     reserve_guest_analysis,
 )
 from app.services.analysis_storage import (
@@ -45,8 +52,8 @@ from app.services.analysis_storage import (
     UploadedVideoTooLargeError,
     UploadedVideoTooLongError,
     UploadReservationExpiredError,
-    create_guest_upload_authorization,
-    finalize_guest_analysis_upload,
+    create_analysis_upload_authorization,
+    finalize_analysis_upload,
 )
 from app.services.explanation_jobs import (
     MAX_EXPLANATION_ATTEMPTS,
@@ -64,6 +71,110 @@ IdempotencyKey = Annotated[
     uuid.UUID,
     Header(alias="Idempotency-Key"),
 ]
+
+
+@router.post(
+    "",
+    response_model=AuthenticatedAnalysisReservationResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_authenticated_analysis_reservation(
+    payload: GuestAnalysisReservationRequest,
+    profile: AthleteProfile,
+    db: DbSession,
+    idempotency_key: IdempotencyKey,
+) -> AuthenticatedAnalysisReservationResponse:
+    try:
+        analysis = reserve_authenticated_analysis(
+            db,
+            payload,
+            operation_key=str(idempotency_key),
+            user_id=profile.id,
+        )
+    except MovementNotFoundError:
+        raise HTTPException(status_code=404, detail="Movement not found.")
+    except AnalysisNotSupportedError:
+        raise HTTPException(
+            status_code=409,
+            detail="Uploaded analysis is not supported for this movement.",
+        )
+    except SafetyDocumentationNotFoundError:
+        raise HTTPException(status_code=404, detail="Safety documentation not found.")
+    except (SafetyDocumentationMismatchError, SafetyDocumentationNotPublishedError):
+        raise HTTPException(
+            status_code=409,
+            detail="Safety documentation is not valid for this movement.",
+        )
+    except SafetyAcknowledgementOutdatedError:
+        raise HTTPException(
+            status_code=409, detail="Safety acknowledgement is outdated."
+        )
+    except IdempotencyConflictError:
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency key was already used for a different request.",
+        )
+    except ReservationExpiredError:
+        raise HTTPException(
+            status_code=410,
+            detail="The existing reservation is no longer available.",
+        )
+    return AuthenticatedAnalysisReservationResponse(
+        analysis_id=analysis.id,
+        reservation_expires_at=analysis.reservation_expires_at,
+    )
+
+
+@router.get("", response_model=list[AnalysisHistoryItem])
+def list_authenticated_analysis_history(
+    profile: AthleteProfile,
+    db: DbSession,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> list[AnalysisHistoryItem]:
+    analyses = list(
+        db.scalars(
+            select(Analysis)
+            .where(
+                Analysis.owner_kind == "authenticated",
+                Analysis.user_id == profile.id,
+            )
+            .order_by(Analysis.created_at.desc(), Analysis.id.desc())
+            .limit(limit)
+        )
+    )
+    movement_ids = {item.movement_id for item in analyses if item.movement_id}
+    movements = (
+        {
+            movement.id: movement
+            for movement in db.scalars(
+                select(Movement).where(Movement.id.in_(movement_ids))
+            )
+        }
+        if movement_ids
+        else {}
+    )
+    return [
+        AnalysisHistoryItem(
+            analysis_id=item.id,
+            status=item.status,
+            stage=item.stage,
+            movement=AnalysisHistoryMovementRead(
+                id=movement.id
+                if (movement := movements.get(item.movement_id))
+                else None,
+                slug=movement.slug if movement else "any-vertical-pull",
+                name=movement.name if movement else "Any Vertical Pull",
+            ),
+            created_at=item.created_at,
+            completed_at=item.completed_at,
+            terminal_outcome=item.terminal_outcome,
+            valid_rep_count=item.valid_rep_count,
+            partial_rep_count=item.partial_rep_count,
+            uncertain_rep_count=item.uncertain_rep_count,
+            explanation_status=item.ai_feedback_status,
+        )
+        for item in analyses
+    ]
 
 
 @router.get("/guest/config", response_model=GuestAnalysisConfigResponse)
@@ -172,10 +283,10 @@ def create_guest_analysis_reservation(
 )
 def create_guest_analysis_upload(
     analysis_id: uuid.UUID,
-    analysis: GuestAnalysisAccess,
+    analysis: AnalysisAccess,
 ) -> GuestAnalysisUploadAuthorizationResponse:
     try:
-        path, token = create_guest_upload_authorization(analysis)
+        path, token = create_analysis_upload_authorization(analysis)
 
     except AnalysisNotReservedError:
         raise HTTPException(
@@ -207,11 +318,11 @@ def create_guest_analysis_upload(
 )
 def finalize_guest_analysis(
     analysis_id: uuid.UUID,
-    analysis: GuestAnalysisAccess,
+    analysis: AnalysisAccess,
     db: DbSession,
 ) -> GuestAnalysisFinalizeResponse:
     try:
-        finalized = finalize_guest_analysis_upload(
+        finalized = finalize_analysis_upload(
             db,
             analysis_id=analysis.id,
         )
@@ -266,7 +377,7 @@ def finalize_guest_analysis(
 )
 def get_guest_analysis_status(
     analysis_id: uuid.UUID,
-    analysis: GuestAnalysisAccess,
+    analysis: AnalysisAccess,
 ) -> GuestAnalysisStatusResponse:
     return GuestAnalysisStatusResponse(
         analysis_id=analysis.id,
@@ -281,7 +392,7 @@ def get_guest_analysis_status(
 )
 def get_guest_analysis_result(
     analysis_id: uuid.UUID,
-    analysis: GuestAnalysisAccess,
+    analysis: AnalysisAccess,
     db: DbSession,
 ) -> GuestAnalysisResultResponse:
     movement = db.get(Movement, analysis.movement_id) if analysis.movement_id else None
@@ -328,7 +439,7 @@ def get_guest_analysis_result(
 )
 def retry_guest_analysis_explanation(
     analysis_id: uuid.UUID,
-    analysis: GuestAnalysisAccess,
+    analysis: AnalysisAccess,
     db: DbSession,
 ) -> GuestExplanationRetryResponse:
     try:

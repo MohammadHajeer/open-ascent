@@ -30,7 +30,7 @@ class Analysis(TimestampMixin, Base):
             name="ck_analyses_status",
         ),
         CheckConstraint(
-            "movement_id IS NOT NULL OR (owner_kind = 'guest' AND family_key = 'vertical_pull')",
+            "movement_id IS NOT NULL OR family_key = 'vertical_pull'",
             name="ck_analyses_target_or_family",
         ),
         CheckConstraint(
@@ -107,6 +107,12 @@ class Analysis(TimestampMixin, Base):
             name="ck_analyses_running_claim",
         ),
         Index("ix_analyses_worker_queue", "status", "created_at"),
+        Index("ix_analyses_user_history", "user_id", "created_at"),
+        Index(
+            "ix_analyses_authenticated_media_cleanup",
+            "owner_kind",
+            "video_delete_after",
+        ),
         Index("ix_analyses_guest_abuse_window", "guest_rate_key", "created_at"),
         Index(
             "ix_analyses_guest_cleanup",

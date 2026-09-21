@@ -37,6 +37,12 @@ class GuestAnalysisReservationResponse(BaseModel):
     access_expires_at: datetime
 
 
+class AuthenticatedAnalysisReservationResponse(BaseModel):
+    analysis_id: uuid.UUID
+    status: Literal["reserved"] = "reserved"
+    reservation_expires_at: datetime
+
+
 class GuestAnalysisUploadAuthorizationResponse(BaseModel):
     analysis_id: uuid.UUID
     bucket: str
@@ -115,3 +121,23 @@ class GuestAnalysisResultResponse(BaseModel):
 
 class GuestExplanationRetryResponse(BaseModel):
     explanation_status: Literal["pending", "running"]
+
+
+class AnalysisHistoryMovementRead(BaseModel):
+    id: uuid.UUID | None
+    slug: str
+    name: str
+
+
+class AnalysisHistoryItem(BaseModel):
+    analysis_id: uuid.UUID
+    status: str
+    stage: str
+    movement: AnalysisHistoryMovementRead
+    created_at: datetime
+    completed_at: datetime | None = None
+    terminal_outcome: str | None = None
+    valid_rep_count: int | None = None
+    partial_rep_count: int | None = None
+    uncertain_rep_count: int | None = None
+    explanation_status: Literal["pending", "running", "completed", "failed", "skipped"]

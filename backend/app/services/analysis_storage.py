@@ -46,7 +46,7 @@ def build_analysis_video_path(
     return f"analyses/{analysis_id}/source.mp4"
 
 
-def create_guest_upload_authorization(
+def create_analysis_upload_authorization(
     analysis: Analysis,
 ) -> tuple[str, str]:
     now = datetime.now(UTC)
@@ -129,19 +129,14 @@ def _validate_video_bytes(
             temp_path.unlink(missing_ok=True)
 
 
-def finalize_guest_analysis_upload(
+def finalize_analysis_upload(
     db: Session,
     *,
     analysis_id: uuid.UUID,
 ) -> Analysis:
     expected_path = build_analysis_video_path(analysis_id)
 
-    analysis = db.scalar(
-        select(Analysis).where(
-            Analysis.id == analysis_id,
-            Analysis.owner_kind == "guest",
-        )
-    )
+    analysis = db.scalar(select(Analysis).where(Analysis.id == analysis_id))
 
     if analysis is None:
         raise AnalysisNotReservedError
@@ -162,12 +157,7 @@ def finalize_guest_analysis_upload(
 
     # Lock only for the final state transition.
     analysis = db.scalar(
-        select(Analysis)
-        .where(
-            Analysis.id == analysis_id,
-            Analysis.owner_kind == "guest",
-        )
-        .with_for_update()
+        select(Analysis).where(Analysis.id == analysis_id).with_for_update()
     )
 
     if analysis is None:
@@ -197,3 +187,8 @@ def finalize_guest_analysis_upload(
     db.refresh(analysis)
 
     return analysis
+
+
+# Compatibility aliases for callers outside the API module.
+create_guest_upload_authorization = create_analysis_upload_authorization
+finalize_guest_analysis_upload = finalize_analysis_upload
