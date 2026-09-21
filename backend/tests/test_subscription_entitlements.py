@@ -234,13 +234,42 @@ def test_effective_plan_resolves_verified_current_pro(seeded_catalog: Session) -
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"end": datetime(2026, 9, 20, tzinfo=UTC), "period_end": datetime(2026, 9, 20, tzinfo=UTC)},
-        {"provider_status": "past_due"},
-        {"provider_status": "mystery"},
-        {"provider_id": None},
-        {"verified_at": None},
-        {"start": None, "end": None},
-        {"period_start": None, "period_end": None},
+        pytest.param(
+            {"end": datetime(2026, 9, 20, tzinfo=UTC)},
+            id="effective-period-expired",
+        ),
+        pytest.param(
+            {"period_end": datetime(2026, 9, 20, tzinfo=UTC)},
+            id="billing-period-expired",
+        ),
+        *[
+            pytest.param({"provider_status": status}, id=f"provider-{status}")
+            for status in (
+                "past_due",
+                "incomplete",
+                "incomplete_expired",
+                "unpaid",
+                "canceled",
+                "paused",
+                "trialing",
+            )
+        ],
+        pytest.param({"provider_id": None}, id="provider-id-missing"),
+        pytest.param({"provider_id": ""}, id="provider-id-empty"),
+        pytest.param(
+            {"provider_id": "not-a-stripe-subscription"},
+            id="provider-id-malformed",
+        ),
+        pytest.param({"verified_at": None}, id="never-verified"),
+        pytest.param(
+            {"verified_at": datetime(2026, 9, 22, tzinfo=UTC)},
+            id="not-yet-verified-at-evaluation-time",
+        ),
+        pytest.param({"start": None, "end": None}, id="effective-period-missing"),
+        pytest.param(
+            {"period_start": None, "period_end": None},
+            id="billing-period-missing",
+        ),
     ],
 )
 def test_invalid_or_inconsistent_pro_fails_closed(

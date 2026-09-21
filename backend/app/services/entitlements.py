@@ -135,7 +135,7 @@ def resolve_effective_plan(
             SubscriptionPlan.is_active.is_(True),
             SubscriptionPlan.stripe_price_id.is_not(None),
             UserSubscription.provider_status == "active",
-            UserSubscription.stripe_subscription_id.is_not(None),
+            UserSubscription.stripe_subscription_id.like(r"sub\_%", escape="\\"),
             UserSubscription.last_verified_at.is_not(None),
             UserSubscription.last_verified_at <= evaluated_at,
             UserSubscription.effective_start.is_not(None),
