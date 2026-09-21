@@ -217,6 +217,8 @@ export function AnalysisResults({
         </aside>
       </div>
 
+      <AnalysisExplanationPanel initial={analysis} access={access} />
+
       <RepAnalysis reps={result.reps} familyMode={!analysis.movement.id} targetSlug={analysis.movement.slug} />
 
       <section
@@ -282,7 +284,6 @@ export function AnalysisResults({
         safety={analysis.movement.safety}
         movementName={analysis.movement.name}
       />
-      <AnalysisExplanationPanel initial={analysis} access={access} />
       <div className="mt-8 flex justify-end">
         <Button variant="outline" size="lg" onClick={onRestart}>
           <RotateCcw className="size-4" /> Analyze another video

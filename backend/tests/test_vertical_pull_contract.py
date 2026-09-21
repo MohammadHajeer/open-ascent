@@ -99,7 +99,8 @@ def test_grounding_includes_only_supported_deterministic_dimensions():
         safety_data={"notice": "Use a stable bar."},
     )["allowed_evidence_ids"]
     assert "rep:1:grip_width" in facts
-    assert "rep:1:pull_height" not in facts
+    assert "rep:1:pull_height" in facts
+    assert "set:uncertain_dimensions" in facts
     assert "rep:1:target_match" in facts
     assert "rep:1:movement" in facts
 

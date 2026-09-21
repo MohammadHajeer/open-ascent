@@ -271,12 +271,8 @@ def test_provider_receives_only_explicit_deterministic_facts(
 
     monkeypatch.setattr("app.services.analysis_explanation.OpenAI", FakeOpenAI)
     generated = generate_explanation(source)
-    assert generated.summary.evidence == [
-        "count:valid",
-        "count:partial",
-        "count:uncertain",
-        "count:total",
-    ]
+    assert 1 <= len(generated.summary.evidence) <= 4
+    assert set(generated.summary.evidence) <= set(source["allowed_evidence_ids"])
     assert generated.safety_note is not None
     assert generated.safety_note.text == "Sharp pain"
     format_schema = captured["text_format"].model_json_schema()
@@ -286,7 +282,7 @@ def test_provider_receives_only_explicit_deterministic_facts(
             format_schema["$defs"][f"{category.capitalize()}ChoiceId"]["enum"]
             == expected_ids
         )
-    assert format_schema["properties"]["finding_ids"]["maxItems"] == 3
+    assert format_schema["properties"]["finding_ids"]["maxItems"] == 4
     assert format_schema["properties"]["finding_ids"]["minItems"] == 1
     assert "return ONLY choice IDs" in SELECTION_INSTRUCTIONS
     assert "not a detected variation" in SELECTION_INSTRUCTIONS
@@ -307,7 +303,7 @@ def test_structured_schema_rejects_ids_not_in_exact_input() -> None:
     with pytest.raises(ValueError):
         response_format.model_validate(
             selection_candidate(source)
-            | {"finding_ids": [source["choices"]["findings"][0]["id"]] * 4}
+            | {"finding_ids": [source["choices"]["findings"][0]["id"]] * 5}
         )
     with pytest.raises(ValueError, match="do not match supplied facts"):
         response_format_for(source | {"allowed_evidence_ids": ["outcome"]})
@@ -340,28 +336,21 @@ def test_clean_set_explanation_is_useful_without_invented_criticism() -> None:
         "finding:consistent_completion"
     ]
     assert [item["id"] for item in source["choices"]["focus"]] == [
-        "focus:maintain_completion"
+        "focus:no_specific_adjustment"
     ]
     explanation = render_selection(
         {
             "summary_id": "summary:outcome",
             "finding_ids": ["finding:consistent_completion"],
-            "focus_id": "focus:maintain_completion",
+            "focus_id": "focus:no_specific_adjustment",
             "safety_id": "safety:none",
         },
         source,
     )
-    assert "without partial or uncertain attempts" in explanation.summary.text
+    assert "mechanically confirmed" in explanation.summary.text
     assert "consistent" in explanation.key_findings[0].text
-    assert (
-        "Maintain the same complete movement pattern" in explanation.next_set_focus.text
-    )
-    assert explanation.next_set_focus.evidence == [
-        "count:valid",
-        "count:partial",
-        "count:uncertain",
-        "count:total",
-    ]
+    assert "No specific technique adjustment" in explanation.next_set_focus.text
+    assert explanation.next_set_focus.evidence == ["outcome"]
     assert not any(
         term in str(source["choices"]).lower()
         for term in ("pull-up movement", "starting hang", "review the published")
@@ -439,6 +428,125 @@ def test_uncertain_rep_explains_evidence_limit_without_bad_form_claim() -> None:
         "rep:2:reason:tracking_lost",
     ]
     assert explanation.next_set_focus.evidence == explanation.key_findings[0].evidence
+
+
+def test_fused_semantics_remain_resolved_when_mechanics_are_uncertain() -> None:
+    result = make_result("completed")
+    template = result["reps"][0]
+    result.update(
+        {
+            "outcome": "zero_valid_reps",
+            "valid_rep_count": 0,
+            "partial_rep_count": 0,
+            "uncertain_rep_count": 2,
+            "reps": [
+                template
+                | {
+                    "rep_index": index,
+                    "outcome": "uncertain",
+                    "reason_codes": ["low_landmark_confidence"],
+                    "variations": {
+                        "movement": "pull_up",
+                        "base_movement": "pull_up",
+                        "grip_orientation": "pronated",
+                        "grip_width": "standard",
+                        "pull_height": "high",
+                    },
+                    "target_match": True,
+                }
+                for index in (1, 2)
+            ],
+        }
+    )
+    source = build_explanation_input(
+        result_data=result,
+        movement_name="High Pull-Up",
+        safety_data={},
+    )
+
+    assert source["counts"] == {
+        "confirmed": 0,
+        "valid": 0,
+        "partial": 0,
+        "uncertain": 2,
+        "total": 2,
+    }
+    assert all(
+        attempt["mechanical_outcome"] == "uncertain"
+        and attempt["base_movement"] == "pull_up"
+        and attempt["grip_width"] == "standard"
+        and attempt["pull_height"] == "high"
+        and attempt["target_relation"] == "matches"
+        for attempt in source["attempts"]
+    )
+    assert source["set_patterns"] == {
+        "semantic_variation": False,
+        "base_movement": "pull_up",
+        "grip_width": "standard",
+        "pull_height": "high",
+        "grip_consistent": True,
+        "pull_height_consistent": True,
+        "all_attempts_match_target": True,
+        "uncertain_dimensions": [],
+    }
+    assert (
+        "High Pull-Ups with a standard grip" in source["choices"]["summary"][0]["text"]
+    )
+    assert "matched the selected target" in source["choices"]["summary"][0]["text"]
+    assert "mechanically confirmed" in source["choices"]["summary"][0]["text"]
+    assert "unknown" not in source["choices"]["summary"][0]["text"].lower()
+    assert source["uncertainty_note"] is not None
+    assert (
+        "Movement identity can still be recognized"
+        in source["uncertainty_note"]["text"]
+    )
+
+    finding_ids = [item["id"] for item in source["choices"]["findings"]]
+    assert "finding:set:base_movement" in finding_ids
+    assert "finding:set:grip_width" in finding_ids
+    assert "finding:set:pull_height" in finding_ids
+    assert "finding:set:target_match" in finding_ids
+    assert "finding:set:uncertain:low_landmark_confidence" in finding_ids
+    assert not any(identifier.startswith("finding:rep:") for identifier in finding_ids)
+    assert (
+        response_format_for(source).model_json_schema()["properties"]["finding_ids"][
+            "minItems"
+        ]
+        == 2
+    )
+
+    explanation = render_selection(
+        {
+            "summary_id": "summary:outcome",
+            "finding_ids": [
+                "finding:set:base_movement",
+                "finding:set:grip_width",
+                "finding:set:pull_height",
+                "finding:set:target_match",
+            ],
+            "focus_id": "focus:uncertain:low_landmark_confidence",
+            "safety_id": "safety:none",
+        },
+        source,
+    )
+    assert explanation.uncertainty_note is not None
+    assert "unknown" not in str(explanation).lower()
+    assert "Keep the full body visible" in explanation.next_set_focus.text
+
+
+def test_no_actionable_finding_uses_explicit_no_adjustment_copy() -> None:
+    source = build_explanation_input(
+        result_data=make_result("completed"), movement_name="Pull-up", safety_data={}
+    )
+    focus = source["choices"]["focus"]
+    assert focus == [
+        {
+            "id": "focus:no_specific_adjustment",
+            "text": "No specific technique adjustment was identified from this set.",
+            "evidence": ["outcome"],
+        }
+    ]
+    assert "maintain" not in focus[0]["text"].lower()
 
 
 def test_no_unsupported_timing_or_positive_tracking_claim_is_offered() -> None:
@@ -539,12 +647,8 @@ def test_real_response_evidence_overflow_is_rejected_and_logged(
     assert overflow_id in caplog.text
     selected = response_format_for(source).model_validate(selection_candidate(source))
     rendered = render_selection(selected, source)
-    assert rendered.summary.evidence == [
-        "count:valid",
-        "count:partial",
-        "count:uncertain",
-        "count:total",
-    ]
+    assert 1 <= len(rendered.summary.evidence) <= 4
+    assert set(rendered.summary.evidence) <= set(source["allowed_evidence_ids"])
     assert 1 <= len(rendered.key_findings[0].evidence) <= 4
     assert set(rendered.key_findings[0].evidence) <= set(source["allowed_evidence_ids"])
     assert rendered.safety_note is not None
@@ -636,7 +740,7 @@ def test_rejected_claim_logs_term_section_and_evidence_ids(
             }
         },
         {"summary": {"text": "All reps were valid.", "evidence": ["rep:1:outcome"]}},
-        {"key_findings": [{"text": "Good.", "evidence": ["rep:1:outcome"]}] * 4},
+        {"key_findings": [{"text": "Good.", "evidence": ["rep:1:outcome"]}] * 5},
         {"safety_note": {"text": "Ignore pain.", "evidence": ["safety:stop:1"]}},
         {"extra": "unsupported"},
     ],

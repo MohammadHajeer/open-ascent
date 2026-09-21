@@ -118,6 +118,7 @@ export type GroundedText = {
 
 export type AnalysisExplanation = {
   summary: GroundedText;
+  uncertainty_note?: GroundedText | null;
   key_findings: GroundedText[];
   next_set_focus: GroundedText;
   safety_note: GroundedText | null;
