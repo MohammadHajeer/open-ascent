@@ -129,10 +129,22 @@ class PullUpAnalyzerConfig:
     close_wrist_shoulder_ratio: float = 0.85
     wide_wrist_shoulder_ratio: float = 1.65
     min_rep_height_samples: int = 3
-    # A high pull puts the shoulder line near the bar. Expressed in
-    # shoulder-width units to avoid a resolution-dependent pixel threshold.
-    high_shoulder_bar_ratio: float = 0.35
-    standard_shoulder_bar_ratio: float = 0.65
+    height_peak_window_ms: int = 250
+    height_peak_window_preferred_samples: int = 5
+    # Upper-chest proxy = shoulder line + 1/4 projected torso length.
+    # The score is (upper chest - wrist/bar line) / projected torso length.
+    # A high pull requires the upper chest to come within 1/10 projected torso
+    # length of the inferred bar line. Ordinary clearance remains at least
+    # 1/4 torso below it, leaving a deliberately broad uncertainty band.
+    height_upper_chest_fraction: float = 0.25
+    high_chest_bar_ratio_max: float = 0.10
+    standard_chest_bar_ratio_min: float = 0.25
+    # Camera-invariant stability check over a candidate peak window. The
+    # normalized score already subtracts the inferred wrist/bar line from the
+    # chest proxy, so its MAD rejects incoherent evidence without treating
+    # global camera translation as wrist drift.
+    height_max_chest_score_mad: float = 0.15
+    height_max_torso_span_spread_ratio: float = 0.25
 
     # Crop the original-resolution frame around each pose wrist so
     # Hand Landmarker receives enough hand detail.

@@ -17,10 +17,19 @@ def main() -> None:
         type=Path,
         help="Path to the pull-up video.",
     )
+    parser.add_argument(
+        "--diagnostics",
+        action="store_true",
+        help="Print private per-rep variation evidence (not API output).",
+    )
 
     args = parser.parse_args()
 
-    result = analyze_pull_up_video(args.video)
+    diagnostics: list[dict] = []
+    result = analyze_pull_up_video(
+        args.video,
+        on_rep_diagnostic=diagnostics.append if args.diagnostics else None,
+    )
 
     print()
     print(
@@ -29,6 +38,8 @@ def main() -> None:
             indent=2,
         )
     )
+    if args.diagnostics:
+        print(json.dumps({"variation_diagnostics": diagnostics}, indent=2))
 
 
 if __name__ == "__main__":

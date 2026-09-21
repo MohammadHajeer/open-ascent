@@ -19,6 +19,7 @@ from app.analyzers.common.video import (
 from app.analyzers.pull_up.classification import (
     VariationObservation,
     add_pose_variations,
+    build_variation_diagnostic,
     observe_variation,
 )
 from app.analyzers.pull_up.config import (
@@ -54,6 +55,7 @@ def analyze_vertical_pull_video(
     pose_model_path: Path = POSE_MODEL_PATH,
     hand_model_path: Path = HAND_MODEL_PATH,
     on_rep_completed: Callable[[RepAnalysis], None] | None = None,
+    on_rep_diagnostic: Callable[[dict], None] | None = None,
 ) -> MovementAnalysisResult:
     metadata = get_video_metadata(video_path)
 
@@ -64,34 +66,22 @@ def analyze_vertical_pull_video(
 
     hang_required_samples = max(
         1,
-        math.ceil(
-            config.hang_confirmation_seconds
-            * effective_fps
-        ),
+        math.ceil(config.hang_confirmation_seconds * effective_fps),
     )
 
     smoothing_samples = max(
         1,
-        math.ceil(
-            config.angle_smoothing_seconds
-            * effective_fps
-        ),
+        math.ceil(config.angle_smoothing_seconds * effective_fps),
     )
 
     invalid_position_tolerance_samples = max(
         1,
-        math.ceil(
-            config.invalid_position_tolerance_seconds
-            * effective_fps
-        ),
+        math.ceil(config.invalid_position_tolerance_seconds * effective_fps),
     )
 
     minimum_usable_samples = max(
         1,
-        math.ceil(
-            config.min_usable_evidence_seconds
-            * effective_fps
-        ),
+        math.ceil(config.min_usable_evidence_seconds * effective_fps),
     )
 
     angle_history: deque[float] = deque(
@@ -110,7 +100,15 @@ def analyze_vertical_pull_video(
 
     def record_rep(rep: RepAnalysis) -> None:
         classified = add_grip_variations(rep, grip_observations, config=config)
-        classified = add_pose_variations(classified, variation_observations, config=config)
+        classified = add_pose_variations(
+            classified, variation_observations, config=config
+        )
+        if on_rep_diagnostic is not None:
+            on_rep_diagnostic(
+                build_variation_diagnostic(
+                    classified, variation_observations, config=config
+                )
+            )
         reps.append(classified)
         if on_rep_completed is not None:
             on_rep_completed(classified)
@@ -150,10 +148,7 @@ def analyze_vertical_pull_video(
                 if hang_confirmed:
                     invalid_position_frames += 1
 
-                    if (
-                        invalid_position_frames
-                        > invalid_position_tolerance_samples
-                    ):
+                    if invalid_position_frames > invalid_position_tolerance_samples:
                         uncertain_rep = tracker.interrupt(
                             timestamp_ms=pose_frame.timestamp_ms,
                             reason_code="tracking_lost",
@@ -189,10 +184,7 @@ def analyze_vertical_pull_video(
                 if hang_confirmed:
                     invalid_position_frames += 1
 
-                    if (
-                        invalid_position_frames
-                        > invalid_position_tolerance_samples
-                    ):
+                    if invalid_position_frames > invalid_position_tolerance_samples:
                         uncertain_rep = tracker.interrupt(
                             timestamp_ms=pose_frame.timestamp_ms,
                             reason_code="low_landmark_confidence",
@@ -220,13 +212,9 @@ def analyze_vertical_pull_video(
             # SMOOTH ELBOW ANGLE
             # -----------------------------------------------------
 
-            angle_history.append(
-                measurement.average_elbow_angle_deg
-            )
+            angle_history.append(measurement.average_elbow_angle_deg)
 
-            smoothed_angle = float(
-                median(angle_history)
-            )
+            smoothed_angle = float(median(angle_history))
 
             # -----------------------------------------------------
             # STRICT INITIAL HANG EVIDENCE
@@ -240,20 +228,14 @@ def analyze_vertical_pull_video(
             # on every frame. A high pull is expected to leave dead-hang
             # geometry while the athlete is still legitimately on the bar.
 
-            hands_above_shoulders = (
-                hands_are_above_shoulders(landmarks)
-            )
+            hands_above_shoulders = hands_are_above_shoulders(landmarks)
 
             body_under_hands = body_is_under_hands(
                 landmarks,
-                alignment_tolerance=(
-                    config.body_alignment_tolerance
-                ),
+                alignment_tolerance=(config.body_alignment_tolerance),
             )
 
-            wrist_sample = build_wrist_history_sample(
-                landmarks
-            )
+            wrist_sample = build_wrist_history_sample(landmarks)
 
             if hang_confirmed or hands_above_shoulders and body_under_hands:
                 wrist_history.append(wrist_sample)
@@ -265,9 +247,7 @@ def analyze_vertical_pull_video(
             hang_metrics = calculate_hang_metrics(
                 wrist_history,
                 required_samples=hang_required_samples,
-                wrist_stability_threshold=(
-                    config.wrist_stability_threshold
-                ),
+                wrist_stability_threshold=(config.wrist_stability_threshold),
             )
 
             # -----------------------------------------------------
@@ -285,24 +265,17 @@ def analyze_vertical_pull_video(
                 and body_under_hands
                 and hang_metrics is not None
                 and hang_metrics.wrists_stable
-                and hang_metrics.body_movement_range
-                >= config.body_movement_threshold
+                and hang_metrics.body_movement_range >= config.body_movement_threshold
             ):
                 hang_confirmed = True
                 ever_confirmed_hang = True
 
                 left_wrist_anchor_y = float(
-                    median(
-                        sample.left_y
-                        for sample in wrist_history
-                    )
+                    median(sample.left_y for sample in wrist_history)
                 )
 
                 right_wrist_anchor_y = float(
-                    median(
-                        sample.right_y
-                        for sample in wrist_history
-                    )
+                    median(sample.right_y for sample in wrist_history)
                 )
 
                 invalid_position_frames = 0
@@ -321,10 +294,7 @@ def analyze_vertical_pull_video(
 
             wrists_released = False
 
-            if (
-                left_wrist_anchor_y is not None
-                and right_wrist_anchor_y is not None
-            ):
+            if left_wrist_anchor_y is not None and right_wrist_anchor_y is not None:
                 wrists_released = (
                     landmarks[15].y - left_wrist_anchor_y
                     > config.wrist_release_distance
@@ -335,10 +305,7 @@ def analyze_vertical_pull_video(
             if wrists_released:
                 invalid_position_frames += 1
 
-                if (
-                    invalid_position_frames
-                    > invalid_position_tolerance_samples
-                ):
+                if invalid_position_frames > invalid_position_tolerance_samples:
                     uncertain_rep = tracker.interrupt(
                         timestamp_ms=pose_frame.timestamp_ms,
                         reason_code="wrist_release_detected",
@@ -386,12 +353,8 @@ def analyze_vertical_pull_video(
             completed_rep = tracker.update(
                 timestamp_ms=pose_frame.timestamp_ms,
                 angle_deg=smoothed_angle,
-                body_relative_y=(
-                    wrist_sample.shoulder_relative_y
-                ),
-                face_to_wrist_y=(
-                    measurement.face_to_wrist_y
-                ),
+                body_relative_y=(wrist_sample.shoulder_relative_y),
+                face_to_wrist_y=(measurement.face_to_wrist_y),
             )
 
             if completed_rep is not None:
@@ -414,30 +377,19 @@ def analyze_vertical_pull_video(
     # ---------------------------------------------------------
 
     usable_pose_ratio = (
-        usable_pose_frames / total_sampled_frames
-        if total_sampled_frames
-        else 0.0
+        usable_pose_frames / total_sampled_frames if total_sampled_frames else 0.0
     )
 
     evidence_reason_codes: list[str] = []
 
     if usable_pose_frames < minimum_usable_samples:
-        evidence_reason_codes.append(
-            "too_few_usable_pose_frames"
-        )
+        evidence_reason_codes.append("too_few_usable_pose_frames")
 
-    if (
-        usable_pose_ratio
-        < config.min_usable_pose_ratio
-    ):
-        evidence_reason_codes.append(
-            "low_usable_pose_ratio"
-        )
+    if usable_pose_ratio < config.min_usable_pose_ratio:
+        evidence_reason_codes.append("low_usable_pose_ratio")
 
     if not ever_confirmed_hang and not reps:
-        evidence_reason_codes.append(
-            "pull_up_hang_not_confirmed"
-        )
+        evidence_reason_codes.append("pull_up_hang_not_confirmed")
 
     evidence = AnalysisEvidence(
         total_sampled_frames=total_sampled_frames,
@@ -451,20 +403,11 @@ def analyze_vertical_pull_video(
     # COUNTS
     # ---------------------------------------------------------
 
-    valid_rep_count = sum(
-        rep.outcome.value == "valid"
-        for rep in reps
-    )
+    valid_rep_count = sum(rep.outcome.value == "valid" for rep in reps)
 
-    partial_rep_count = sum(
-        rep.outcome.value == "partial"
-        for rep in reps
-    )
+    partial_rep_count = sum(rep.outcome.value == "partial" for rep in reps)
 
-    uncertain_rep_count = sum(
-        rep.outcome.value == "uncertain"
-        for rep in reps
-    )
+    uncertain_rep_count = sum(rep.outcome.value == "uncertain" for rep in reps)
 
     # ---------------------------------------------------------
     # OVERALL OUTCOME
@@ -472,12 +415,8 @@ def analyze_vertical_pull_video(
 
     insufficient_evidence = (
         usable_pose_frames < minimum_usable_samples
-        or usable_pose_ratio
-        < config.min_usable_pose_ratio
-        or (
-            not ever_confirmed_hang
-            and not reps
-        )
+        or usable_pose_ratio < config.min_usable_pose_ratio
+        or (not ever_confirmed_hang and not reps)
     )
 
     if insufficient_evidence:
@@ -507,6 +446,7 @@ def analyze_pull_up_video(
     pose_model_path: Path = POSE_MODEL_PATH,
     hand_model_path: Path = HAND_MODEL_PATH,
     on_rep_completed: Callable[[RepAnalysis], None] | None = None,
+    on_rep_diagnostic: Callable[[dict], None] | None = None,
 ) -> MovementAnalysisResult:
     """
     Backwards-compatible entry point.
@@ -522,4 +462,5 @@ def analyze_pull_up_video(
         pose_model_path=pose_model_path,
         hand_model_path=hand_model_path,
         on_rep_completed=on_rep_completed,
+        on_rep_diagnostic=on_rep_diagnostic,
     )
