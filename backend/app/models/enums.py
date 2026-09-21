@@ -70,6 +70,15 @@ class FeatureKey(StrEnum):
     VIDEO_ANALYSIS = "video_analysis"
     TRAINING_PLAN_GENERATION = "training_plan_generation"
     AI_COACH_REPLY = "ai_coach_reply"
+    LIVE_COACH = "live_coach"
+    ADAPTIVE_TRAINING_PLANS = "adaptive_training_plans"
+    ADVANCED_PROGRESS_INSIGHTS = "advanced_progress_insights"
+
+
+class EntitlementType(StrEnum):
+    BOOLEAN = "boolean"
+    METERED = "metered"
+    UNLIMITED = "unlimited"
 
 
 class ResetPolicy(StrEnum):

@@ -27,8 +27,7 @@ class SubscriptionPlan(TimestampMixin, Base):
         CheckConstraint("code IN ('free', 'pro')", name="ck_subscription_plans_code"),
         CheckConstraint(
             """
-            (code = 'free' AND stripe_price_id IS NULL)
-            OR (code = 'pro' AND stripe_price_id IS NOT NULL)
+            stripe_price_id IS NULL OR code = 'pro'
             """,
             name="ck_subscription_plans_price_mapping",
         ),
@@ -55,19 +54,37 @@ class PlanEntitlement(TimestampMixin, Base):
         UniqueConstraint(
             "plan_id",
             "feature_key",
-            "effective_from",
-            name="uq_plan_entitlements_plan_feature_effective",
+            name="uq_plan_entitlements_plan_feature",
         ),
         CheckConstraint(
-            "feature_key IN ('video_analysis', 'training_plan_generation', 'ai_coach_reply')",
+            "feature_key IN ("
+            "'video_analysis', 'training_plan_generation', 'ai_coach_reply', "
+            "'live_coach', 'adaptive_training_plans', "
+            "'advanced_progress_insights'"
+            ")",
             name="ck_plan_entitlements_feature_key",
         ),
         CheckConstraint(
-            "allowance_units >= 0", name="ck_plan_entitlements_allowance_units"
+            "entitlement_type IN ('boolean', 'metered', 'unlimited')",
+            name="ck_plan_entitlements_type",
         ),
         CheckConstraint(
-            "reset_policy = 'calendar_month_utc'",
-            name="ck_plan_entitlements_reset_policy",
+            """
+            (entitlement_type = 'boolean'
+                AND allowance_units IS NULL
+                AND reset_policy IS NULL)
+            OR
+            (entitlement_type = 'metered'
+                AND enabled
+                AND (allowance_units IS NULL OR allowance_units >= 0)
+                AND reset_policy = 'calendar_month_utc')
+            OR
+            (entitlement_type = 'unlimited'
+                AND enabled
+                AND allowance_units IS NULL
+                AND reset_policy IS NULL)
+            """,
+            name="ck_plan_entitlements_configuration",
         ),
         CheckConstraint("revision > 0", name="ck_plan_entitlements_revision"),
     )
@@ -83,14 +100,14 @@ class PlanEntitlement(TimestampMixin, Base):
         nullable=False,
     )
     feature_key: Mapped[str] = mapped_column(Text, nullable=False)
+    entitlement_type: Mapped[str] = mapped_column(Text, nullable=False)
     enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )
-    allowance_units: Mapped[int] = mapped_column(Integer, nullable=False)
-    reset_policy: Mapped[str] = mapped_column(
+    allowance_units: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reset_policy: Mapped[str | None] = mapped_column(
         Text,
-        nullable=False,
-        server_default=text("'calendar_month_utc'"),
+        nullable=True,
     )
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     effective_from: Mapped[datetime] = mapped_column(
