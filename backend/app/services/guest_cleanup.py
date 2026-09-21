@@ -11,6 +11,7 @@ from storage3.exceptions import StorageApiError
 
 from app.core.config import settings
 from app.core.supabase import supabase
+from app.models.ai_run import AIRun
 from app.models.analysis import Analysis
 from app.models.analysis_event import AnalysisEvent
 from app.services.analysis_storage import build_analysis_video_path
@@ -102,6 +103,7 @@ def cleanup_expired_guest_analyses(
         db.execute(
             delete(AnalysisEvent).where(AnalysisEvent.analysis_id == analysis.id)
         )
+        db.execute(delete(AIRun).where(AIRun.analysis_id == analysis.id))
         analysis.video_path = None
         analysis.video_delete_after = None
         analysis.guest_token_hash = None

@@ -15,7 +15,7 @@ const explanations: Record<string, { headline: string; detail: string }> = {
   low_landmark_confidence: {
     headline: "Body landmarks unclear",
     detail:
-      "The body landmarks were not clear enough to finish evaluating an attempt.",
+      "Pose-landmark evidence was not sufficient to fully validate this attempt.",
   },
   wrist_release_detected: {
     headline: "Bar contact unclear",
@@ -61,6 +61,79 @@ export function strongestFindings(result: DeterministicResult): Finding[] {
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, 3)
     .map(([code, count]) => ({ ...explanations[code], count }));
+}
+
+export function resultHeadline(result: DeterministicResult): {
+  title: string;
+  subtitle: string;
+} {
+  const attempts =
+    result.valid_rep_count +
+    result.partial_rep_count +
+    result.uncertain_rep_count;
+  if (result.outcome === "insufficient_evidence") {
+    return {
+      title: "Evidence was limited.",
+      subtitle: "The clip could not be evaluated reliably.",
+    };
+  }
+  if (result.outcome === "zero_valid_reps") {
+    return attempts
+      ? {
+          title: `${attempts} ${attempts === 1 ? "attempt" : "attempts"} detected.`,
+          subtitle: "0 could be fully confirmed from pose evidence.",
+        }
+      : {
+          title: "No attempts confirmed.",
+          subtitle: "No complete attempts were detected in this clip.",
+        };
+  }
+  return {
+    title: `${result.valid_rep_count} confirmed ${result.valid_rep_count === 1 ? "rep" : "reps"}.`,
+    subtitle: `${attempts} ${attempts === 1 ? "attempt" : "attempts"} analyzed.`,
+  };
+}
+
+export function countMetrics(
+  result: DeterministicResult,
+): [string, string][] {
+  const attempts =
+    result.valid_rep_count +
+    result.partial_rep_count +
+    result.uncertain_rep_count;
+  return [
+    ["Confirmed reps", String(result.valid_rep_count)],
+    ["Partial attempts", String(result.partial_rep_count)],
+    ["Uncertain attempts", String(result.uncertain_rep_count)],
+    ["Total attempts", String(attempts)],
+  ];
+}
+
+export function mechanicalUncertaintySummary(
+  result: DeterministicResult,
+): string | null {
+  const attempts =
+    result.valid_rep_count +
+    result.partial_rep_count +
+    result.uncertain_rep_count;
+  if (!attempts || !result.uncertain_rep_count) return null;
+
+  const uncertainReps = result.reps.filter(
+    (rep) => rep.outcome === "uncertain",
+  );
+  const allLimitedByLandmarks =
+    uncertainReps.length === result.uncertain_rep_count &&
+    uncertainReps.every((rep) =>
+      rep.reason_codes.includes("low_landmark_confidence"),
+    );
+  if (!allLimitedByLandmarks) return null;
+
+  if (result.uncertain_rep_count === attempts) {
+    return attempts === 1
+      ? "1 attempt was detected, but pose-landmark quality was not sufficient to fully validate it."
+      : `${attempts} attempts were detected, but pose-landmark quality was not sufficient to fully validate them.`;
+  }
+  return `${result.uncertain_rep_count} of ${attempts} attempts could not be fully validated because pose-landmark quality was insufficient.`;
 }
 
 export function detectedMovement(reps: Rep[]): string {

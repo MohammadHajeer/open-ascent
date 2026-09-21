@@ -21,3 +21,18 @@ test("valid target deviation is visually distinct from validity", () => {
     "1 × Pull-Up · Close grip · High pull", "1 × Pull-Up · Wide grip · High pull",
   ]);
 });
+
+test("variation distribution includes fused semantics from uncertain attempts", () => {
+  const uncertainWideHigh = {
+    ...closeHigh,
+    outcome: "uncertain",
+    variations: {
+      base_movement: "pull_up",
+      grip_width: "wide",
+      pull_height: "high",
+    },
+  };
+  assert.deepEqual(variationDistribution([uncertainWideHigh]), [
+    "1 × Pull-Up · Wide grip · High pull",
+  ]);
+});

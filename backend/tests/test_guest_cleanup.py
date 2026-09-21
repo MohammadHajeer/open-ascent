@@ -14,6 +14,7 @@ from storage3.exceptions import StorageApiError
 from app.api import analysis_stream
 from app.core.config import settings
 from app.core.safety import CURRENT_SAFETY_ACK_VERSION
+from app.models.ai_run import AIRun
 from app.models.analysis import Analysis
 from app.models.analysis_event import AnalysisEvent
 from app.models.movement import Movement
@@ -128,6 +129,21 @@ def test_cleanup_scrubs_expired_guest_and_keeps_statistics(
             payload={"private": "event"},
         )
     )
+    db.add(
+        AIRun(
+            analysis_id=expired.id,
+            feature="vertical_pull_visual_classification",
+            provider="openai",
+            model="gpt-5.6-luna",
+            operation_key=f"visual-cleanup-{expired.id}",
+            status="completed",
+            reserved_cost=0,
+            usage={},
+            metadata_json={},
+            temporary_result={"private": "visual classification"},
+            result_expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+    )
     db.commit()
 
     assert cleanup_expired_guest_analyses(db, batch_size=1) == 1
@@ -170,6 +186,12 @@ def test_cleanup_scrubs_expired_guest_and_keeps_statistics(
             select(func.count(AnalysisEvent.id)).where(
                 AnalysisEvent.analysis_id == expired.id,
             )
+        )
+        == 0
+    )
+    assert (
+        db.scalar(
+            select(func.count(AIRun.id)).where(AIRun.analysis_id == expired.id)
         )
         == 0
     )

@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # OpenAI
     openai_api_key: str
     openai_model: str
+    openai_visual_classifier_enabled: bool = True
+    openai_visual_classifier_model: str = "gpt-5.6-luna"
+    openai_visual_classifier_timeout_seconds: float = 30.0
 
     # Stripe
     stripe_secret_key: str

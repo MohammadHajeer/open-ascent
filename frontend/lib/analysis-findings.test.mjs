@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { describeReason, detectedGrip, detectedMovement, strongestFindings } from "./analysis-findings.ts";
+import {
+  countMetrics,
+  describeReason,
+  detectedGrip,
+  detectedMovement,
+  mechanicalUncertaintySummary,
+  resultHeadline,
+  strongestFindings,
+} from "./analysis-findings.ts";
 
 test("findings rank recorded reason codes without inventing explanations", () => {
   const result = {
@@ -29,4 +37,39 @@ test("movement and grip remain uncertain when per-rep evidence is absent", () =>
   ];
   assert.equal(detectedMovement(mixed), "Mixed grip evidence");
   assert.equal(detectedGrip(mixed), "Mixed");
+});
+
+test("zero confirmed reps still reports detected attempts clearly", () => {
+  const result = {
+    outcome: "zero_valid_reps",
+    valid_rep_count: 0,
+    partial_rep_count: 0,
+    uncertain_rep_count: 2,
+    reps: [
+      { outcome: "uncertain", reason_codes: ["low_landmark_confidence"] },
+      { outcome: "uncertain", reason_codes: ["low_landmark_confidence"] },
+    ],
+  };
+
+  assert.deepEqual(resultHeadline(result), {
+    title: "2 attempts detected.",
+    subtitle: "0 could be fully confirmed from pose evidence.",
+  });
+  assert.deepEqual(countMetrics(result), [
+    ["Confirmed reps", "0"],
+    ["Partial attempts", "0"],
+    ["Uncertain attempts", "2"],
+    ["Total attempts", "2"],
+  ]);
+  assert.equal(
+    mechanicalUncertaintySummary(result),
+    "2 attempts were detected, but pose-landmark quality was not sufficient to fully validate them.",
+  );
+});
+
+test("per-attempt landmark wording preserves mechanical uncertainty", () => {
+  assert.equal(
+    describeReason("low_landmark_confidence"),
+    "Pose-landmark evidence was not sufficient to fully validate this attempt.",
+  );
 });

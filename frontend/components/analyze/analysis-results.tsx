@@ -3,7 +3,10 @@ import { Check, CircleAlert, RotateCcw, ScanLine } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  countMetrics,
   describeReason,
+  mechanicalUncertaintySummary,
+  resultHeadline,
   strongestFindings,
 } from "@/lib/analysis-findings";
 import type { GuestResult, Rep } from "@/lib/analysis";
@@ -123,33 +126,16 @@ export function AnalysisResults({
     ? validDurations.reduce((sum, duration) => sum + duration, 0) /
       validDurations.length
     : null;
-  const attempts =
-    result.valid_rep_count +
-    result.partial_rep_count +
-    result.uncertain_rep_count;
-  const title =
-    result.outcome === "insufficient_evidence"
-      ? "Evidence was limited."
-      : result.outcome === "zero_valid_reps"
-        ? "No valid reps confirmed."
-        : `${result.valid_rep_count} valid ${result.valid_rep_count === 1 ? "rep" : "reps"}.`;
-  const subtitle =
-    result.outcome === "insufficient_evidence"
-      ? "The clip could not be evaluated reliably."
-      : result.outcome === "zero_valid_reps"
-        ? "See the attempts and evidence below."
-        : `${attempts} ${attempts === 1 ? "attempt" : "attempts"} analyzed.`;
+  const { title, subtitle } = resultHeadline(result);
+  const uncertaintySummary = mechanicalUncertaintySummary(result);
   const metrics = [
-    ["Valid reps", String(result.valid_rep_count)],
-    ["Partial attempts", String(result.partial_rep_count)],
-    ["Uncertain attempts", String(result.uncertain_rep_count)],
-    ["Total attempts", String(attempts)],
+    ...countMetrics(result),
     ["Video duration", seconds(result.duration_ms)],
     [
       "Usable pose frames",
       `${Math.round(result.evidence.usable_pose_ratio * 100)}%`,
     ],
-    ...(average === null ? [] : [["Average valid rep", seconds(average)]]),
+    ...(average === null ? [] : [["Average confirmed rep", seconds(average)]]),
   ];
 
   return (
@@ -223,7 +209,7 @@ export function AnalysisResults({
                 Main observation
               </span>
               <p className="mt-3 text-sm leading-6 text-foreground-mid">
-                {findings[0]?.detail ??
+                {uncertaintySummary ?? findings[0]?.detail ??
                   "No major issues were detected in the analyzed repetitions."}
               </p>
             </div>

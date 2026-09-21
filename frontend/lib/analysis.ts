@@ -1,6 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
-
 import { apiFetch } from "@/lib/api";
+import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 export type Movement = {
   id: string;
@@ -22,7 +21,10 @@ export type Safety = {
 };
 
 export type MovementGuide = Movement & {
-  documentation: { id: string; content: Safety };
+  documentation: {
+    id: string;
+    content: Safety;
+  };
 };
 
 export type GuestConfig = {
@@ -45,11 +47,19 @@ export type AnalysisStatus =
   | "completed"
   | "failed"
   | "expired";
+
 export type AnalysisOutcome =
   | "completed"
   | "zero_valid_reps"
   | "insufficient_evidence";
+
 export type RepOutcome = "valid" | "partial" | "uncertain";
+
+export type TargetDeviation = {
+  dimension: string;
+  expected: string;
+  detected: string;
+};
 
 export type Rep = {
   rep_index: number;
@@ -57,16 +67,26 @@ export type Rep = {
   start_ms: number;
   end_ms: number;
   top_ms: number | null;
-  phase_events: { phase: string; timestamp_ms: number }[];
+  phase_events: {
+    phase: string;
+    timestamp_ms: number;
+  }[];
   reason_codes: string[];
-  variations: { movement?: string; grip_orientation?: string; base_movement?: string;
-    grip_width?: string; pull_height?: string };
+  variations: {
+    movement?: string;
+    grip_orientation?: string;
+    base_movement?: string;
+    grip_width?: string;
+    pull_height?: string;
+  };
   target_match?: boolean | null;
   target_deviations?: TargetDeviation[];
 };
 
-export type TargetDeviation = { dimension: string; expected: string; detected: string };
-export type RepClassification = Pick<Rep, "rep_index" | "outcome" | "variations" | "target_match" | "target_deviations">;
+export type RepClassification = Pick<
+  Rep,
+  "rep_index" | "outcome" | "variations" | "target_match" | "target_deviations"
+>;
 
 export type DeterministicResult = {
   outcome: AnalysisOutcome;
@@ -84,8 +104,18 @@ export type DeterministicResult = {
   };
 };
 
-export type ExplanationStatus = "pending" | "running" | "completed" | "failed" | "skipped";
-export type GroundedText = { text: string; evidence: string[] };
+export type ExplanationStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped";
+
+export type GroundedText = {
+  text: string;
+  evidence: string[];
+};
+
 export type AnalysisExplanation = {
   summary: GroundedText;
   key_findings: GroundedText[];
@@ -97,7 +127,12 @@ export type GuestResult = {
   analysis_id: string;
   status: AnalysisStatus;
   stage: string;
-  movement: { id: string | null; slug: string; name: string; safety: Safety };
+  movement: {
+    id: string | null;
+    slug: string;
+    name: string;
+    safety: Safety;
+  };
   result: DeterministicResult | null;
   explanation_status: ExplanationStatus;
   explanation: AnalysisExplanation | null;
@@ -105,7 +140,9 @@ export type GuestResult = {
 };
 
 function authorization(credential: string): HeadersInit {
-  return { Authorization: `Bearer ${credential}` };
+  return {
+    Authorization: `Bearer ${credential}`,
+  };
 }
 
 export function reserveGuestAnalysis(
@@ -120,7 +157,9 @@ export function reserveGuestAnalysis(
       "Idempotency-Key": crypto.randomUUID(),
     },
     body: JSON.stringify({
-      ...(movementId ? { movement_id: movementId } : { family_key: "vertical_pull" }),
+      ...(movementId
+        ? { movement_id: movementId }
+        : { family_key: "vertical_pull" }),
       safety_documentation_id: safetyDocumentationId,
       safety_ack_version: safetyAckVersion,
     }),
@@ -143,6 +182,7 @@ export async function uploadGuestVideo(access: GuestAccess, file: File) {
       headers: authorization(access.credential),
     },
   );
+
   if (
     file.size > upload.max_size_bytes ||
     !upload.allowed_content_types.includes("video/mp4")
@@ -150,16 +190,17 @@ export async function uploadGuestVideo(access: GuestAccess, file: File) {
     throw new Error("This video does not meet the upload requirements.");
   }
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !key) throw new Error("Video upload is not configured.");
-  const supabase = createClient(url, key);
+  const supabase = createBrowserSupabaseClient();
+
   const { error } = await supabase.storage
     .from(upload.bucket)
     .uploadToSignedUrl(upload.path, upload.token, file, {
       contentType: "video/mp4",
     });
-  if (error) throw new Error(error.message);
+
+  if (error) {
+    throw new Error(error.message);
+  }
 
   await apiFetch(`/analyses/${access.analysis_id}/finalize`, {
     method: "POST",
@@ -168,13 +209,13 @@ export async function uploadGuestVideo(access: GuestAccess, file: File) {
 }
 
 export const getGuestStatus = (access: GuestAccess) =>
-  apiFetch<{ status: AnalysisStatus; stage: string }>(
-    `/analyses/${access.analysis_id}/status`,
-    {
-      headers: authorization(access.credential),
-      cache: "no-store",
-    },
-  );
+  apiFetch<{
+    status: AnalysisStatus;
+    stage: string;
+  }>(`/analyses/${access.analysis_id}/status`, {
+    headers: authorization(access.credential),
+    cache: "no-store",
+  });
 
 export const getGuestResult = (access: GuestAccess) =>
   apiFetch<GuestResult>(`/analyses/${access.analysis_id}/result`, {
@@ -183,7 +224,9 @@ export const getGuestResult = (access: GuestAccess) =>
   });
 
 export const retryGuestExplanation = (access: GuestAccess) =>
-  apiFetch<{ explanation_status: "pending" | "running" }>(
-    `/analyses/${access.analysis_id}/explanation/retry`,
-    { method: "POST", headers: authorization(access.credential) },
-  );
+  apiFetch<{
+    explanation_status: "pending" | "running";
+  }>(`/analyses/${access.analysis_id}/explanation/retry`, {
+    method: "POST",
+    headers: authorization(access.credential),
+  });

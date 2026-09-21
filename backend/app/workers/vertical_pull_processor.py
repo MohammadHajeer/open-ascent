@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
@@ -20,7 +21,82 @@ from app.services.analysis_jobs import (
     AnalysisClaimLostError,
     renew_analysis_lease,
 )
+from app.services.vertical_pull_visual_classifier import (
+    classify_rep_visual,
+    extract_representative_frames,
+    fuse_visual_classification,
+    unresolved_visual_dimensions,
+)
+from app.services.visual_classification_runs import (
+    load_cached_visual_result,
+    persist_visual_success,
+    visual_operation_key,
+)
 from app.workers.analysis_worker import AnalysisProcessingResult
+
+logger = logging.getLogger(__name__)
+
+
+def _apply_visual_fallback(video_path: Path, rep, analysis_id):
+    dimensions = unresolved_visual_dimensions(rep)
+    if not dimensions or not settings.openai_visual_classifier_enabled:
+        return fuse_visual_classification(rep, None)
+
+    operation_key = visual_operation_key(analysis_id, rep.rep_index, dimensions)
+    try:
+        with SessionLocal() as db:
+            cached = load_cached_visual_result(
+                db,
+                operation_key=operation_key,
+                rep_index=rep.rep_index,
+                dimensions=dimensions,
+            )
+    except Exception:
+        # Without a trustworthy cache read, skip the optional call rather than
+        # risk duplicate provider spend during a retry.
+        logger.exception(
+            "Visual fallback cache read failed: analysis_id=%s rep_index=%s",
+            analysis_id,
+            rep.rep_index,
+        )
+        return fuse_visual_classification(rep, None)
+
+    if cached is not None:
+        return fuse_visual_classification(rep, cached)
+
+    try:
+        frames = extract_representative_frames(video_path, rep)
+        call = classify_rep_visual(
+            rep_index=rep.rep_index,
+            dimensions=dimensions,
+            image_data_urls=frames,
+        )
+    except Exception:
+        logger.exception(
+            "Visual fallback failed: analysis_id=%s rep_index=%s",
+            analysis_id,
+            rep.rep_index,
+        )
+        return fuse_visual_classification(rep, None)
+
+    try:
+        with SessionLocal() as db:
+            persist_visual_success(
+                db,
+                analysis_id=analysis_id,
+                operation_key=operation_key,
+                dimensions=dimensions,
+                call=call,
+            )
+    except Exception:
+        # The current deterministic analysis can still use the validated
+        # response. A later retry may call again only because persistence failed.
+        logger.exception(
+            "Visual fallback cache write failed: analysis_id=%s rep_index=%s",
+            analysis_id,
+            rep.rep_index,
+        )
+    return fuse_visual_classification(rep, call.result)
 
 
 def process_vertical_pull(claim: AnalysisClaim) -> AnalysisProcessingResult:
@@ -60,7 +136,7 @@ def process_vertical_pull(claim: AnalysisClaim) -> AnalysisProcessingResult:
     heartbeat = Thread(target=keep_lease, daemon=True)
     heartbeat.start()
 
-    classified_reps = []
+    deterministic_reps = []
 
     def publish(event_type: str, *, rep=None) -> None:
         with SessionLocal() as db:
@@ -76,9 +152,7 @@ def process_vertical_pull(claim: AnalysisClaim) -> AnalysisProcessingResult:
             )
 
     def completed_rep(rep):
-        compared = compare_rep(rep, target_slug)
-        classified_reps.append(compared)
-        publish("rep_completed", rep=compared)
+        deterministic_reps.append(rep)
 
     try:
         video_bytes = supabase.storage.from_(settings.supabase_video_bucket).download(
@@ -94,16 +168,30 @@ def process_vertical_pull(claim: AnalysisClaim) -> AnalysisProcessingResult:
                 video_path,
                 on_rep_completed=completed_rep,
             )
+            final_reps = []
+            provenance_by_rep = {}
+            for deterministic_rep in deterministic_reps:
+                fused_rep, provenance = _apply_visual_fallback(
+                    video_path, deterministic_rep, claim.analysis_id
+                )
+                compared = compare_rep(fused_rep, target_slug)
+                final_reps.append(compared)
+                provenance_by_rep[compared.rep_index] = provenance
+                publish("rep_completed", rep=compared)
             publish("finalizing")
     finally:
         stop_heartbeat.set()
         heartbeat.join(timeout=1)
 
     result_data = result.to_dict()
-    if classified_reps:
-        result_data["reps"] = [asdict(rep) for rep in classified_reps]
+    if final_reps:
+        result_data["reps"] = []
+        for rep in final_reps:
+            rep_data = asdict(rep)
+            rep_data["_classification_provenance"] = provenance_by_rep[rep.rep_index]
+            result_data["reps"].append(rep_data)
     return AnalysisProcessingResult(
         result_data=result_data,
-        analyzer_version="vertical_pull_v2",
+        analyzer_version="vertical_pull_v3",
         model_version="mediapipe_tasks",
     )
