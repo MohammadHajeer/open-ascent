@@ -53,6 +53,7 @@ This starts:
 - Next.js frontend
 - FastAPI backend
 - deterministic analysis worker
+- Stripe CLI webhook forwarding to `http://localhost:8000/webhooks/stripe`
 
 You can also run them separately:
 
@@ -60,7 +61,37 @@ You can also run them separately:
 pnpm dev:frontend
 pnpm dev:backend
 pnpm dev:worker
+pnpm dev:stripe
 ```
+
+### Local Stripe webhooks
+
+Install the Stripe CLI and authenticate once with `stripe login`. Before the
+first local run, ask the CLI for its local webhook signing secret:
+
+```bash
+stripe listen --print-secret
+```
+
+Copy the printed `whsec_...` value into the ignored `backend/.env` file:
+
+```dotenv
+STRIPE_WEBHOOK_SECRET=whsec_...
+```
+
+Then use the normal entry point:
+
+```bash
+pnpm dev
+```
+
+The `stripe-webhooks` process starts `stripe listen` alongside the existing
+frontend, backend, and worker processes and forwards test-mode events to the
+backend webhook endpoint. The backend reads `backend/.env` only at startup, so
+if the CLI signing secret changes, stop development, update that local value,
+and restart `pnpm dev`. The secret remains local and is never stored in source
+control. Missing CLI installation or authentication errors are emitted directly
+by the labeled Stripe process and stop the concurrent development group.
 
 The guest Analyze flow needs the current database migration and published
 pull-up/chin-up movement guides. From `backend`, run `uv run alembic upgrade head`
