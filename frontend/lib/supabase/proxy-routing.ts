@@ -1,3 +1,5 @@
+import { getUserRole, isOnboardingComplete } from "./claims.ts";
+
 export type RouteDestination = "/login" | "/onboarding" | "/dashboard" | "/admin";
 
 function routeKind(pathname: string) {
@@ -25,9 +27,8 @@ export function routeDestination(
   if (!kind) return null;
   if (!claims) return kind === "auth" ? null : "/login";
 
-  const isAdmin = "user_role" in claims && claims.user_role === "admin";
-  const onboardingComplete =
-    "onboarding_complete" in claims && claims.onboarding_complete === true;
+  const isAdmin = getUserRole(claims) === "admin";
+  const onboardingComplete = isOnboardingComplete(claims);
 
   if (isAdmin) {
     if (kind === "admin") return null;

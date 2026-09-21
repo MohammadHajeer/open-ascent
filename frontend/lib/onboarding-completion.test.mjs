@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { completeOnboardingFlow, hasCompletedOnboardingClaim } from "./onboarding-completion.ts";
+import {
+  completeOnboardingFlow,
+  getEffectivePlanFromAccessToken,
+  hasCompletedOnboardingClaim,
+} from "./onboarding-completion.ts";
+import { getEffectivePlan, parseAccessTokenClaims } from "./supabase/claims.ts";
 import { onboardingPayload, onboardingSchema } from "./validations/onboarding.ts";
 
-function token(claim) {
-  return `header.${btoa(JSON.stringify({ onboarding_complete: claim }))}.signature`;
+function token(claim, effectivePlan = "free") {
+  return `header.${btoa(JSON.stringify({ onboarding_complete: claim, effective_plan: effectivePlan }))}.signature`;
 }
 
 test("completion refreshes the session and verifies its claim before navigation", async () => {
@@ -42,6 +47,12 @@ test("missing or false refreshed claim never navigates", async () => {
     assert.deepEqual(calls, ["submit", "refresh"]);
   }
   assert.equal(hasCompletedOnboardingClaim(token(true)), true);
+});
+
+test("effective plan is read from the centralized presentation claim helper", () => {
+  assert.equal(getEffectivePlanFromAccessToken(token(true, "pro")), "pro");
+  assert.equal(getEffectivePlan(parseAccessTokenClaims(token(true, "free"))), "free");
+  assert.equal(getEffectivePlan(parseAccessTokenClaims(token(true, "forged"))), "free");
 });
 
 test("session refresh failure leaves the athlete on onboarding", async () => {

@@ -4,7 +4,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, event, func, select
+from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -17,6 +17,7 @@ from app.services.entitlements import (
     get_user_entitlement,
     get_user_plan,
     is_feature_enabled,
+    resolve_effective_plan,
     seed_plan_catalog,
 )
 from app.subscriptions.catalog import PLAN_CATALOG, EntitlementDefinition
@@ -50,7 +51,11 @@ def subscription_db() -> Session:
     with engine.begin() as connection:
         connection.exec_driver_sql(
             "CREATE TABLE user_subscriptions "
-            "(user_id UUID UNIQUE NOT NULL, plan_id UUID NOT NULL)"
+            "(user_id UUID UNIQUE NOT NULL, plan_id UUID NOT NULL, "
+            "provider_status TEXT, effective_start TIMESTAMP, effective_end TIMESTAMP, "
+            "current_period_start TIMESTAMP, current_period_end TIMESTAMP, "
+            "cancel_at_period_end BOOLEAN NOT NULL DEFAULT 0, "
+            "stripe_subscription_id TEXT, last_verified_at TIMESTAMP)"
         )
 
     with Session(engine, expire_on_commit=False) as session:
@@ -65,6 +70,46 @@ def seeded_catalog(subscription_db: Session) -> Session:
         effective_from=datetime(2026, 9, 21, tzinfo=UTC),
     )
     return subscription_db
+
+
+def attach_subscription(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    plan_code: PlanCode,
+    provider_status: str | None = "active",
+    start: datetime | None = datetime(2026, 9, 1, tzinfo=UTC),
+    end: datetime | None = datetime(2026, 10, 1, tzinfo=UTC),
+    period_start: datetime | None = datetime(2026, 9, 1, tzinfo=UTC),
+    period_end: datetime | None = datetime(2026, 10, 1, tzinfo=UTC),
+    provider_id: str | None = "sub_test",
+    verified_at: datetime | None = datetime(2026, 9, 1, tzinfo=UTC),
+) -> None:
+    plan = db.scalar(
+        select(SubscriptionPlan).where(SubscriptionPlan.code == plan_code.value)
+    )
+    assert plan is not None
+    db.execute(
+        text(
+            "INSERT INTO user_subscriptions "
+            "(user_id, plan_id, provider_status, effective_start, effective_end, "
+            "current_period_start, current_period_end, stripe_subscription_id, "
+            "last_verified_at) VALUES "
+            "(:user_id, :plan_id, :provider_status, :start, :end, :period_start, "
+            ":period_end, :provider_id, :verified_at)"
+        ),
+        {
+            "user_id": user_id.hex,
+            "plan_id": str(plan.id),
+            "provider_status": provider_status,
+            "start": start,
+            "end": end,
+            "period_start": period_start,
+            "period_end": period_end,
+            "provider_id": provider_id,
+            "verified_at": verified_at,
+        },
+    )
 
 
 def test_free_and_pro_exist_with_central_entitlements(
@@ -169,6 +214,66 @@ def test_boolean_and_metered_entitlements_resolve_for_default_free_user(
 
     with pytest.raises(UnconfiguredAllowanceError):
         get_feature_allowance(seeded_catalog, user_id, FeatureKey.VIDEO_ANALYSIS)
+
+
+def test_effective_plan_fails_closed_without_subscription(seeded_catalog: Session) -> None:
+    assert resolve_effective_plan(seeded_catalog, uuid.uuid4()) is PlanCode.FREE
+
+
+def test_effective_plan_resolves_verified_current_pro(seeded_catalog: Session) -> None:
+    user_id = uuid.uuid4()
+    attach_subscription(seeded_catalog, user_id=user_id, plan_code=PlanCode.PRO)
+    assert resolve_effective_plan(
+        seeded_catalog,
+        user_id,
+        as_of=datetime(2026, 9, 21, tzinfo=UTC),
+    ) is PlanCode.PRO
+    assert is_feature_enabled(seeded_catalog, user_id, FeatureKey.LIVE_COACH)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"end": datetime(2026, 9, 20, tzinfo=UTC), "period_end": datetime(2026, 9, 20, tzinfo=UTC)},
+        {"provider_status": "past_due"},
+        {"provider_status": "mystery"},
+        {"provider_id": None},
+        {"verified_at": None},
+        {"start": None, "end": None},
+        {"period_start": None, "period_end": None},
+    ],
+)
+def test_invalid_or_inconsistent_pro_fails_closed(
+    seeded_catalog: Session,
+    overrides: dict,
+) -> None:
+    user_id = uuid.uuid4()
+    attach_subscription(
+        seeded_catalog,
+        user_id=user_id,
+        plan_code=PlanCode.PRO,
+        **overrides,
+    )
+
+    assert resolve_effective_plan(
+        seeded_catalog,
+        user_id,
+        as_of=datetime(2026, 9, 21, tzinfo=UTC),
+    ) is PlanCode.FREE
+
+
+def test_free_subscription_resolves_free(seeded_catalog: Session) -> None:
+    user_id = uuid.uuid4()
+    attach_subscription(seeded_catalog, user_id=user_id, plan_code=PlanCode.FREE)
+    assert resolve_effective_plan(seeded_catalog, user_id) is PlanCode.FREE
+
+
+def test_entitlements_ignore_a_forged_plan_claim(seeded_catalog: Session) -> None:
+    # A caller-supplied JWT claim is deliberately not an input to entitlement
+    # resolution; the database has no verified paid subscription.
+    forged_claims = {"effective_plan": "pro"}
+    assert forged_claims["effective_plan"] == "pro"
+    assert is_feature_enabled(seeded_catalog, uuid.uuid4(), FeatureKey.LIVE_COACH) is False
 
 
 def test_limited_and_unlimited_representations_are_unambiguous() -> None:

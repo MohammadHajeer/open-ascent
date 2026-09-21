@@ -50,6 +50,7 @@ export async function updateSession(request: NextRequest) {
   try {
     const { data } = await supabase.auth.getClaims();
     claims = data?.claims ?? null;
+    console.log("Supabase claims:", claims);
   } catch {
     if (routeDestination(request.nextUrl.pathname, null) !== "/login") {
       return supabaseResponse;

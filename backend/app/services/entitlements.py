@@ -110,20 +110,61 @@ def seed_plan_catalog(
     db.flush()
 
 
-def get_user_plan(db: Session, user_id: uuid.UUID) -> SubscriptionPlan:
-    plan = db.scalar(
-        select(SubscriptionPlan)
+def resolve_effective_plan(
+    db: Session,
+    user_id: uuid.UUID,
+    *,
+    as_of: datetime | None = None,
+) -> PlanCode:
+    """Resolve the current effective plan from authoritative subscription state.
+
+    A Pro subscription is effective only when the provider has verified an
+    active subscription and both validity windows contain ``as_of``. Every
+    other state, including malformed or partially provisioned rows, fails
+    closed to Free. JWT claims are intentionally not consulted here.
+    """
+    evaluated_at = as_of or datetime.now(UTC)
+    if evaluated_at.tzinfo is None:
+        evaluated_at = evaluated_at.replace(tzinfo=UTC)
+    pro = db.scalar(
+        select(SubscriptionPlan.code)
         .join(UserSubscription, UserSubscription.plan_id == SubscriptionPlan.id)
-        .where(UserSubscription.user_id == user_id)
+        .where(
+            UserSubscription.user_id == user_id,
+            SubscriptionPlan.code == PlanCode.PRO.value,
+            SubscriptionPlan.is_active.is_(True),
+            SubscriptionPlan.stripe_price_id.is_not(None),
+            UserSubscription.provider_status == "active",
+            UserSubscription.stripe_subscription_id.is_not(None),
+            UserSubscription.last_verified_at.is_not(None),
+            UserSubscription.last_verified_at <= evaluated_at,
+            UserSubscription.effective_start.is_not(None),
+            UserSubscription.effective_end.is_not(None),
+            UserSubscription.effective_start <= evaluated_at,
+            evaluated_at < UserSubscription.effective_end,
+            UserSubscription.current_period_start.is_not(None),
+            UserSubscription.current_period_end.is_not(None),
+            UserSubscription.current_period_start <= evaluated_at,
+            evaluated_at < UserSubscription.current_period_end,
+        )
+    )
+    return PlanCode.PRO if pro == PlanCode.PRO.value else PlanCode.FREE
+
+
+def get_user_plan(db: Session, user_id: uuid.UUID) -> SubscriptionPlan:
+    plan_code = resolve_effective_plan(db, user_id)
+    plan = db.scalar(
+        select(SubscriptionPlan).where(SubscriptionPlan.code == plan_code.value)
     )
     if plan is not None:
         return plan
 
     # The database trigger creates this membership for every new profile. This
-    # fallback also gives pre-migration or partially provisioned users the same
-    # central default without adding a profile-level plan flag.
+    # fallback gives pre-migration users the same central default without
+    # adding a profile-level plan flag. A missing Free seed is a deployment
+    # error rather than a reason to grant Pro.
     plan = db.scalar(
-        select(SubscriptionPlan).where(SubscriptionPlan.code == PlanCode.FREE)
+        select(SubscriptionPlan).where(SubscriptionPlan.code == PlanCode.FREE.value)
     )
     if plan is None:
         raise LookupError("The Free subscription plan has not been seeded.")

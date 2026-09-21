@@ -1,13 +1,16 @@
+import {
+  getEffectivePlan,
+  isOnboardingComplete,
+  parseAccessTokenClaims,
+  type EffectivePlan,
+} from "./supabase/claims.ts";
+
 export function hasCompletedOnboardingClaim(accessToken: string): boolean {
-  try {
-    const payload = accessToken.split(".")[1];
-    if (!payload) return false;
-    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const claims = JSON.parse(atob(base64)) as { onboarding_complete?: unknown };
-    return claims.onboarding_complete === true;
-  } catch {
-    return false;
-  }
+  return isOnboardingComplete(parseAccessTokenClaims(accessToken));
+}
+
+export function getEffectivePlanFromAccessToken(accessToken: string): EffectivePlan {
+  return getEffectivePlan(parseAccessTokenClaims(accessToken));
 }
 
 export async function completeOnboardingFlow(actions: {
