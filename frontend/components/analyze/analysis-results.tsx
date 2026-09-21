@@ -2,6 +2,7 @@ import { Check, CircleAlert, RotateCcw, ScanLine } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import type { AuthenticatedAnalysisAccess } from "@/features/analysis/types";
 import {
   countMetrics,
   describeReason,
@@ -110,11 +111,13 @@ export function AnalysisResults({
   access,
   videoUrl,
   onRestart,
+  authenticated = false,
 }: {
   analysis: GuestResult;
-  access: GuestAccess | null;
+  access: GuestAccess | AuthenticatedAnalysisAccess | null;
   videoUrl: string | null;
   onRestart: () => void;
+  authenticated?: boolean;
 }) {
   const result = analysis.result;
   if (!result) return null;
@@ -154,8 +157,8 @@ export function AnalysisResults({
           </h2>
         </div>
         <div className="rounded-[3px_3px_20px_3px] border border-border bg-card px-5 py-4 text-xs leading-5 text-foreground-soft">
-          <strong className="block text-foreground">Guest result</strong>Access
-          expires after a limited time
+          <strong className="block text-foreground">{authenticated ? "Saved result" : "Guest result"}</strong>
+          {authenticated ? "Raw video is removed after processing" : "Access expires after a limited time"}
         </div>
       </div>
       <div className="mt-10 overflow-hidden rounded-[3px_3px_34px_3px] border border-border bg-card sm:mt-12 lg:grid lg:grid-cols-[minmax(0,1.2fr)_minmax(330px,0.8fr)]">
@@ -170,7 +173,9 @@ export function AnalysisResults({
             />
           ) : (
             <div className="grid size-full place-items-center px-8 text-center text-sm text-visual-foreground">
-              Original video preview is unavailable after refreshing this guest session.
+              {authenticated
+                ? "Raw video is not retained after processing."
+                : "Original video preview is unavailable after refreshing this guest session."}
             </div>
           )}
           <span className="absolute top-4 left-4 rounded-full bg-visual-surface/80 px-3 py-2 font-mono text-[0.54rem] text-visual-foreground uppercase">
@@ -217,7 +222,7 @@ export function AnalysisResults({
         </aside>
       </div>
 
-      <AnalysisExplanationPanel initial={analysis} access={access} />
+      <AnalysisExplanationPanel initial={analysis} access={access} authenticated={authenticated} />
 
       <RepAnalysis reps={result.reps} familyMode={!analysis.movement.id} targetSlug={analysis.movement.slug} />
 

@@ -4,6 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 
 import { ThemedAsset } from "@/components/shared/themed-asset";
+import {
+  fetchAuthenticatedAnalysisResult,
+  retryAuthenticatedExplanation,
+  streamAuthenticatedAnalysis,
+} from "@/features/analysis/api";
+import type { AuthenticatedAnalysisAccess } from "@/features/analysis/types";
 import { assets } from "@/lib/assets";
 import {
   getGuestResult,
@@ -11,14 +17,19 @@ import {
   type GuestAccess,
   type GuestResult,
 } from "@/lib/analysis";
-import { streamGuestAnalysis } from "@/lib/analysis-stream";
+import {
+  streamGuestAnalysis,
+  type AnalysisProgressEvent,
+} from "@/lib/analysis-stream";
 
 export function AnalysisExplanationPanel({
   initial,
   access,
+  authenticated = false,
 }: {
   initial: GuestResult;
-  access: GuestAccess | null;
+  access: GuestAccess | AuthenticatedAnalysisAccess | null;
+  authenticated?: boolean;
 }) {
   const [current, setCurrent] = useState(initial);
   const [retrying, setRetrying] = useState(false);
@@ -33,7 +44,9 @@ export function AnalysisExplanationPanel({
     const controller = new AbortController();
 
     async function refresh() {
-      const latest = await getGuestResult(access!);
+      const latest = authenticated
+        ? await fetchAuthenticatedAnalysisResult(access!.analysis_id)
+        : await getGuestResult(access! as GuestAccess);
       if (active) setCurrent(latest);
       return latest;
     }
@@ -42,11 +55,7 @@ export function AnalysisExplanationPanel({
       let failures = 0;
       while (active) {
         try {
-          await streamGuestAnalysis(
-            access!,
-            cursor.current,
-            controller.signal,
-            async (event) => {
+          const onEvent = async (event: AnalysisProgressEvent) => {
               if (event.id !== null)
                 cursor.current = Math.max(cursor.current, event.id);
               if (
@@ -57,8 +66,22 @@ export function AnalysisExplanationPanel({
               ) {
                 await refresh();
               }
-            },
-          );
+            };
+          if (authenticated) {
+            await streamAuthenticatedAnalysis(
+              access!.analysis_id,
+              cursor.current,
+              controller.signal,
+              onEvent,
+            );
+          } else {
+            await streamGuestAnalysis(
+              access! as GuestAccess,
+              cursor.current,
+              controller.signal,
+              onEvent,
+            );
+          }
           if (!active) return;
           const latest = await refresh();
           if (
@@ -97,14 +120,16 @@ export function AnalysisExplanationPanel({
       active = false;
       controller.abort();
     };
-  }, [access, watching]);
+  }, [access, watching, authenticated]);
 
   async function retry() {
     if (!access || retrying || !current.explanation_retry_available) return;
     setRetrying(true);
     setRetryError(false);
     try {
-      const queued = await retryGuestExplanation(access);
+      const queued = authenticated
+        ? await retryAuthenticatedExplanation(access.analysis_id)
+        : await retryGuestExplanation(access as GuestAccess);
       setCurrent((previous) => ({
         ...previous,
         explanation_status: queued.explanation_status,
@@ -114,7 +139,11 @@ export function AnalysisExplanationPanel({
     } catch {
       setRetryError(true);
       try {
-        setCurrent(await getGuestResult(access));
+        setCurrent(
+          authenticated
+            ? await fetchAuthenticatedAnalysisResult(access.analysis_id)
+            : await getGuestResult(access as GuestAccess),
+        );
       } catch {
         // Keep the completed deterministic result visible.
       }

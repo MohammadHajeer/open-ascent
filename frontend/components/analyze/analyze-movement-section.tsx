@@ -73,10 +73,12 @@ export async function AnalyzeMovementSection({
   selectedSlug,
   invalidSelection,
   analysisId,
+  authenticated = false,
 }: {
   selectedSlug: string | null;
   invalidSelection: boolean;
   analysisId: string | null;
+  authenticated?: boolean;
 }) {
   const [movementsState, configState, guideState] = await Promise.allSettled([
     getAnalysisMovements(),
@@ -111,6 +113,7 @@ export async function AnalyzeMovementSection({
     <GuestAnalysisClient
       key={`${selectedSlug}:${analysisId ?? "new"}`}
       analysisId={analysisId}
+      authenticated={authenticated}
       movement={{
         id: familyMode ? null : guide.id,
         name: familyMode ? "Any Vertical Pull" : guide.name,

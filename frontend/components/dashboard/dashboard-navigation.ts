@@ -44,6 +44,11 @@ export const userNavigation: DashboardNavItem[] = [
     icon: "library",
   },
   {
+    label: "Analyses",
+    href: "/dashboard/analyses",
+    icon: "analyses",
+  },
+  {
     label: "Settings",
     href: "/dashboard/settings",
     icon: "settings",
@@ -102,7 +107,7 @@ export function getCurrentNavigationLabel(
   if (current) return current.label;
   if (mode === "user") {
     if (pathname === "/analyze") return "Analyze movement";
-    if (pathname.startsWith("/dashboard/analyses")) return "Library";
+    if (pathname.startsWith("/dashboard/analyses")) return "Analyses";
     if (pathname.startsWith("/dashboard/profile")) return "Profile";
   }
 

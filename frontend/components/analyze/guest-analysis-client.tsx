@@ -7,6 +7,14 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, LoaderCircle, ScanLine, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  fetchAuthenticatedAnalysisResult,
+  fetchAuthenticatedAnalysisStatus,
+  reserveAuthenticatedAnalysis,
+  streamAuthenticatedAnalysis,
+  uploadAuthenticatedVideo,
+} from "@/features/analysis/api";
+import type { AuthenticatedAnalysisAccess } from "@/features/analysis/types";
 import { ApiError } from "@/lib/api";
 import {
   getGuestResult,
@@ -46,6 +54,7 @@ type UploadConfig = {
 
 type Step = "video" | "ready" | "restoring" | "unavailable" | "processing" | "results";
 type RecoveryIssue = "missing" | "invalid" | null;
+type AnalysisAccess = GuestAccess | AuthenticatedAnalysisAccess;
 
 const INVALID_ACCESS_MESSAGE = "Analysis access has expired or is invalid. Start a new analysis.";
 
@@ -56,6 +65,16 @@ function messageFor(error: unknown) {
     ? error.message
     : "Something went wrong. Please try again.";
 }
+
+const statusFor = (current: AnalysisAccess, authenticated: boolean) =>
+  authenticated
+    ? fetchAuthenticatedAnalysisStatus(current.analysis_id)
+    : getGuestStatus(current as GuestAccess);
+
+const resultFor = (current: AnalysisAccess, authenticated: boolean) =>
+  authenticated
+    ? fetchAuthenticatedAnalysisResult(current.analysis_id)
+    : getGuestResult(current as GuestAccess);
 
 function progressCopy(status: AnalysisStatus, stage: string) {
   if (status === "failed") return {
@@ -136,11 +155,13 @@ export function GuestAnalysisClient({
   movement,
   config,
   safetyGuidance,
+  authenticated = false,
 }: {
   analysisId: string | null;
   movement: SelectedMovement;
   config: UploadConfig;
   safetyGuidance: ReactNode;
+  authenticated?: boolean;
 }) {
   const router = useRouter();
   const restorationRef = useRef<{
@@ -154,7 +175,7 @@ export function GuestAnalysisClient({
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
-  const [access, setAccess] = useState<GuestAccess | null>(null);
+  const [access, setAccess] = useState<AnalysisAccess | null>(null);
   const [status, setStatus] = useState<AnalysisStatus>("reserved");
   const [observing, setObserving] = useState(false);
   const [stage, setStage] = useState("reserved");
@@ -173,7 +194,9 @@ export function GuestAnalysisClient({
   useEffect(() => {
     if (!analysisId) return;
     let active = true;
-    const saved = getGuestAnalysisSession(analysisId);
+    const saved: AnalysisAccess | null = authenticated
+      ? { analysis_id: analysisId, kind: "authenticated" }
+      : getGuestAnalysisSession(analysisId);
     if (!saved) {
       queueMicrotask(() => {
         if (!active) return;
@@ -186,10 +209,10 @@ export function GuestAnalysisClient({
     if (restorationRef.current?.id !== analysisId) {
       restorationRef.current = {
         id: analysisId,
-        request: getGuestStatus(saved).then(async (current) => ({
+        request: statusFor(saved, authenticated).then(async (current) => ({
           status: current.status,
           stage: current.stage,
-          result: current.status === "completed" ? await getGuestResult(saved) : null,
+          result: current.status === "completed" ? await resultFor(saved, authenticated) : null,
         })),
       };
     }
@@ -215,14 +238,14 @@ export function GuestAnalysisClient({
             setStep("results");
           }
         } else {
-          if (action === "expired") removeGuestAnalysisSession(analysisId);
+          if (action === "expired" && !authenticated) removeGuestAnalysisSession(analysisId);
           setStep("processing");
         }
       },
       (cause: unknown) => {
         if (!active) return;
         if (cause instanceof ApiError && cause.status === 401) {
-          removeGuestAnalysisSession(analysisId);
+          if (!authenticated) removeGuestAnalysisSession(analysisId);
           setRecoveryIssue("invalid");
           setStep("unavailable");
         } else {
@@ -232,7 +255,7 @@ export function GuestAnalysisClient({
       },
     );
     return () => { active = false; };
-  }, [analysisId]);
+  }, [analysisId, authenticated]);
 
   useEffect(() => {
     if (step !== "processing" || !access || !observing) return;
@@ -244,7 +267,7 @@ export function GuestAnalysisClient({
       if (!active || settled) return;
       setStatus(nextStatus);
       if (nextStatus === "completed") {
-        const completed = await getGuestResult(access!);
+        const completed = await resultFor(access!, authenticated);
         if (!active || settled) return;
         if (!completed.result) throw new Error("The analysis completed without a result.");
         settled = true;
@@ -254,7 +277,8 @@ export function GuestAnalysisClient({
       } else if (nextStatus === "failed" || nextStatus === "expired") {
         settled = true;
         setObserving(false);
-        if (nextStatus === "expired") removeGuestAnalysisSession(access!.analysis_id);
+        if (nextStatus === "expired" && !authenticated)
+          removeGuestAnalysisSession(access!.analysis_id);
       }
     }
 
@@ -302,12 +326,26 @@ export function GuestAnalysisClient({
       let failures = 0;
       while (active && !settled) {
         try {
-          await streamGuestAnalysis(access!, lastEventId.current, controller.signal, receive);
+          if (authenticated) {
+            await streamAuthenticatedAnalysis(
+              access!.analysis_id,
+              lastEventId.current,
+              controller.signal,
+              receive,
+            );
+          } else {
+            await streamGuestAnalysis(
+              access! as GuestAccess,
+              lastEventId.current,
+              controller.signal,
+              receive,
+            );
+          }
           if (active && !settled) throw new Error("Progress stream disconnected.");
         } catch (cause) {
           if (!active || controller.signal.aborted) return;
           if (cause instanceof ApiError && cause.status === 401) {
-            removeGuestAnalysisSession(access!.analysis_id);
+            if (!authenticated) removeGuestAnalysisSession(access!.analysis_id);
             setObserving(false);
             setError(INVALID_ACCESS_MESSAGE);
             return;
@@ -315,7 +353,7 @@ export function GuestAnalysisClient({
           failures += 1;
           if (failures >= 3) {
             try {
-              const current = await getGuestStatus(access!);
+              const current = await statusFor(access!, authenticated);
               if (!active) return;
               setStatus(current.status);
               setStage(current.stage);
@@ -323,7 +361,7 @@ export function GuestAnalysisClient({
               if (settled) return;
             } catch (statusError) {
               if (statusError instanceof ApiError && statusError.status === 401) {
-                removeGuestAnalysisSession(access!.analysis_id);
+                if (!authenticated) removeGuestAnalysisSession(access!.analysis_id);
                 setObserving(false);
                 setError(INVALID_ACCESS_MESSAGE);
                 return;
@@ -341,7 +379,7 @@ export function GuestAnalysisClient({
       active = false;
       controller.abort();
     };
-  }, [step, access, observing]);
+  }, [step, access, observing, authenticated]);
 
   function selectFile(next: File) {
     if (next.size === 0) {
@@ -376,26 +414,37 @@ export function GuestAnalysisClient({
     let currentAccess = access;
     try {
       if (!currentAccess) {
-        currentAccess = await reserveGuestAnalysis(
-          movement.id,
-          movement.safetyDocumentationId,
-          config.safetyAckVersion,
-        );
+        currentAccess = authenticated
+          ? await reserveAuthenticatedAnalysis(
+              movement.id,
+              movement.safetyDocumentationId,
+              config.safetyAckVersion,
+            )
+          : await reserveGuestAnalysis(
+              movement.id,
+              movement.safetyDocumentationId,
+              config.safetyAckVersion,
+            );
         setAccess(currentAccess);
-        if (!saveGuestAnalysisSession(currentAccess)) setStorageWarning(true);
+        if (!authenticated && !saveGuestAnalysisSession(currentAccess as GuestAccess))
+          setStorageWarning(true);
         window.history.replaceState(
           null,
           "",
           analysisUrlWithId(window.location.href, currentAccess.analysis_id),
         );
       }
-      await uploadGuestVideo(currentAccess, file);
+      if (authenticated) {
+        await uploadAuthenticatedVideo(currentAccess as AuthenticatedAnalysisAccess, file);
+      } else {
+        await uploadGuestVideo(currentAccess as GuestAccess, file);
+      }
       setStatus("queued");
       setStage("queued");
       setObserving(true);
     } catch (cause) {
       if (cause instanceof ApiError && cause.status === 401 && currentAccess) {
-        removeGuestAnalysisSession(currentAccess.analysis_id);
+        if (!authenticated) removeGuestAnalysisSession(currentAccess.analysis_id);
       }
       setError(messageFor(cause));
     }
@@ -403,7 +452,7 @@ export function GuestAnalysisClient({
 
   function restart() {
     const currentId = access?.analysis_id ?? analysisId;
-    if (currentId) removeGuestAnalysisSession(currentId);
+    if (currentId && !authenticated) removeGuestAnalysisSession(currentId);
     setAccess(null);
     setFile(null);
     setVideoUrl(null);
@@ -420,11 +469,11 @@ export function GuestAnalysisClient({
 
   const accessInvalid = error === INVALID_ACCESS_MESSAGE;
   const copy = progressCopy(status, stage);
-  const progressTitle = accessInvalid ? "Guest access expired."
+  const progressTitle = accessInvalid ? "Analysis access expired."
     : error && status !== "failed" && status !== "expired" ? "Analysis could not continue."
     : copy.title;
   const progressDescription = accessInvalid
-    ? "This guest credential no longer grants access to the analysis."
+    ? "Your current session no longer grants access to the analysis."
     : error && status !== "failed" && status !== "expired"
       ? "Start a new analysis to try again."
       : copy.description;
@@ -438,15 +487,15 @@ export function GuestAnalysisClient({
         {step === "restoring" && (
           <section className="rounded-[3px_3px_34px_3px] border border-border bg-card p-8 sm:p-12" role="status" aria-live="polite">
             <LoaderCircle className="size-6 animate-spin text-primary" aria-hidden="true" />
-            <h2 className="mt-6 text-3xl font-medium tracking-tight">Restoring guest analysis…</h2>
-            <p className="mt-3 text-sm text-foreground-soft">Checking its current status and guest access.</p>
+            <h2 className="mt-6 text-3xl font-medium tracking-tight">Restoring analysis…</h2>
+            <p className="mt-3 text-sm text-foreground-soft">Checking its current status and access.</p>
           </section>
         )}
         {step === "unavailable" && (
           <section className="rounded-[3px_3px_34px_3px] border border-border bg-card p-8 sm:p-12" aria-labelledby="recovery-title">
-            <span className="font-mono text-[0.59rem] font-semibold tracking-widest text-primary uppercase">Guest analysis</span>
-            <h2 id="recovery-title" className="mt-4 text-3xl font-medium tracking-tight">{recoveryIssue === "invalid" ? "Guest access expired." : "This analysis cannot be restored here."}</h2>
-            <p className="mt-4 max-w-xl text-sm leading-6 text-foreground-soft">{recoveryIssue === "invalid" ? "The saved guest credential is expired or invalid." : "This browser session has no matching guest credential. An analysis ID by itself does not grant access."}</p>
+            <span className="font-mono text-[0.59rem] font-semibold tracking-widest text-primary uppercase">Analysis</span>
+            <h2 id="recovery-title" className="mt-4 text-3xl font-medium tracking-tight">{recoveryIssue === "invalid" ? "Analysis access expired." : "This analysis cannot be restored here."}</h2>
+            <p className="mt-4 max-w-xl text-sm leading-6 text-foreground-soft">{recoveryIssue === "invalid" ? "The saved access is expired or invalid." : "This session has no matching access to that analysis."}</p>
             <Button variant="outline" className="mt-8" onClick={restart}>Start a new analysis</Button>
           </section>
         )}
@@ -520,7 +569,7 @@ export function GuestAnalysisClient({
           </section>
         )}
 
-        {step === "results" && result?.result && <AnalysisResults analysis={result} access={access} videoUrl={videoUrl} onRestart={restart} />}
+        {step === "results" && result?.result && <AnalysisResults analysis={result} access={access} authenticated={authenticated} videoUrl={videoUrl} onRestart={restart} />}
       </div>
     </>
   );
