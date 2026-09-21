@@ -5,11 +5,13 @@
     "**/*.pyo": true,
     "**/*.pyd": true,
 
+    "**/.uv-cache": true,
     "**/.pytest_cache": true,
     "**/.ruff_cache": true,
     "**/.mypy_cache": true,
     "**/.pyright": true,
     "**/.hypothesis": true,
+    "**/.venv": true,
 
     "**/.next": true,
     "**/node_modules": true,
