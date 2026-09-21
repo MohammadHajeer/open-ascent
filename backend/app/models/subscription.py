@@ -228,16 +228,20 @@ class FeatureUsage(TimestampMixin, Base):
         ),
         CheckConstraint(
             """
-            (status = 'reserved' AND settled_at IS NULL)
-            OR (status IN ('consumed', 'released') AND settled_at IS NOT NULL)
+            (status = 'reserved' AND settled_at IS NULL AND release_reason IS NULL)
+            OR (status = 'consumed' AND settled_at IS NOT NULL
+                AND release_reason IS NULL)
+            OR (status = 'released' AND settled_at IS NOT NULL
+                AND release_reason IS NOT NULL)
             """,
-            name="ck_feature_usage_settlement",
+            name="ck_feature_usage_lifecycle_metadata",
         ),
         Index(
             "ix_feature_usage_quota_lookup",
             "user_id",
             "feature_key",
             "window_start",
+            "window_end",
             "status",
         ),
     )

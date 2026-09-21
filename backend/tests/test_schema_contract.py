@@ -1,5 +1,6 @@
 import app.models  # noqa: F401
 from app.db.base import Base
+from app.models.subscription import FeatureUsage
 
 EXPECTED_APPLICATION_TABLES = {
     "profiles",
@@ -32,3 +33,21 @@ def test_exact_application_table_set():
 def test_auth_users_is_external_metadata_only():
     table = Base.metadata.tables["auth.users"]
     assert table.info.get("external") is True
+
+
+def test_feature_usage_has_database_lifecycle_and_idempotency_guards():
+    constraints = {constraint.name for constraint in FeatureUsage.__table__.constraints}
+    indexes = {
+        index.name: tuple(column.name for column in index.columns)
+        for index in FeatureUsage.__table__.indexes
+    }
+
+    assert "uq_feature_usage_user_feature_operation" in constraints
+    assert "ck_feature_usage_lifecycle_metadata" in constraints
+    assert indexes["ix_feature_usage_quota_lookup"] == (
+        "user_id",
+        "feature_key",
+        "window_start",
+        "window_end",
+        "status",
+    )

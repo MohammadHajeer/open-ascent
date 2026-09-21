@@ -16,9 +16,14 @@ from app.core.guest_credentials import (
 )
 from app.core.safety import CURRENT_SAFETY_ACK_VERSION
 from app.models.analysis import Analysis
+from app.models.enums import FeatureKey, FeatureUsageStatus
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.schemas.analysis import GuestAnalysisReservationRequest
+from app.services.feature_usage import (
+    UsageIdempotencyConflictError,
+    reserve_usage,
+)
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -418,11 +423,13 @@ def _validate_existing_authenticated_reservation(
 ) -> None:
     if analysis.request_fingerprint != request_fingerprint:
         raise IdempotencyConflictError
-    if (
-        analysis.owner_kind != "authenticated"
-        or analysis.user_id != user_id
-        or analysis.status != "reserved"
-        or analysis.reservation_expires_at is None
+    if analysis.owner_kind != "authenticated" or analysis.user_id != user_id:
+        raise ReservationExpiredError
+    # Once work has progressed, an HTTP retry still returns the original
+    # operation instead of attempting another admission. Only an abandoned
+    # pre-upload reservation expires.
+    if analysis.status == "reserved" and (
+        analysis.reservation_expires_at is None
         or analysis.reservation_expires_at <= now
     ):
         raise ReservationExpiredError
@@ -460,6 +467,23 @@ def reserve_authenticated_analysis(
     )
     _validate_safety_acknowledgement(payload.safety_ack_version)
 
+    reservation_expires_at = now + timedelta(
+        minutes=settings.guest_reservation_ttl_minutes
+    )
+    try:
+        usage = reserve_usage(
+            db,
+            user_id=user_id,
+            feature_key=FeatureKey.VIDEO_ANALYSIS,
+            operation_key=operation_key,
+            request_fingerprint=request_fingerprint,
+            reservation_expires_at=reservation_expires_at,
+        )
+    except UsageIdempotencyConflictError as exc:
+        raise IdempotencyConflictError from exc
+    if usage is not None and usage.status != FeatureUsageStatus.RESERVED.value:
+        raise ReservationExpiredError
+
     analysis = Analysis(
         user_id=user_id,
         movement_id=movement.id if movement is not None else None,
@@ -470,10 +494,10 @@ def reserve_authenticated_analysis(
         owner_kind="authenticated",
         status="reserved",
         stage="reserved",
+        feature_usage_id=usage.id if usage is not None else None,
         reservation_operation_key=operation_key,
         request_fingerprint=request_fingerprint,
-        reservation_expires_at=now
-        + timedelta(minutes=settings.guest_reservation_ttl_minutes),
+        reservation_expires_at=reservation_expires_at,
     )
     db.add(analysis)
     try:

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.analysis import Analysis
+from app.services.feature_usage import consume_usage, release_usage
 
 
 class AnalysisClaimLostError(Exception):
@@ -169,11 +170,16 @@ def complete_analysis(
             claim_token=None,
             lease_expires_at=None,
         )
+        .returning(Analysis.feature_usage_id)
     )
 
-    if result.rowcount != 1:
+    updated = result.one_or_none()
+    if updated is None:
         db.rollback()
         raise AnalysisClaimLostError
+
+    if updated.feature_usage_id is not None:
+        consume_usage(db, updated.feature_usage_id)
 
     record_analysis_event(
         db,
@@ -212,11 +218,20 @@ def fail_analysis(
             claim_token=None,
             lease_expires_at=None,
         )
+        .returning(Analysis.feature_usage_id)
     )
 
-    if result.rowcount != 1:
+    updated = result.one_or_none()
+    if updated is None:
         db.rollback()
         raise AnalysisClaimLostError
+
+    if updated.feature_usage_id is not None:
+        release_usage(
+            db,
+            updated.feature_usage_id,
+            reason=f"analysis_failed:{error_code}",
+        )
 
     record_analysis_event(
         db,

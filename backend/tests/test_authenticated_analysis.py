@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from app.api import analysis_stream
@@ -18,11 +18,17 @@ from app.core.config import settings
 from app.core.safety import CURRENT_SAFETY_ACK_VERSION
 from app.main import app
 from app.models.analysis import Analysis
+from app.models.enums import FeatureUsageStatus
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.models.profile import Profile
+from app.models.subscription import FeatureUsage, PlanEntitlement, SubscriptionPlan
 from app.services import analysis_storage, authenticated_media_cleanup
-from app.services.analysis_jobs import claim_next_analysis, complete_analysis
+from app.services.analysis_jobs import (
+    claim_next_analysis,
+    complete_analysis,
+    fail_analysis,
+)
 from app.services.authenticated_media_cleanup import (
     cleanup_authenticated_analysis_media,
 )
@@ -94,6 +100,16 @@ def auth_analysis_data(db: Session, monkeypatch: pytest.MonkeyPatch):
         published_at=datetime.now(UTC),
     )
     db.add(guide)
+    entitlement = db.scalar(
+        select(PlanEntitlement)
+        .join(SubscriptionPlan, SubscriptionPlan.id == PlanEntitlement.plan_id)
+        .where(
+            SubscriptionPlan.code == "free",
+            PlanEntitlement.feature_key == "video_analysis",
+        )
+    )
+    assert entitlement is not None
+    entitlement.allowance_units = 100
     db.commit()
 
     tokens = {"token-a": user_a, "token-b": user_b}
@@ -120,13 +136,14 @@ def _reserve(
     movement: Movement,
     guide: MovementDocumentation,
     token: str,
+    operation_key: uuid.UUID | None = None,
 ):
     app.dependency_overrides[get_current_user_id] = lambda: user_id
     return client.post(
         "/analyses",
         headers={
             "Authorization": f"Bearer {token}",
-            "Idempotency-Key": str(uuid.uuid4()),
+            "Idempotency-Key": str(operation_key or uuid.uuid4()),
         },
         json={
             "movement_id": str(movement.id),
@@ -134,6 +151,53 @@ def _reserve(
             "safety_ack_version": CURRENT_SAFETY_ACK_VERSION,
         },
     )
+
+
+def test_authenticated_retry_reuses_analysis_and_usage(
+    client: TestClient,
+    db: Session,
+    auth_analysis_data,
+) -> None:
+    user_a, _, movement, guide = auth_analysis_data
+    operation_key = uuid.uuid4()
+
+    first = _reserve(
+        client, user_a, movement, guide, "token-a", operation_key=operation_key
+    )
+    retry = _reserve(
+        client, user_a, movement, guide, "token-a", operation_key=operation_key
+    )
+
+    assert first.status_code == retry.status_code == 201
+    assert first.json()["analysis_id"] == retry.json()["analysis_id"]
+    assert (
+        db.scalar(
+            select(func.count(FeatureUsage.id)).where(FeatureUsage.user_id == user_a)
+        )
+        == 1
+    )
+
+
+def test_terminal_analysis_failure_releases_usage(
+    client: TestClient,
+    db: Session,
+    auth_analysis_data,
+) -> None:
+    user_a, _, movement, guide = auth_analysis_data
+    created = _reserve(client, user_a, movement, guide, "token-a")
+    analysis = db.get(Analysis, uuid.UUID(created.json()["analysis_id"]))
+    analysis.status = "queued"
+    analysis.stage = "queued"
+    analysis.video_path = f"analyses/{analysis.id}/source.mp4"
+    db.commit()
+
+    claim = claim_next_analysis(db)
+    assert claim is not None and claim.analysis_id == analysis.id
+    fail_analysis(db, claim, error_code="test_processing_error")
+
+    usage = db.get(FeatureUsage, analysis.feature_usage_id)
+    assert usage.status == FeatureUsageStatus.RELEASED.value
+    assert usage.release_reason == "analysis_failed:test_processing_error"
 
 
 class FakeBucket:
@@ -184,6 +248,9 @@ def test_authenticated_reservation_upload_finalize_and_worker_reuse(
     assert analysis.owner_kind == "authenticated"
     assert analysis.user_id == user_a
     assert analysis.guest_token_hash is None
+    usage = db.get(FeatureUsage, analysis.feature_usage_id)
+    assert usage is not None
+    assert usage.status == FeatureUsageStatus.RESERVED.value
 
     headers = {"Authorization": "Bearer token-a"}
     upload = client.post(f"/analyses/{analysis_id}/upload", headers=headers)
@@ -201,7 +268,9 @@ def test_authenticated_reservation_upload_finalize_and_worker_reuse(
         model_version="deterministic-test",
     )
     db.refresh(analysis)
+    db.refresh(usage)
     assert analysis.status == "completed"
+    assert usage.status == FeatureUsageStatus.CONSUMED.value
     assert analysis.video_delete_after is not None
 
 
@@ -236,8 +305,7 @@ def test_owner_access_history_and_cross_user_isolation(
             == 404
         )
     assert (
-        client.post(f"/analyses/{analysis.id}/upload", headers=other).status_code
-        == 404
+        client.post(f"/analyses/{analysis.id}/upload", headers=other).status_code == 404
     )
     assert (
         client.post(f"/analyses/{analysis.id}/finalize", headers=other).status_code
@@ -281,12 +349,46 @@ def test_authenticated_sse_owner_only(
 
     monkeypatch.setattr(analysis_stream, "SessionLocal", same_session)
     url = f"/analyses/{analysis.id}/events"
+    usage_count = db.scalar(
+        select(func.count(FeatureUsage.id)).where(FeatureUsage.user_id == user_a)
+    )
+    assert (
+        client.get(url, headers={"Authorization": "Bearer token-a"}).status_code == 200
+    )
     assert (
         client.get(url, headers={"Authorization": "Bearer token-a"}).status_code == 200
     )
     assert (
         client.get(url, headers={"Authorization": "Bearer token-b"}).status_code == 404
     )
+    assert (
+        db.scalar(
+            select(func.count(FeatureUsage.id)).where(FeatureUsage.user_id == user_a)
+        )
+        == usage_count
+    )
+
+
+def test_deleting_analysis_does_not_restore_consumed_usage(
+    client: TestClient,
+    db: Session,
+    auth_analysis_data,
+) -> None:
+    user_a, _, movement, guide = auth_analysis_data
+    created = _reserve(client, user_a, movement, guide, "token-a")
+    analysis = db.get(Analysis, uuid.UUID(created.json()["analysis_id"]))
+    usage_id = analysis.feature_usage_id
+    usage = db.get(FeatureUsage, usage_id)
+    usage.status = FeatureUsageStatus.CONSUMED.value
+    usage.settled_at = datetime.now(UTC)
+    db.commit()
+
+    db.execute(delete(Analysis).where(Analysis.id == analysis.id))
+    db.commit()
+
+    retained = db.get(FeatureUsage, usage_id)
+    assert retained is not None
+    assert retained.status == FeatureUsageStatus.CONSUMED.value
 
 
 def test_authenticated_media_cleanup_preserves_result_history_and_explanation(

@@ -55,11 +55,13 @@ from app.services.analysis_storage import (
     create_analysis_upload_authorization,
     finalize_analysis_upload,
 )
+from app.services.entitlements import UnconfiguredAllowanceError
 from app.services.explanation_jobs import (
     MAX_EXPLANATION_ATTEMPTS,
     ExplanationRetryUnavailableError,
     retry_failed_explanation,
 )
+from app.services.feature_usage import FeatureAccessDeniedError, QuotaExceededError
 
 router = APIRouter(
     prefix="/analyses",
@@ -118,6 +120,21 @@ def create_authenticated_analysis_reservation(
         raise HTTPException(
             status_code=410,
             detail="The existing reservation is no longer available.",
+        )
+    except FeatureAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Video analysis is not enabled for the effective plan.",
+        )
+    except QuotaExceededError:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Video analysis allowance is exhausted for this period.",
+        )
+    except UnconfiguredAllowanceError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Video analysis allowance is not configured.",
         )
     return AuthenticatedAnalysisReservationResponse(
         analysis_id=analysis.id,
