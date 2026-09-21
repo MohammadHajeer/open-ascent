@@ -88,9 +88,9 @@ export function CoachingModes() {
           </p>
         </div>
 
-        <div className="mt-16 grid gap-4 lg:mt-24 lg:grid-cols-2">
+        <div className="mt-16 grid items-stretch gap-4 lg:mt-24 lg:grid-cols-2">
           {/* Recorded analysis */}
-          <article className="flex min-h-155 flex-col border border-border bg-card p-6 sm:p-9 lg:p-11">
+          <article className="flex h-full min-h-155 flex-col border border-border bg-card p-6 sm:p-9 lg:p-11">
             <div className="flex items-start justify-between gap-6">
               <span className="grid size-12 place-items-center rounded-full border border-border text-primary">
                 <Video className="size-5" aria-hidden="true" />
@@ -100,7 +100,7 @@ export function CoachingModes() {
             </div>
 
             {/* Fixed-height intro keeps both dividers aligned */}
-            <div className="mt-14 min-h-55 sm:min-h-60">
+            <div className="mt-14 min-h-55 sm:h-60 sm:min-h-0">
               <span className="font-mono text-[0.6rem] tracking-widest text-foreground-faint uppercase">
                 Recorded / asynchronous
               </span>
@@ -135,7 +135,7 @@ export function CoachingModes() {
           </article>
 
           {/* Live coach */}
-          <article className="relative isolate flex min-h-155 flex-col overflow-hidden rounded-[2px_2px_40px_2px] border border-visual-foreground/12 bg-visual-surface dark:bg-background p-6 text-visual-foreground sm:p-9 lg:p-11">
+          <article className="relative isolate flex h-full min-h-155 flex-col overflow-hidden rounded-[2px_2px_40px_2px] border border-visual-foreground/12 bg-visual-surface dark:bg-background p-6 text-visual-foreground sm:p-9 lg:p-11">
             <div
               className="cv-grid absolute inset-0 -z-10 opacity-[0.07]"
               aria-hidden="true"
@@ -152,7 +152,7 @@ export function CoachingModes() {
             </div>
 
             {/* Same height as recorded intro */}
-            <div className="mt-14 min-h-55 sm:min-h-60">
+            <div className="mt-14 min-h-55 sm:h-60 sm:min-h-0">
               <span className="font-mono text-[0.6rem] tracking-widest text-visual-foreground/50 uppercase">
                 Live / real time
               </span>

@@ -24,7 +24,7 @@ const proFeatures = [
 
 function PlanList({ features }: { features: string[] }) {
   return (
-    <ul className="grid gap-3 border-t border-current/10 pt-7">
+    <ul className="grid gap-3 border-t border-current/10 pt-8">
       {features.map((feature) => (
         <li className="flex items-start gap-3 text-sm leading-6" key={feature}>
           <span className="mt-1 grid size-5 shrink-0 place-items-center rounded-full bg-primary-light text-primary">
@@ -57,32 +57,39 @@ export function Plans() {
           </p>
         </div>
 
-        <div className="mt-16 grid gap-4 lg:mt-24 lg:grid-cols-2">
-          <article className="flex min-h-145 flex-col border border-border bg-card p-6 sm:p-9 lg:p-11">
+        <div className="mt-16 grid items-stretch gap-4 lg:mt-24 lg:grid-cols-2">
+          <article className="flex h-full min-h-145 flex-col border border-border bg-card p-6 sm:p-9 lg:p-11">
             <div className="flex items-center justify-between gap-4">
               <span className="font-mono text-[0.6rem] tracking-widest text-foreground-faint uppercase">
                 Authenticated plan
               </span>
               <Badge variant="secondary">Free</Badge>
             </div>
-            <h3 className="mt-12 text-[clamp(3rem,5vw,5rem)] leading-[0.93] font-medium tracking-[-0.065em]">
-              Free
-            </h3>
-            <p className="mt-5 mb-10 max-w-lg text-sm leading-6 text-foreground-soft">
-              A persistent training record and the core tools to understand your
-              movement over time.
-            </p>
+            <div className="mt-12 min-h-44">
+              <h3 className="text-[clamp(3rem,5vw,5rem)] leading-[0.93] font-medium tracking-[-0.065em]">
+                Free
+              </h3>
+              <p className="mt-5 max-w-lg text-sm leading-6 text-foreground-soft">
+                A persistent training record and the core tools to understand your
+                movement over time.
+              </p>
+            </div>
             <PlanList features={freeFeatures} />
-            <Link
-              href="/signup"
-              className={cn(buttonVariants({ variant: "outline", size: "lg" }), "mt-auto self-start")}
-            >
-              Create a free account
-              <ArrowUpRight aria-hidden="true" />
-            </Link>
+            <div className="mt-auto pt-12">
+              <Link
+                href="/signup"
+                className={cn(
+                  buttonVariants({ variant: "outline", size: "lg" }),
+                  "self-start",
+                )}
+              >
+                Create a free account
+                <ArrowUpRight aria-hidden="true" />
+              </Link>
+            </div>
           </article>
 
-          <article className="relative isolate flex min-h-145 flex-col overflow-hidden rounded-[2px_2px_40px_2px] border border-visual-foreground/12 bg-visual-surface p-6 text-visual-foreground dark:bg-background sm:p-9 lg:p-11">
+          <article className="relative isolate flex h-full min-h-145 flex-col overflow-hidden rounded-[2px_2px_40px_2px] border border-visual-foreground/12 bg-visual-surface p-6 text-visual-foreground dark:bg-background sm:p-9 lg:p-11">
             <div className="cv-grid absolute inset-0 -z-10 opacity-[0.07]" aria-hidden="true" />
             <div className="flex items-center justify-between gap-4">
               <span className="font-mono text-[0.6rem] tracking-widest text-visual-foreground/50 uppercase">
@@ -92,21 +99,25 @@ export function Plans() {
                 Pro
               </Badge>
             </div>
-            <h3 className="mt-12 text-[clamp(3rem,5vw,5rem)] leading-[0.93] font-medium tracking-[-0.065em]">
-              Pro
-            </h3>
-            <p className="mt-5 mb-10 max-w-lg text-sm leading-6 text-visual-foreground/70">
-              Advanced coaching and progression for a more responsive training
-              practice.
-            </p>
+            <div className="mt-12 min-h-44">
+              <h3 className="text-[clamp(3rem,5vw,5rem)] leading-[0.93] font-medium tracking-[-0.065em]">
+                Pro
+              </h3>
+              <p className="mt-5 max-w-lg text-sm leading-6 text-visual-foreground/70">
+                Advanced coaching and progression for a more responsive training
+                practice.
+              </p>
+            </div>
             <PlanList features={proFeatures} />
-            <Link
-              href="/dashboard/settings"
-              className="mt-auto inline-flex h-9 w-fit items-center gap-1.5 rounded-lg bg-visual-foreground px-2.5 text-sm font-medium text-visual-surface transition-transform hover:-translate-y-0.5"
-            >
-              Explore Pro in settings
-              <ArrowUpRight aria-hidden="true" />
-            </Link>
+            <div className="mt-auto pt-12">
+              <Link
+                href="/dashboard/settings"
+                className="inline-flex h-9 w-fit items-center gap-1.5 rounded-lg bg-visual-foreground px-2.5 text-sm font-medium text-visual-surface transition-transform hover:-translate-y-0.5"
+              >
+                Explore Pro in settings
+                <ArrowUpRight aria-hidden="true" />
+              </Link>
+            </div>
           </article>
         </div>
 
@@ -121,4 +132,3 @@ export function Plans() {
     </section>
   );
 }
-
