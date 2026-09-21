@@ -11,6 +11,7 @@ from app.models.profile import Profile
 from app.models.subscription import (
     FeatureUsage,
     PlanEntitlement,
+    StripeWebhookEvent,
     SubscriptionPlan,
     UserSubscription,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "MovementDocumentation",
     "PlanEntitlement",
     "Profile",
+    "StripeWebhookEvent",
     "SubscriptionPlan",
     "TrainingPlan",
     "UserSubscription",

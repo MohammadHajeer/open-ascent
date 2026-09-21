@@ -1,6 +1,6 @@
 import app.models  # noqa: F401
 from app.db.base import Base
-from app.models.subscription import FeatureUsage
+from app.models.subscription import FeatureUsage, StripeWebhookEvent, UserSubscription
 
 EXPECTED_APPLICATION_TABLES = {
     "profiles",
@@ -15,6 +15,7 @@ EXPECTED_APPLICATION_TABLES = {
     "messages",
     "ai_runs",
     "subscription_plans",
+    "stripe_webhook_events",
     "plan_entitlements",
     "user_subscriptions",
     "feature_usage",
@@ -51,3 +52,8 @@ def test_feature_usage_has_database_lifecycle_and_idempotency_guards():
         "window_end",
         "status",
     )
+
+
+def test_stripe_webhook_reconciliation_has_idempotency_and_ordering_guards():
+    assert StripeWebhookEvent.__table__.primary_key.columns.keys() == ["id"]
+    assert "provider_event_created_at" in UserSubscription.__table__.columns

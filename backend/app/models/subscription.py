@@ -203,6 +203,36 @@ class UserSubscription(TimestampMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    provider_event_created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+class StripeWebhookEvent(Base):
+    """Durable idempotency ledger for verified Stripe event deliveries."""
+
+    __tablename__ = "stripe_webhook_events"
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('processing','applied','duplicate','ignored_unhandled',"
+            "'ignored_unmapped','ignored_stale','ignored_invalid')",
+            name="ck_stripe_webhook_events_outcome",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
+    stripe_object_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    processed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    outcome: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'processing'")
+    )
 
 
 class FeatureUsage(TimestampMixin, Base):
