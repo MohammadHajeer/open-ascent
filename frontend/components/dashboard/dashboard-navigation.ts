@@ -2,6 +2,9 @@ export type DashboardMode = "user" | "admin";
 
 export type DashboardNavIcon =
   | "overview"
+  | "train"
+  | "coach"
+  | "library"
   | "analyses"
   | "analyze"
   | "profile"
@@ -26,20 +29,19 @@ export const userNavigation: DashboardNavItem[] = [
     exact: true,
   },
   {
-    label: "Analyses",
-    href: "/dashboard/analyses",
-    icon: "analyses",
+    label: "Train",
+    href: "/dashboard/train",
+    icon: "train",
   },
   {
-    label: "Analyze",
-    href: "/analyze",
-    icon: "analyze",
-    emphasis: true,
+    label: "AI Coach",
+    href: "/dashboard/coach",
+    icon: "coach",
   },
   {
-    label: "Profile",
-    href: "/dashboard/profile",
-    icon: "profile",
+    label: "Library",
+    href: "/dashboard/library",
+    icon: "library",
   },
   {
     label: "Settings",
@@ -97,5 +99,12 @@ export function getCurrentNavigationLabel(
     .sort((a, b) => b.href.length - a.href.length)
     .find((item) => isNavigationItemActive(pathname, item));
 
-  return current?.label ?? (mode === "admin" ? "Admin" : "Dashboard");
+  if (current) return current.label;
+  if (mode === "user") {
+    if (pathname === "/analyze") return "Analyze movement";
+    if (pathname.startsWith("/dashboard/analyses")) return "Library";
+    if (pathname.startsWith("/dashboard/profile")) return "Profile";
+  }
+
+  return mode === "admin" ? "Admin" : "Dashboard";
 }

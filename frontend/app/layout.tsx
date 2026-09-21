@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/shared/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
+import { PrivateStateProvider } from "@/components/providers/private-state-provider";
 import { createOpenAscentMetadata } from "@/lib/metadata";
 
 import "./globals.css";
@@ -36,7 +37,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           enableSystem
           disableTransitionOnChange
         >
-          <TooltipProvider delay={100}>{children}</TooltipProvider>
+          <PrivateStateProvider>
+            <TooltipProvider delay={100}>{children}</TooltipProvider>
+          </PrivateStateProvider>
           <Toaster richColors position="bottom-right" />
         </ThemeProvider>
       </body>

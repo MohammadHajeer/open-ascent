@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { createClient } from "@/lib/supabase/client";
+import { clearPrivateAuthState } from "@/lib/private-state";
 
 export function DashboardAccountMenu() {
   const router = useRouter();
@@ -27,6 +28,7 @@ export function DashboardAccountMenu() {
     try {
       const { error } = await createClient().auth.signOut();
       if (error) throw error;
+      await clearPrivateAuthState();
       router.replace("/");
       router.refresh();
     } catch (error) {

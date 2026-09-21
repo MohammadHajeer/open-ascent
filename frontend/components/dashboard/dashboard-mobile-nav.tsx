@@ -4,9 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  Bot,
   ChartNoAxesCombined,
   Dumbbell,
   FileText,
+  Library,
   ScanLine,
   Settings,
   UserRound,
@@ -24,6 +26,9 @@ import {
 
 const iconMap = {
   overview: ChartNoAxesCombined,
+  train: Dumbbell,
+  coach: Bot,
+  library: Library,
   analyses: Activity,
   analyze: ScanLine,
   profile: UserRound,
