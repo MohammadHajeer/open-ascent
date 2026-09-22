@@ -7,12 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:live-coach": "node --experimental-strip-types --test features/live-coach/*.test.mjs",
     "test:analysis": "node --experimental-strip-types --test lib/analysis-explanation-ui.test.mjs lib/analysis-findings.test.mjs lib/analysis-movement-groups.test.mjs lib/guest-analysis-session.test.mjs lib/sse-parser.test.mjs lib/rep-classification.test.mjs features/analysis/keys.test.mjs",
     "test:subscription": "node --experimental-strip-types --test features/subscription/presentation.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
     "@hookform/resolvers": "^5.9.1",
+    "@mediapipe/tasks-vision": "1.0.1",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",
     "@tanstack/react-query": "^5.102.8",

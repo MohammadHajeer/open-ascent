@@ -14,6 +14,7 @@
     "lint:backend": "cd backend && uv run ruff check .",
     "lint:staged": "lint-staged",
     "test": "pnpm test:backend",
+    "test:live-coach": "pnpm --dir frontend test:live-coach",
     "test:backend": "cd backend && uv run pytest",
     "prepare": "husky"
   },

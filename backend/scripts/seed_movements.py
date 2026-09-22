@@ -519,7 +519,7 @@ def seed_movement(
             family_key=seed["family_key"],
             illustration_path=seed["illustration_path"],
             upload_analysis_supported=seed["family_key"] == "vertical_pull",
-            live_coach_supported=False,
+            live_coach_supported=seed["slug"] == "pull-up",
         )
 
         db.add(movement)
