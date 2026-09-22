@@ -83,6 +83,7 @@ class WorkoutSession(TimestampMixin, Base):
         nullable=True,
     )
     summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class WorkoutSet(TimestampMixin, Base):
@@ -98,24 +99,40 @@ class WorkoutSet(TimestampMixin, Base):
         CheckConstraint("position >= 0", name="ck_workout_sets_position"),
         CheckConstraint(
             """
-            (reps IS NOT NULL AND reps >= 0 AND hold_seconds IS NULL)
+            (reps IS NOT NULL AND reps > 0 AND hold_seconds IS NULL)
             OR (reps IS NULL AND hold_seconds IS NOT NULL AND hold_seconds > 0)
             """,
             name="ck_workout_sets_primary_value",
         ),
         CheckConstraint(
             """
-            (analysis_id IS NULL AND analysis_segment_key IS NULL)
-            OR (analysis_id IS NOT NULL AND analysis_segment_key IS NOT NULL)
+            analysis_segment_key IS NULL OR analysis_id IS NOT NULL
             """,
             name="ck_workout_sets_analysis_segment_pair",
+        ),
+        CheckConstraint(
+            "performer IN ('self', 'other', 'unknown')",
+            name="ck_workout_sets_performer",
+        ),
+        CheckConstraint(
+            "intent IN ('training_set', 'assessment', 'max_test', 'skill_attempt')",
+            name="ck_workout_sets_intent",
+        ),
+        CheckConstraint(
+            "(source = 'uploaded_analysis' AND analysis_id IS NOT NULL) "
+            "OR (source <> 'uploaded_analysis' AND analysis_id IS NULL)",
+            name="ck_workout_sets_analysis_source",
+        ),
+        CheckConstraint(
+            "live_coach_session_ref IS NULL OR source = 'live_coach'",
+            name="ck_workout_sets_live_coach_source",
         ),
         Index(
             "uq_workout_sets_analysis_segment",
             "analysis_id",
             "analysis_segment_key",
             unique=True,
-            postgresql_where=text("analysis_id IS NOT NULL"),
+            postgresql_where=text("analysis_id IS NOT NULL AND analysis_segment_key IS NOT NULL"),
         ),
     )
 
@@ -136,14 +153,17 @@ class WorkoutSet(TimestampMixin, Base):
     )
     analysis_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("analyses.id", ondelete="SET NULL"),
+        ForeignKey("analyses.id", ondelete="RESTRICT"),
         nullable=True,
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     source: Mapped[str] = mapped_column(Text, nullable=False)
+    performer: Mapped[str] = mapped_column(Text, nullable=False)
+    intent: Mapped[str] = mapped_column(Text, nullable=False)
     reps: Mapped[int | None] = mapped_column(Integer, nullable=True)
     hold_seconds: Mapped[Decimal | None] = mapped_column(
         Numeric(10, 3),
         nullable=True,
     )
     analysis_segment_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    live_coach_session_ref: Mapped[str | None] = mapped_column(Text, nullable=True)

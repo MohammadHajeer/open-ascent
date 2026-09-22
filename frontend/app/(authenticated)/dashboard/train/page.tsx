@@ -4,6 +4,7 @@ import { ArrowUpRight, Camera, ShieldCheck } from "lucide-react";
 import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
+import { WorkoutLogger } from "@/features/workouts/workout-logger";
 import { ThemedAsset } from "@/components/shared/themed-asset";
 import { buttonVariants } from "@/components/ui/button";
 import { assets } from "@/lib/assets";
@@ -27,6 +28,14 @@ export default function TrainPage() {
         title="Train with intention."
         description="Choose a focused training tool: live local coaching for pull-ups, or a deeper uploaded movement analysis."
       />
+
+      <DashboardSection
+        eyebrow="Workout log"
+        title="Record reliable training evidence."
+        description="Track repetitions or timed holds without turning a single analyzed rep into an ability claim."
+      >
+        <WorkoutLogger />
+      </DashboardSection>
 
       <section className="relative overflow-hidden rounded-[1.6rem] border border-primary/20 bg-card/80 p-6 sm:p-8">
         <div
@@ -70,8 +79,8 @@ export default function TrainPage() {
         description="Upload a movement video for the existing asynchronous analyzer and saved analysis workflow."
       >
         <DashboardEmptyState
-          title="No training sessions yet."
-          description="There is no session data to show yet, so this space stays focused on what comes next."
+          title="Analyze a recorded movement."
+          description="Standalone analyses remain in analysis history unless you explicitly link one while logging a set."
           action={analyzeAction}
           visual={
             <ThemedAsset

@@ -42,13 +42,21 @@ async def validation_exception_handler(
     request: Request,
     exc: RequestValidationError,
 ):
+    details = []
+    for error in exc.errors():
+        sanitized = dict(error)
+        if "ctx" in sanitized:
+            sanitized["ctx"] = {
+                key: str(value) for key, value in sanitized["ctx"].items()
+            }
+        details.append(sanitized)
     return JSONResponse(
         status_code=422,
         content={
             "error": {
                 "code": "validation_error",
                 "message": "Invalid request",
-                "details": exc.errors(),
+                "details": details,
             }
         },
     )

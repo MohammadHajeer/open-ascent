@@ -41,6 +41,19 @@ class WorkoutSource(StrEnum):
     LIVE_COACH = "live_coach"
 
 
+class WorkoutPerformer(StrEnum):
+    SELF = "self"
+    OTHER = "other"
+    UNKNOWN = "unknown"
+
+
+class WorkoutSetIntent(StrEnum):
+    TRAINING_SET = "training_set"
+    ASSESSMENT = "assessment"
+    MAX_TEST = "max_test"
+    SKILL_ATTEMPT = "skill_attempt"
+
+
 class MessageRole(StrEnum):
     USER = "user"
     ASSISTANT = "assistant"

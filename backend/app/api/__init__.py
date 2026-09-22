@@ -9,6 +9,7 @@ from app.api.sse_smoke import router as sse_smoke_router
 from app.api.stripe_smoke import router as stripe_smoke_router
 from app.api.stripe_webhook import router as stripe_webhook_router
 from app.api.subscriptions import router as subscriptions_router
+from app.api.workouts import router as workouts_router
 
 api_router = APIRouter()
 
@@ -21,3 +22,4 @@ api_router.include_router(stripe_webhook_router)
 api_router.include_router(subscriptions_router)
 api_router.include_router(analysis_router)
 api_router.include_router(analysis_stream_router)
+api_router.include_router(workouts_router)
