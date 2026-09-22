@@ -11,6 +11,7 @@ import {
   Library,
   ScanLine,
   Settings,
+  TrendingUp,
   UserRound,
   Users,
 } from "lucide-react";
@@ -27,6 +28,7 @@ import {
 const iconMap = {
   overview: ChartNoAxesCombined,
   train: Dumbbell,
+  progress: TrendingUp,
   coach: Bot,
   library: Library,
   analyses: Activity,

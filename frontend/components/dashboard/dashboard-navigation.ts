@@ -3,6 +3,7 @@ export type DashboardMode = "user" | "admin";
 export type DashboardNavIcon =
   | "overview"
   | "train"
+  | "progress"
   | "coach"
   | "library"
   | "analyses"
@@ -32,6 +33,11 @@ export const userNavigation: DashboardNavItem[] = [
     label: "Train",
     href: "/dashboard/train",
     icon: "train",
+  },
+  {
+    label: "Progress",
+    href: "/dashboard/progress",
+    icon: "progress",
   },
   {
     label: "AI Coach",
