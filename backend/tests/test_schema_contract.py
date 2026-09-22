@@ -1,5 +1,6 @@
 import app.models  # noqa: F401
 from app.db.base import Base
+from app.models.guest_analysis_usage import GuestAnalysisUsage
 from app.models.subscription import FeatureUsage, StripeWebhookEvent, UserSubscription
 
 EXPECTED_APPLICATION_TABLES = {
@@ -19,6 +20,7 @@ EXPECTED_APPLICATION_TABLES = {
     "plan_entitlements",
     "user_subscriptions",
     "feature_usage",
+    "guest_analysis_usage",
 }
 
 
@@ -52,6 +54,14 @@ def test_feature_usage_has_database_lifecycle_and_idempotency_guards():
         "window_end",
         "status",
     )
+
+
+def test_guest_usage_has_identity_day_and_analysis_uniqueness_guards():
+    constraints = {
+        constraint.name for constraint in GuestAnalysisUsage.__table__.constraints
+    }
+    assert "uq_guest_analysis_usage_identity_day" in constraints
+    assert "uq_guest_analysis_usage_analysis" in constraints
 
 
 def test_stripe_webhook_reconciliation_has_idempotency_and_ordering_guards():

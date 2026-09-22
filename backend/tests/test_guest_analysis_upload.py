@@ -367,7 +367,7 @@ def test_valid_video_finalization_queues_analysis(
     monkeypatch.setattr(
         analysis_storage,
         "_validate_video_bytes",
-        lambda video_bytes: None,
+        lambda video_bytes, **limits: None,
     )
 
     response = client.post(
@@ -437,7 +437,7 @@ def test_finalize_retry_is_idempotent(
     monkeypatch.setattr(
         analysis_storage,
         "_validate_video_bytes",
-        lambda video_bytes: None,
+        lambda video_bytes, **limits: None,
     )
 
     url = f"/analyses/" f"{body['analysis_id']}/finalize"
@@ -570,6 +570,7 @@ def test_oversized_video_is_rejected(
     )
 
     assert response.status_code == 413
+    assert response.json()["error"]["message"] == "Guest videos can be up to 10 MB."
 
 
 def test_too_long_video_is_rejected(
@@ -600,6 +601,7 @@ def test_too_long_video_is_rejected(
 
     def reject_duration(
         video_bytes: bytes,
+        **limits,
     ) -> None:
         raise UploadedVideoTooLongError
 
@@ -617,3 +619,79 @@ def test_too_long_video_is_rejected(
     )
 
     assert response.status_code == 422
+    assert response.json()["error"]["message"] == (
+        "Guest videos can be up to 20 seconds."
+    )
+
+
+@pytest.mark.parametrize(
+    ("frame_count", "raises"),
+    [(200, False), (201, True)],
+)
+def test_guest_duration_boundary_is_20_seconds(
+    monkeypatch: pytest.MonkeyPatch,
+    frame_count: int,
+    raises: bool,
+) -> None:
+    class FakeCapture:
+        def isOpened(self):
+            return True
+
+        def get(self, prop):
+            return {
+                analysis_storage.cv2.CAP_PROP_FPS: 10,
+                analysis_storage.cv2.CAP_PROP_FRAME_COUNT: frame_count,
+                analysis_storage.cv2.CAP_PROP_FRAME_WIDTH: 640,
+                analysis_storage.cv2.CAP_PROP_FRAME_HEIGHT: 480,
+            }[prop]
+
+        def read(self):
+            return True, object()
+
+        def release(self):
+            return None
+
+    monkeypatch.setattr(analysis_storage.cv2, "VideoCapture", lambda path: FakeCapture())
+    video = b"\x00\x00\x00\x14ftypisom"
+    if raises:
+        with pytest.raises(UploadedVideoTooLongError):
+            analysis_storage._validate_video_bytes(
+                video,
+                max_size_bytes=10 * 1024 * 1024,
+                max_duration_seconds=20,
+            )
+    else:
+        analysis_storage._validate_video_bytes(
+            video,
+            max_size_bytes=10 * 1024 * 1024,
+            max_duration_seconds=20,
+        )
+
+
+def test_authenticated_duration_above_20_seconds_uses_existing_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeCapture:
+        def isOpened(self):
+            return True
+
+        def get(self, prop):
+            return {
+                analysis_storage.cv2.CAP_PROP_FPS: 10,
+                analysis_storage.cv2.CAP_PROP_FRAME_COUNT: 210,
+                analysis_storage.cv2.CAP_PROP_FRAME_WIDTH: 640,
+                analysis_storage.cv2.CAP_PROP_FRAME_HEIGHT: 480,
+            }[prop]
+
+        def read(self):
+            return True, object()
+
+        def release(self):
+            return None
+
+    monkeypatch.setattr(analysis_storage.cv2, "VideoCapture", lambda path: FakeCapture())
+    analysis_storage._validate_video_bytes(
+        b"\x00\x00\x00\x14ftypisom",
+        max_size_bytes=settings.authenticated_video_max_size_mb * 1024 * 1024,
+        max_duration_seconds=settings.authenticated_video_max_duration_seconds,
+    )

@@ -5,6 +5,7 @@ from app.models.ai_run import AIRun
 from app.models.analysis import Analysis
 from app.models.analysis_event import AnalysisEvent
 from app.models.coach import Conversation, Message
+from app.models.guest_analysis_usage import GuestAnalysisUsage
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.models.profile import Profile
@@ -23,6 +24,7 @@ __all__ = [
     "AnalysisEvent",
     "Conversation",
     "FeatureUsage",
+    "GuestAnalysisUsage",
     "Message",
     "Movement",
     "MovementDocumentation",

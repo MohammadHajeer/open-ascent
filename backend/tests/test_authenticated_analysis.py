@@ -355,7 +355,12 @@ def test_authenticated_reservation_upload_finalize_and_worker_reuse(
     monkeypatch.setattr(
         analysis_storage, "_download_uploaded_video", lambda path: b"video"
     )
-    monkeypatch.setattr(analysis_storage, "_validate_video_bytes", lambda value: None)
+    validated_limits = {}
+
+    def capture_limits(value, **limits):
+        validated_limits.update(limits)
+
+    monkeypatch.setattr(analysis_storage, "_validate_video_bytes", capture_limits)
 
     response = _reserve(client, user_a, movement, guide, "token-a")
     assert response.status_code == 201, response.text
@@ -372,8 +377,16 @@ def test_authenticated_reservation_upload_finalize_and_worker_reuse(
     upload = client.post(f"/analyses/{analysis_id}/upload", headers=headers)
     assert upload.status_code == 200
     assert upload.json()["path"] == f"analyses/{analysis_id}/source.mp4"
+    assert upload.json()["max_size_bytes"] == (
+        settings.authenticated_video_max_size_mb * 1024 * 1024
+    )
     finalized = client.post(f"/analyses/{analysis_id}/finalize", headers=headers)
     assert finalized.status_code == 200
+    assert validated_limits == {
+        "max_size_bytes": settings.authenticated_video_max_size_mb * 1024 * 1024,
+        "max_duration_seconds": settings.authenticated_video_max_duration_seconds,
+    }
+    assert validated_limits["max_duration_seconds"] > 20
     claim = claim_next_analysis(db)
     assert claim is not None and claim.analysis_id == analysis_id
     complete_analysis(

@@ -2,19 +2,21 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Generator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.guest_credentials import hash_guest_token
 from app.core.safety import CURRENT_SAFETY_ACK_VERSION
 from app.models.analysis import Analysis
+from app.models.guest_analysis_usage import GuestAnalysisUsage
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
+from app.services import analysis as analysis_service
 
 
 @pytest.fixture
@@ -87,6 +89,7 @@ def create_reservation(
     documentation: MovementDocumentation,
     *,
     idempotency_key: uuid.UUID | None = None,
+    guest_credential: str | None = None,
 ):
     operation_key = idempotency_key or uuid.uuid4()
 
@@ -94,12 +97,164 @@ def create_reservation(
         "/analyses/guest",
         headers={
             "Idempotency-Key": str(operation_key),
+            **({"Guest-Credential": guest_credential} if guest_credential else {}),
         },
         json=reservation_payload(
             movement,
             documentation,
         ),
     )
+
+
+def test_same_guest_credential_is_limited_to_one_analysis_per_utc_day(
+    client: TestClient,
+    analysis_test_data: tuple[Movement, MovementDocumentation],
+) -> None:
+    movement, documentation = analysis_test_data
+    first = create_reservation(client, movement, documentation)
+    assert first.status_code == 201
+
+    second = create_reservation(
+        client,
+        movement,
+        documentation,
+        guest_credential=first.json()["credential"],
+    )
+
+    assert second.status_code == 429
+    assert second.json()["error"]["message"] == (
+        "Guests can analyze one video per day. Sign in to continue analyzing."
+    )
+
+
+def test_same_guest_credential_can_analyze_after_utc_day_changes(
+    client: TestClient,
+    analysis_test_data: tuple[Movement, MovementDocumentation],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    movement, documentation = analysis_test_data
+    first_day = datetime(2098, 1, 1, 23, 59, tzinfo=UTC)
+    monkeypatch.setattr(analysis_service, "_utc_now", lambda: first_day)
+    monkeypatch.setattr(settings, "guest_reservations_per_window", 200)
+    first = create_reservation(client, movement, documentation)
+    assert first.status_code == 201
+
+    monkeypatch.setattr(
+        analysis_service,
+        "_utc_now",
+        lambda: first_day + timedelta(minutes=2),
+    )
+    second = create_reservation(
+        client,
+        movement,
+        documentation,
+        guest_credential=first.json()["credential"],
+    )
+
+    assert second.status_code == 201, second.text
+
+
+def test_global_guest_daily_capacity_accepts_100_and_rejects_101st(
+    client: TestClient,
+    db: Session,
+    analysis_test_data: tuple[Movement, MovementDocumentation],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    movement, documentation = analysis_test_data
+    monkeypatch.setattr(
+        analysis_service,
+        "_utc_now",
+        lambda: datetime(2098, 2, 1, 12, tzinfo=UTC),
+    )
+    monkeypatch.setattr(settings, "guest_reservations_per_window", 200)
+
+    first = create_reservation(client, movement, documentation)
+    assert first.status_code == 201
+    template = db.get(Analysis, uuid.UUID(first.json()["analysis_id"]))
+    assert template is not None
+    for index in range(99):
+        analysis = Analysis(
+            movement_id=movement.id,
+            family_key=movement.family_key,
+            safety_documentation_id=documentation.id,
+            safety_ack_version=CURRENT_SAFETY_ACK_VERSION,
+            safety_acknowledged_at=datetime(2098, 2, 1, 12, tzinfo=UTC),
+            owner_kind="guest",
+            status="reserved",
+            stage="reserved",
+            guest_token_hash=f"identity-{index}",
+            guest_rate_key=f"rate-{index}",
+            reservation_operation_key=str(uuid.uuid4()),
+            request_fingerprint=f"fingerprint-{index}",
+            reservation_expires_at=datetime(2098, 2, 1, 13, tzinfo=UTC),
+            access_expires_at=datetime(2098, 2, 1, 13, tzinfo=UTC),
+            purge_after=datetime(2098, 2, 2, 12, tzinfo=UTC),
+        )
+        db.add(analysis)
+        db.flush()
+        db.add(
+            GuestAnalysisUsage(
+                analysis_id=analysis.id,
+                usage_date=datetime(2098, 2, 1, tzinfo=UTC).date(),
+                guest_identity_key=f"identity-{index}",
+            )
+        )
+    db.commit()
+
+    assert db.scalar(
+        select(func.count(GuestAnalysisUsage.id)).where(
+            GuestAnalysisUsage.usage_date == datetime(2098, 2, 1, tzinfo=UTC).date()
+        )
+    ) == 100
+    rejected = create_reservation(client, movement, documentation)
+    assert rejected.status_code == 429
+    assert rejected.json()["error"]["message"] == (
+        "Guest analysis capacity has been reached for today. "
+        "Sign in to continue analyzing."
+    )
+
+
+def test_idempotent_retry_of_accepted_analysis_does_not_double_charge(
+    client: TestClient,
+    db: Session,
+    analysis_test_data: tuple[Movement, MovementDocumentation],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    movement, documentation = analysis_test_data
+    monkeypatch.setattr(settings, "guest_global_daily_limit", 1)
+    operation_key = uuid.uuid4()
+    first = create_reservation(
+        client, movement, documentation, idempotency_key=operation_key
+    )
+    accepted = db.get(Analysis, uuid.UUID(first.json()["analysis_id"]))
+    accepted.status = "failed"
+    accepted.stage = "failed"
+    accepted.failed_at = datetime.now(UTC)
+    db.commit()
+    retry = create_reservation(
+        client, movement, documentation, idempotency_key=operation_key
+    )
+
+    assert first.status_code == retry.status_code == 201
+    assert first.json()["analysis_id"] == retry.json()["analysis_id"]
+    assert db.scalar(select(func.count(GuestAnalysisUsage.id))) == 1
+    rejected = create_reservation(client, movement, documentation)
+    assert rejected.status_code == 429
+
+
+def test_safety_guide_remains_available_when_guest_capacity_is_exhausted(
+    client: TestClient,
+    analysis_test_data: tuple[Movement, MovementDocumentation],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    movement, documentation = analysis_test_data
+    monkeypatch.setattr(settings, "guest_global_daily_limit", 1)
+    assert create_reservation(client, movement, documentation).status_code == 201
+    assert create_reservation(client, movement, documentation).status_code == 429
+
+    guide = client.get(f"/movements/{movement.slug}")
+    assert guide.status_code == 200
+    assert guide.json()["documentation"]["id"] == str(documentation.id)
 
 
 def test_any_vertical_pull_reservation_has_no_specific_movement_target(

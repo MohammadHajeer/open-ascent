@@ -122,8 +122,12 @@ export async function AnalyzeMovementSection({
         safetyDocumentationId: guide.documentation.id,
       }}
       config={{
-        maxSizeBytes: config.max_size_bytes,
-        maxDurationSeconds: config.max_duration_seconds,
+        maxSizeBytes: authenticated
+          ? config.authenticated_max_size_bytes
+          : config.max_size_bytes,
+        maxDurationSeconds: authenticated
+          ? config.authenticated_max_duration_seconds
+          : config.max_duration_seconds,
         safetyAckVersion: config.safety_ack_version,
       }}
       safetyGuidance={<SafetyGuidance safety={guide.documentation.content} movementName={familyMode ? "Vertical Pull" : guide.name} />}

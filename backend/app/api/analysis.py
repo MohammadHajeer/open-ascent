@@ -34,8 +34,11 @@ from app.schemas.analysis_explanation import AnalysisExplanation
 from app.schemas.movement_safety import MovementSafetyContentDraft
 from app.services.analysis import (
     AnalysisNotSupportedError,
+    GuestDailyLimitExceededError,
+    GuestGlobalDailyLimitExceededError,
     GuestRateLimitExceededError,
     IdempotencyConflictError,
+    InvalidGuestIdentityCredentialError,
     MovementNotFoundError,
     ReservationExpiredError,
     SafetyAcknowledgementOutdatedError,
@@ -52,6 +55,7 @@ from app.services.analysis_storage import (
     UploadedVideoTooLargeError,
     UploadedVideoTooLongError,
     UploadReservationExpiredError,
+    analysis_video_limits,
     create_analysis_upload_authorization,
     finalize_analysis_upload,
 )
@@ -200,6 +204,12 @@ def get_guest_analysis_config() -> GuestAnalysisConfigResponse:
         allowed_content_types=["video/mp4"],
         max_size_bytes=settings.guest_video_max_size_mb * 1024 * 1024,
         max_duration_seconds=settings.guest_video_max_duration_seconds,
+        authenticated_max_size_bytes=(
+            settings.authenticated_video_max_size_mb * 1024 * 1024
+        ),
+        authenticated_max_duration_seconds=(
+            settings.authenticated_video_max_duration_seconds
+        ),
         safety_ack_version=CURRENT_SAFETY_ACK_VERSION,
     )
 
@@ -214,6 +224,7 @@ def create_guest_analysis_reservation(
     request: Request,
     db: DbSession,
     idempotency_key: IdempotencyKey,
+    guest_credential: Annotated[str | None, Header(alias="Guest-Credential")] = None,
 ) -> GuestAnalysisReservationResponse:
     if request.client is None:
         raise HTTPException(
@@ -232,6 +243,7 @@ def create_guest_analysis_reservation(
             payload,
             operation_key=str(idempotency_key),
             guest_rate_key=guest_rate_key,
+            guest_identity_credential=guest_credential,
         )
 
     except MovementNotFoundError:
@@ -285,6 +297,24 @@ def create_guest_analysis_reservation(
             detail="Guest analysis limit reached. Please try again later.",
         )
 
+    except GuestDailyLimitExceededError:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Guests can analyze one video per day. Sign in to continue analyzing.",
+        )
+
+    except GuestGlobalDailyLimitExceededError:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Guest analysis capacity has been reached for today. Sign in to continue analyzing.",
+        )
+
+    except InvalidGuestIdentityCredentialError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid guest credential.",
+        )
+
     return GuestAnalysisReservationResponse(
         analysis_id=analysis.id,
         credential=credential,
@@ -317,12 +347,13 @@ def create_guest_analysis_upload(
             detail="Analysis reservation has expired.",
         )
 
+    max_size_bytes, _ = analysis_video_limits(analysis)
     return GuestAnalysisUploadAuthorizationResponse(
         analysis_id=analysis.id,
         bucket=settings.supabase_video_bucket,
         path=path,
         token=token,
-        max_size_bytes=(settings.guest_video_max_size_mb * 1024 * 1024),
+        max_size_bytes=max_size_bytes,
         allowed_content_types=[
             "video/mp4",
         ],
@@ -353,7 +384,11 @@ def finalize_guest_analysis(
     except UploadedVideoTooLargeError:
         raise HTTPException(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-            detail="Uploaded video exceeds the allowed size.",
+            detail=(
+                "Guest videos can be up to 10 MB."
+                if analysis.owner_kind == "guest"
+                else "Uploaded video exceeds the allowed size."
+            ),
         )
 
     except InvalidUploadedVideoError:
@@ -365,7 +400,11 @@ def finalize_guest_analysis(
     except UploadedVideoTooLongError:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Uploaded video exceeds the allowed duration.",
+            detail=(
+                "Guest videos can be up to 20 seconds."
+                if analysis.owner_kind == "guest"
+                else "Uploaded video exceeds the allowed duration."
+            ),
         )
 
     except UploadReservationExpiredError:

@@ -31,6 +31,7 @@ import { streamGuestAnalysis, type AnalysisProgressEvent } from "@/lib/analysis-
 import {
   analysisUrlWithId,
   getGuestAnalysisSession,
+  getGuestIdentityCredential,
   recoveryActionForStatus,
   removeGuestAnalysisSession,
   saveGuestAnalysisSession,
@@ -424,6 +425,7 @@ export function GuestAnalysisClient({
               movement.id,
               movement.safetyDocumentationId,
               config.safetyAckVersion,
+              getGuestIdentityCredential(),
             );
         setAccess(currentAccess);
         if (!authenticated && !saveGuestAnalysisSession(currentAccess as GuestAccess))
@@ -510,6 +512,7 @@ export function GuestAnalysisClient({
               {step === "video" ? (
                 <div className="cv-grid mt-8 grid min-h-90 place-items-center rounded-[3px_3px_34px_3px] border border-border bg-card px-6 py-12 text-center sm:min-h-107.5" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); if (event.dataTransfer.files[0]) selectFile(event.dataTransfer.files[0]); }}>
                   <div className="grid max-w-md justify-items-center"><span className="grid size-14 place-items-center rounded-full border border-border bg-background text-primary"><Upload className="size-5" /></span><h3 className="mt-6 text-2xl font-medium tracking-tight">{access ? "Re-select your video" : "Choose a short video"}</h3><p className="mt-3 text-sm leading-6 text-foreground-soft">{access ? "Your reservation is ready. The local file was cleared by refresh, so choose the MP4 again to continue." : "Keep your full movement and equipment visible throughout the set."}</p>
+                    {!authenticated && <p className="mt-3 max-w-sm text-sm leading-6 text-foreground-soft">Guest videos can be up to 20 seconds and 10 MB. Guests can analyze one video per day; guest capacity is limited daily.</p>}
                     <label className="mt-7 cursor-pointer rounded-lg bg-primary px-5 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90">Choose MP4 video<input className="sr-only" type="file" accept="video/mp4,.mp4" onChange={(event) => { if (event.target.files?.[0]) selectFile(event.target.files[0]); event.currentTarget.value = ""; }} /></label>
                     <p className="mt-6 font-mono text-[0.56rem] tracking-[0.08em] text-foreground-faint uppercase">MP4 · Maximum {Math.round(config.maxSizeBytes / 1048576)} MB · {config.maxDurationSeconds} seconds</p>
                   </div>

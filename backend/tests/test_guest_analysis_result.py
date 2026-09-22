@@ -147,6 +147,8 @@ def test_guest_config_exposes_backend_limits(client: TestClient) -> None:
         response.json()["max_duration_seconds"]
         == settings.guest_video_max_duration_seconds
     )
+    assert response.json()["max_size_bytes"] == 10 * 1024 * 1024
+    assert response.json()["max_duration_seconds"] == 20
 
 
 def test_guest_result_requires_credential(

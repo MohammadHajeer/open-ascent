@@ -25,6 +25,8 @@ class GuestAnalysisConfigResponse(BaseModel):
     allowed_content_types: list[str]
     max_size_bytes: int
     max_duration_seconds: int
+    authenticated_max_size_bytes: int
+    authenticated_max_duration_seconds: int
     safety_ack_version: str
 
 

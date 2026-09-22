@@ -3,6 +3,7 @@
 import type { AnalysisStatus, GuestAccess } from "./analysis";
 
 const PREFIX = "open-ascent:guest-analysis:";
+const IDENTITY_KEY = "open-ascent:guest-identity";
 const ANALYSIS_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type SessionStore = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -39,9 +40,22 @@ export function saveGuestAnalysisSession(
         access_expires_at: access.access_expires_at,
       }),
     );
+    if (!store.getItem(IDENTITY_KEY)) store.setItem(IDENTITY_KEY, access.credential);
     return true;
   } catch {
     return false;
+  }
+}
+
+export function getGuestIdentityCredential(
+  store: SessionStore | null = browserStore(),
+) {
+  if (!store) return null;
+  try {
+    const credential = store.getItem(IDENTITY_KEY);
+    return credential || null;
+  } catch {
+    return null;
   }
 }
 

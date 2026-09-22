@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   analysisUrlWithId,
   getGuestAnalysisSession,
+  getGuestIdentityCredential,
   recoveryActionForStatus,
   removeGuestAnalysisSession,
   saveGuestAnalysisSession,
@@ -35,8 +36,10 @@ test("guest access is stored by analysis ID with only credential and expiry", ()
     access_expires_at: access.access_expires_at,
   });
   assert.deepEqual(getGuestAnalysisSession(id, store), access);
+  assert.equal(getGuestIdentityCredential(store), access.credential);
   removeGuestAnalysisSession(id, store);
   assert.equal(store.entries.has(key), false);
+  assert.equal(getGuestIdentityCredential(store), access.credential);
 });
 
 test("missing or malformed storage cannot authorize recovery", () => {

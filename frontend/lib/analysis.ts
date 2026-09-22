@@ -31,6 +31,8 @@ export type GuestConfig = {
   allowed_content_types: string[];
   max_size_bytes: number;
   max_duration_seconds: number;
+  authenticated_max_size_bytes: number;
+  authenticated_max_duration_seconds: number;
   safety_ack_version: string;
 };
 
@@ -150,12 +152,14 @@ export function reserveGuestAnalysis(
   movementId: string | null,
   safetyDocumentationId: string,
   safetyAckVersion: string,
+  guestCredential?: string | null,
 ) {
   return apiFetch<GuestAccess>("/analyses/guest", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Idempotency-Key": crypto.randomUUID(),
+      ...(guestCredential ? { "Guest-Credential": guestCredential } : {}),
     },
     body: JSON.stringify({
       ...(movementId

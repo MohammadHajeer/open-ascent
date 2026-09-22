@@ -1,5 +1,6 @@
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,8 +46,14 @@ class Settings(BaseSettings):
     guest_cleanup_batch_size: int = 50
     guest_cleanup_interval_seconds: int = 900
 
-    guest_video_max_size_mb: int = 50
-    guest_video_max_duration_seconds: int = 60
+    guest_daily_limit: int = Field(default=1, ge=1, le=1)
+    guest_global_daily_limit: int = Field(default=100, ge=1, le=100)
+    guest_video_max_size_mb: int = Field(default=10, ge=1, le=10)
+    guest_video_max_duration_seconds: int = Field(default=20, ge=1, le=20)
+
+    # Keep the pre-hardening limits for signed-in athletes.
+    authenticated_video_max_size_mb: int = 50
+    authenticated_video_max_duration_seconds: int = 60
 
     # Analysis worker
     analysis_worker_poll_interval_seconds: int = 5

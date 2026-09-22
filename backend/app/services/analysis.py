@@ -17,6 +17,7 @@ from app.core.guest_credentials import (
 from app.core.safety import CURRENT_SAFETY_ACK_VERSION
 from app.models.analysis import Analysis
 from app.models.enums import FeatureKey, FeatureUsageStatus
+from app.models.guest_analysis_usage import GuestAnalysisUsage
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.schemas.analysis import GuestAnalysisReservationRequest
@@ -42,6 +43,18 @@ class GuestRateLimitExceededError(Exception):
     pass
 
 
+class GuestDailyLimitExceededError(Exception):
+    pass
+
+
+class GuestGlobalDailyLimitExceededError(Exception):
+    pass
+
+
+class InvalidGuestIdentityCredentialError(Exception):
+    pass
+
+
 class MovementNotFoundError(Exception):
     pass
 
@@ -64,6 +77,10 @@ class SafetyDocumentationMismatchError(Exception):
 
 class SafetyAcknowledgementOutdatedError(Exception):
     pass
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -185,9 +202,10 @@ def _validate_existing_reservation(
     if analysis.request_fingerprint != request_fingerprint:
         raise IdempotencyConflictError
 
-    if (
-        analysis.owner_kind != "guest"
-        or analysis.status != "reserved"
+    if analysis.owner_kind != "guest":
+        raise ReservationExpiredError
+    if analysis.status == "reserved" and (
+        analysis.reservation_expires_at is None
         or analysis.reservation_expires_at <= now
     ):
         raise ReservationExpiredError
@@ -250,8 +268,9 @@ def reserve_guest_analysis(
     *,
     operation_key: str,
     guest_rate_key: str,
+    guest_identity_credential: str | None = None,
 ) -> tuple[Analysis, str]:
-    now = datetime.now(UTC)
+    now = _utc_now()
 
     request_fingerprint = build_request_fingerprint(payload)
 
@@ -268,6 +287,59 @@ def reserve_guest_analysis(
 
     if existing_reservation is not None:
         return existing_reservation
+
+    credential, credential_hash = _build_credential(
+        operation_key,
+        request_fingerprint,
+    )
+    if guest_identity_credential:
+        identity_key = hash_guest_token(
+            guest_identity_credential,
+            settings.guest_token_secret,
+        )
+        known_identity = db.scalar(
+            select(GuestAnalysisUsage.id).where(
+                GuestAnalysisUsage.guest_identity_key == identity_key
+            ).limit(1)
+        )
+        if known_identity is None:
+            raise InvalidGuestIdentityCredentialError
+    else:
+        identity_key = credential_hash
+
+    # Serialize every guest admission. This makes the count-and-insert for the
+    # final global slot one transactionally atomic PostgreSQL critical section.
+    db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": 5130527452769505625})
+
+    # A concurrent retry of this operation may have committed while waiting.
+    existing_reservation = _handle_existing_reservation(
+        db,
+        operation_key=operation_key,
+        request_fingerprint=request_fingerprint,
+        now=now,
+    )
+    if existing_reservation is not None:
+        return existing_reservation
+
+    usage_date = now.date()
+    guest_daily_count = db.scalar(
+        select(func.count(GuestAnalysisUsage.id)).where(
+            GuestAnalysisUsage.usage_date == usage_date,
+            GuestAnalysisUsage.guest_identity_key == identity_key,
+        )
+    )
+    if guest_daily_count >= settings.guest_daily_limit:
+        db.rollback()
+        raise GuestDailyLimitExceededError
+
+    global_daily_count = db.scalar(
+        select(func.count(GuestAnalysisUsage.id)).where(
+            GuestAnalysisUsage.usage_date == usage_date
+        )
+    )
+    if global_daily_count >= settings.guest_global_daily_limit:
+        db.rollback()
+        raise GuestGlobalDailyLimitExceededError
 
     # Serialize reservations from the same signed network prefix. The key is
     # already an HMAC, so neither the prefix nor the original IP is stored.
@@ -318,15 +390,6 @@ def reserve_guest_analysis(
     _validate_safety_acknowledgement(payload.safety_ack_version)
 
     # ---------------------------------------------------------
-    # 5. Deterministic guest credential
-    # ---------------------------------------------------------
-
-    credential, credential_hash = _build_credential(
-        operation_key,
-        request_fingerprint,
-    )
-
-    # ---------------------------------------------------------
     # 6. Expiration / retention times
     # ---------------------------------------------------------
 
@@ -361,6 +424,14 @@ def reserve_guest_analysis(
     )
 
     db.add(analysis)
+    db.flush()
+    db.add(
+        GuestAnalysisUsage(
+            analysis_id=analysis.id,
+            usage_date=usage_date,
+            guest_identity_key=identity_key,
+        )
+    )
 
     # ---------------------------------------------------------
     # 8. Handle simultaneous requests using the same
@@ -443,7 +514,7 @@ def reserve_authenticated_analysis(
     user_id: uuid.UUID,
 ) -> Analysis:
     """Reserve an authenticated analysis on the same row/pipeline as guests."""
-    now = datetime.now(UTC)
+    now = _utc_now()
     request_fingerprint = build_request_fingerprint(payload)
     existing = db.scalar(
         select(Analysis)

@@ -66,6 +66,18 @@ def create_analysis_upload_authorization(
     return path, response["token"]
 
 
+def analysis_video_limits(analysis: Analysis) -> tuple[int, int]:
+    if analysis.owner_kind == "guest":
+        return (
+            settings.guest_video_max_size_mb * 1024 * 1024,
+            settings.guest_video_max_duration_seconds,
+        )
+    return (
+        settings.authenticated_video_max_size_mb * 1024 * 1024,
+        settings.authenticated_video_max_duration_seconds,
+    )
+
+
 def _download_uploaded_video(
     path: str,
 ) -> bytes:
@@ -77,9 +89,10 @@ def _download_uploaded_video(
 
 def _validate_video_bytes(
     video_bytes: bytes,
+    *,
+    max_size_bytes: int,
+    max_duration_seconds: int,
 ) -> None:
-    max_size_bytes = settings.guest_video_max_size_mb * 1024 * 1024
-
     if not video_bytes:
         raise InvalidUploadedVideoError
 
@@ -118,7 +131,7 @@ def _validate_video_bytes(
 
             duration_seconds = frame_count / fps
 
-            if duration_seconds > settings.guest_video_max_duration_seconds:
+            if duration_seconds > max_duration_seconds:
                 raise UploadedVideoTooLongError
 
         finally:
@@ -153,7 +166,12 @@ def finalize_analysis_upload(
 
     video_bytes = _download_uploaded_video(expected_path)
 
-    _validate_video_bytes(video_bytes)
+    max_size_bytes, max_duration_seconds = analysis_video_limits(analysis)
+    _validate_video_bytes(
+        video_bytes,
+        max_size_bytes=max_size_bytes,
+        max_duration_seconds=max_duration_seconds,
+    )
 
     # Lock only for the final state transition.
     analysis = db.scalar(
