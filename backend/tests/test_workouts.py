@@ -306,3 +306,56 @@ def test_analysis_creation_does_not_create_workout_session(
             WorkoutSession.user_id == user_a
         )
     ) == 0
+
+
+def test_two_manual_pull_up_sets_persist_through_finish_and_feed_progress(
+    client: TestClient,
+    db: Session,
+    workout_data,
+):
+    user_a, _, movement, _ = workout_data
+    session_id = _start(client, user_a).json()["id"]
+
+    for position, reps in enumerate((8, 6)):
+        response = client.post(
+            f"/workout-sessions/{session_id}/sets",
+            headers=_auth(user_a),
+            json=_set_payload(movement, position=position, reps=reps),
+        )
+        assert response.status_code == 201
+
+    finished = client.post(
+        f"/workout-sessions/{session_id}/finish",
+        headers=_auth(user_a),
+        json={},
+    )
+    assert finished.status_code == 200
+    assert [item["reps"] for item in finished.json()["sets"]] == [8, 6]
+
+    persisted = list(
+        db.scalars(
+            select(WorkoutSet)
+            .where(WorkoutSet.session_id == uuid.UUID(session_id))
+            .order_by(WorkoutSet.position)
+        )
+    )
+    assert len(persisted) == 2
+    assert [(item.position, item.reps) for item in persisted] == [(0, 8), (1, 6)]
+    assert all(item.session_id == uuid.UUID(session_id) for item in persisted)
+    assert all(item.performer == "self" for item in persisted)
+    assert all(item.source == "manual" for item in persisted)
+    assert all(item.intent == "training_set" for item in persisted)
+    assert all(item.hold_seconds is None for item in persisted)
+
+    progress = client.get("/progress/summary", headers=_auth(user_a))
+    assert progress.status_code == 200
+    summary = progress.json()
+    assert summary["consistency"]["workouts_this_week"] == 1
+    assert summary["consistency"]["sets_this_week"] == 2
+    movement_progress = next(
+        item for item in summary["movements"] if item["id"] == str(movement.id)
+    )
+    reps_trend = next(
+        item for item in movement_progress["metrics"] if item["measurement"] == "reps"
+    )
+    assert [item["value"] for item in reps_trend["points"]] == [8.0, 6.0]

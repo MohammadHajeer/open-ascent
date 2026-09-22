@@ -75,9 +75,11 @@ export function WorkoutLogger() {
   const movements = useWorkoutMovements();
   const start = useCreateWorkoutSession();
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const session = useWorkoutSession(sessionId);
-  const addSet = useAddWorkoutSet(sessionId);
-  const finish = useFinishWorkoutSession(sessionId);
+  const activeSessionId =
+    sessionId ?? sessions.data?.find((item) => !item.completed_at)?.id ?? null;
+  const session = useWorkoutSession(activeSessionId);
+  const addSet = useAddWorkoutSet(activeSessionId);
+  const finish = useFinishWorkoutSession(activeSessionId);
 
   const [measurement, setMeasurement] = useState<"reps" | "hold">("reps");
   const [movementId, setMovementId] = useState("");
@@ -89,13 +91,16 @@ export function WorkoutLogger() {
   const [liveCoachRef, setLiveCoachRef] = useState("");
   const [notes, setNotes] = useState("");
   const [showDetails, setShowDetails] = useState(false);
+  const [setError, setSetError] = useState<string | null>(null);
 
   const active = session.data;
   const nextPosition = active?.sets.length ?? 0;
   const history = useMemo(
     () =>
-      sessions.data?.filter((item) => item.id !== sessionId).slice(0, 5) ?? [],
-    [sessions.data, sessionId],
+      sessions.data
+        ?.filter((item) => item.id !== activeSessionId)
+        .slice(0, 5) ?? [],
+    [sessions.data, activeSessionId],
   );
   const movementItems = useMemo(
     () =>
@@ -116,18 +121,23 @@ export function WorkoutLogger() {
     }
   }
 
-  async function submitSet(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function saveSet(): Promise<boolean> {
+    setSetError(null);
     const amount = Number(value);
 
-    if (!movementId || !Number.isFinite(amount) || amount <= 0) {
-      toast.error("Choose a movement and enter a positive value.");
-      return;
+    if (
+      !movementId ||
+      !value.trim() ||
+      !Number.isFinite(amount) ||
+      amount <= 0
+    ) {
+      setSetError("Choose a movement and enter a positive value.");
+      return false;
     }
 
     if (measurement === "reps" && !Number.isInteger(amount)) {
-      toast.error("Repetitions must be a whole number.");
-      return;
+      setSetError("Repetitions must be a whole number.");
+      return false;
     }
 
     try {
@@ -149,25 +159,72 @@ export function WorkoutLogger() {
       });
 
       setValue("");
+      setSetError(null);
       toast.success("Set logged");
+      return true;
     } catch (error) {
-      toast.error(message(error));
+      setSetError(message(error));
+      return false;
     }
   }
 
+  async function submitSet(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await saveSet();
+  }
+
   async function complete() {
+    if (finish.isPending || addSet.isPending || session.isPending) return;
+    const hasPendingSet = value.trim().length > 0;
+    if (hasPendingSet && !(await saveSet())) return;
+    if (nextPosition === 0 && !hasPendingSet) {
+      setSetError("Add at least one set before finishing this workout.");
+      return;
+    }
     try {
       await finish.mutateAsync(notes.trim() || undefined);
       setSessionId(null);
       setNotes("");
       setShowDetails(false);
+      setSetError(null);
       toast.success("Workout finished");
     } catch (error) {
       toast.error(message(error));
     }
   }
 
-  if (!sessionId) {
+  if (sessions.isPending) {
+    return (
+      <div className="grid min-h-72 place-items-center">
+        <Loader2
+          className="size-6 animate-spin text-primary"
+          aria-label="Loading workouts"
+        />
+      </div>
+    );
+  }
+
+  if (sessions.isError || (activeSessionId && session.isError)) {
+    return (
+      <div className="flex min-h-72 flex-col items-center justify-center gap-4 text-center">
+        <p role="alert" className="text-sm text-destructive">
+          Workout history could not be loaded. Try again before logging a set.
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            void sessions.refetch();
+            if (activeSessionId) void session.refetch();
+          }}
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  if (!activeSessionId) {
     return (
       <div className="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(19rem,0.85fr)]">
         <section className="relative overflow-hidden bg-card/70 p-6 sm:p-7 border-r border-border/80">
@@ -260,6 +317,7 @@ export function WorkoutLogger() {
     <div className="grid xl:grid-cols-[minmax(0,1fr)_23rem]">
       <form
         onSubmit={submitSet}
+        noValidate
         className="bg-card/70 p-5 sm:p-7 border-r border-border/80"
       >
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border/70 pb-6">
@@ -299,6 +357,11 @@ export function WorkoutLogger() {
                 ))}
               </SelectContent>
             </Select>
+            {movements.isError ? (
+              <p role="alert" className="text-sm text-destructive">
+                Movements could not be loaded. Try again in a moment.
+              </p>
+            ) : null}
           </Field>
 
           <div className="grid gap-5 md:grid-cols-[0.9fr_1.1fr]">
@@ -356,8 +419,9 @@ export function WorkoutLogger() {
           </div>
 
           <div className="rounded-2xl border border-border/70 bg-background/30">
-            <button
+            <Button
               type="button"
+              variant="ghost"
               className="flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left"
               onClick={() => setShowDetails((current) => !current)}
             >
@@ -375,7 +439,7 @@ export function WorkoutLogger() {
               <span className="text-xs text-foreground-faint">
                 {showDetails ? "Hide" : "Edit"}
               </span>
-            </button>
+            </Button>
 
             {showDetails && (
               <div className="grid gap-4 border-t border-border/70 px-4 py-4 sm:grid-cols-2">
@@ -472,7 +536,13 @@ export function WorkoutLogger() {
             <p className="text-xs text-foreground-faint">
               Set {nextPosition + 1} will be added to the current workout.
             </p>
-            <Button size="lg" type="submit" disabled={addSet.isPending}>
+            <Button
+              size="lg"
+              type="submit"
+              disabled={
+                addSet.isPending || finish.isPending || session.isPending
+              }
+            >
               {addSet.isPending ? (
                 <Loader2 className="size-4 animate-spin" />
               ) : (
@@ -481,6 +551,11 @@ export function WorkoutLogger() {
               {addSet.isPending ? "Adding…" : "Add set"}
             </Button>
           </div>
+          {setError ? (
+            <p role="alert" className="text-sm text-destructive">
+              {setError}
+            </p>
+          ) : null}
         </div>
       </form>
 
@@ -559,7 +634,7 @@ export function WorkoutLogger() {
           size="lg"
           variant="outline"
           onClick={complete}
-          disabled={finish.isPending}
+          disabled={finish.isPending || addSet.isPending || session.isPending}
         >
           {finish.isPending ? (
             <Loader2 className="size-4 animate-spin" />

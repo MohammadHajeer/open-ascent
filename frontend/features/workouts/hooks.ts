@@ -11,7 +11,11 @@ import {
   finishWorkoutSession,
 } from "./api";
 import { workoutKeys } from "./keys";
-import type { WorkoutSetInput } from "./types";
+import type {
+  WorkoutSession,
+  WorkoutSessionDetail,
+  WorkoutSetInput,
+} from "./types";
 
 export const useWorkoutSessions = () =>
   useQuery({ queryKey: workoutKeys.all, queryFn: fetchWorkoutSessions });
@@ -32,6 +36,9 @@ export function useCreateWorkoutSession() {
     mutationFn: createWorkoutSession,
     onSuccess: (session) => {
       queryClient.setQueryData(workoutKeys.detail(session.id), session);
+      queryClient.setQueryData<WorkoutSession[]>(workoutKeys.all, (current) =>
+        current ? [session, ...current] : current,
+      );
       void queryClient.invalidateQueries({ queryKey: workoutKeys.all });
     },
   });
@@ -41,8 +48,15 @@ export function useAddWorkoutSet(sessionId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: WorkoutSetInput) => addWorkoutSet(sessionId!, payload),
-    onSuccess: () => {
+    onSuccess: (workoutSet) => {
       if (sessionId) {
+        queryClient.setQueryData<WorkoutSessionDetail>(
+          workoutKeys.detail(sessionId),
+          (current) =>
+            current
+              ? { ...current, sets: [...current.sets, workoutSet] }
+              : current,
+        );
         void queryClient.invalidateQueries({
           queryKey: workoutKeys.detail(sessionId),
         });
@@ -57,6 +71,9 @@ export function useFinishWorkoutSession(sessionId: string | null) {
     mutationFn: (notes?: string) => finishWorkoutSession(sessionId!, notes),
     onSuccess: (session) => {
       queryClient.setQueryData(workoutKeys.detail(session.id), session);
+      queryClient.setQueryData<WorkoutSession[]>(workoutKeys.all, (current) =>
+        current?.map((item) => (item.id === session.id ? session : item)),
+      );
       void queryClient.invalidateQueries({ queryKey: workoutKeys.all });
     },
   });
