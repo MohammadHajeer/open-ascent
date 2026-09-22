@@ -33,6 +33,7 @@ export type WorkoutSession = {
   source: WorkoutSource;
   started_at: string;
   completed_at: string | null;
+  set_count: number;
   notes: string | null;
   created_at: string;
   updated_at: string;

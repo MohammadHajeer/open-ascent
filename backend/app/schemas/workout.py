@@ -86,6 +86,7 @@ class WorkoutSessionRead(StrictModel):
     source: WorkoutSource
     started_at: datetime
     completed_at: datetime | None
+    set_count: int
     notes: str | None
     created_at: datetime
     updated_at: datetime

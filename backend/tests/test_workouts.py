@@ -116,6 +116,7 @@ def test_create_list_detail_finish_are_owner_scoped(
     assert detail.status_code == 200
     assert detail.json()["sets"][0]["movement_id"] == str(movement.id)
     assert len(client.get("/workout-sessions", headers=_auth(user_a)).json()) == 1
+    assert client.get("/workout-sessions", headers=_auth(user_a)).json()[0]["set_count"] == 1
     assert client.get("/workout-sessions", headers=_auth(user_b)).json() == []
     assert (
         client.get(f"/workout-sessions/{session_id}", headers=_auth(user_b)).status_code
@@ -331,6 +332,8 @@ def test_two_manual_pull_up_sets_persist_through_finish_and_feed_progress(
     )
     assert finished.status_code == 200
     assert [item["reps"] for item in finished.json()["sets"]] == [8, 6]
+    assert finished.json()["set_count"] == 2
+    assert client.get("/workout-sessions", headers=_auth(user_a)).json()[0]["set_count"] == 2
 
     persisted = list(
         db.scalars(

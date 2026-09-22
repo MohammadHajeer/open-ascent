@@ -23,8 +23,17 @@ from app.services import workout as service
 router = APIRouter(prefix="/workout-sessions", tags=["workouts"])
 
 
-def _session_read(session: WorkoutSession) -> WorkoutSessionRead:
-    return WorkoutSessionRead.model_validate(session, from_attributes=True)
+def _session_read(session: WorkoutSession, set_count: int) -> WorkoutSessionRead:
+    return WorkoutSessionRead(
+        id=session.id,
+        source=session.source,
+        started_at=session.started_at,
+        completed_at=session.completed_at,
+        set_count=set_count,
+        notes=session.notes,
+        created_at=session.created_at,
+        updated_at=session.updated_at,
+    )
 
 
 def _set_read(workout_set: WorkoutSet, movement_name: str) -> WorkoutSetRead:
@@ -47,9 +56,10 @@ def _set_read(workout_set: WorkoutSet, movement_name: str) -> WorkoutSetRead:
 
 
 def _detail(db: DbSession, session: WorkoutSession) -> WorkoutSessionDetail:
+    sets = [_set_read(item, name) for item, name in service.list_sets(db, session.id)]
     return WorkoutSessionDetail(
-        **_session_read(session).model_dump(),
-        sets=[_set_read(item, name) for item, name in service.list_sets(db, session.id)],
+        **_session_read(session, len(sets)).model_dump(),
+        sets=sets,
     )
 
 
@@ -78,7 +88,10 @@ def list_workout_sessions(
     profile: AthleteProfile,
     db: DbSession,
 ) -> list[WorkoutSessionRead]:
-    return [_session_read(item) for item in service.list_sessions(db, profile.id)]
+    return [
+        _session_read(session, set_count)
+        for session, set_count in service.list_sessions(db, profile.id)
+    ]
 
 
 @router.get("/{session_id}", response_model=WorkoutSessionDetail)

@@ -37,7 +37,7 @@ export function useCreateWorkoutSession() {
     onSuccess: (session) => {
       queryClient.setQueryData(workoutKeys.detail(session.id), session);
       queryClient.setQueryData<WorkoutSession[]>(workoutKeys.all, (current) =>
-        current ? [session, ...current] : current,
+        current ? [session, ...current] : [session],
       );
       void queryClient.invalidateQueries({ queryKey: workoutKeys.all });
     },

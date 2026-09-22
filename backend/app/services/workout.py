@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -50,13 +50,15 @@ def create_session(db: Session, user_id: uuid.UUID, payload: WorkoutSessionCreat
     return session
 
 
-def list_sessions(db: Session, user_id: uuid.UUID) -> list[WorkoutSession]:
+def list_sessions(db: Session, user_id: uuid.UUID) -> list[tuple[WorkoutSession, int]]:
     return list(
-        db.scalars(
-            select(WorkoutSession)
+        db.execute(
+            select(WorkoutSession, func.count(WorkoutSet.id))
+            .outerjoin(WorkoutSet, WorkoutSet.session_id == WorkoutSession.id)
             .where(WorkoutSession.user_id == user_id)
-            .order_by(WorkoutSession.started_at.desc())
-        )
+            .group_by(WorkoutSession.id)
+            .order_by(WorkoutSession.started_at.desc(), WorkoutSession.id.desc())
+        ).tuples()
     )
 
 
