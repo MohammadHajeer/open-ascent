@@ -19,10 +19,10 @@ export function SessionRecovery({
         <p className="font-mono text-[0.62rem] font-semibold tracking-[0.18em] uppercase">Session recovery</p>
       </div>
       <h2 id="resume-workout-title" className="mt-3 text-2xl font-medium tracking-tight">
-        Choose a workout to resume.
+        Multiple open workouts need attention.
       </h2>
       <p className="mt-2 max-w-xl text-sm leading-6 text-foreground-soft">
-        More than one workout is still open. Choose the session you want to continue.
+        We found an older data issue. Choose a session to inspect and resolve; new workouts cannot start until the others are closed.
       </p>
       <ul className="mt-5 grid gap-3 sm:grid-cols-2">
         {sessions.map((session) => (

@@ -1,5 +1,13 @@
 import type { WorkoutSession } from "./types.ts";
 
+export function isStaleSession(startedAt: string, nowMs: number): boolean {
+  const started = new Date(startedAt);
+  const now = new Date(nowMs);
+  if (!Number.isFinite(started.getTime())) return false;
+  return nowMs - started.getTime() >= 8 * 60 * 60 * 1000 ||
+    started.toDateString() !== now.toDateString();
+}
+
 export function resolveSessionRecovery(
   sessions: WorkoutSession[],
   selectedSessionId: string | null,

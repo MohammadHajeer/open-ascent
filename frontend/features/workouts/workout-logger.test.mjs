@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { completedDuration, elapsedSeconds, formatElapsed } from "./duration.ts";
-import { resolveSessionRecovery } from "./recovery.ts";
+import { isStaleSession, resolveSessionRecovery } from "./recovery.ts";
 
 const session = (id, started_at, completed_at = null) => ({
   id,
@@ -34,10 +34,21 @@ test("one unfinished workout resumes, multiple require an explicit choice", () =
   assert.equal(resolveSessionRecovery([done], null).activeSessionId, null);
 });
 
+test("old or previous-day workouts need explicit recovery without becoming completed", () => {
+  const today = Date.parse("2026-09-22T15:00:00Z");
+  assert.equal(isStaleSession("2026-09-22T14:00:00Z", today), false);
+  assert.equal(isStaleSession("2026-09-22T06:00:00Z", today), true);
+  assert.equal(isStaleSession("2026-09-21T18:00:00Z", today), true);
+  const old = session("old", "2026-09-21T18:00:00Z");
+  assert.equal(resolveSessionRecovery([old], null).activeSessionId, "old");
+  assert.equal(old.completed_at, null);
+});
+
 test("workspace keeps history outside active and start branches", () => {
   const logger = readFileSync(new URL("./workout-logger.tsx", import.meta.url), "utf8");
   assert.match(logger, /<RecentSessions sessions=\{controller\.recentSessions\}/);
   assert.match(logger, /<SessionRecovery/);
+  assert.match(logger, /<StaleWorkoutRecovery/);
   const active = readFileSync(new URL("./components/active-workout-view.tsx", import.meta.url), "utf8");
   assert.match(active, /border-b[^\"]*xl:border-r xl:border-b-0/);
   assert.match(active, /<SessionTimer/);

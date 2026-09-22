@@ -43,7 +43,8 @@ def get_progress_summary(
             )
             .order_by(
                 WorkoutSession.started_at,
-                WorkoutSet.created_at,
+                WorkoutSession.id,
+                WorkoutSet.position,
                 WorkoutSet.id,
             )
         ).tuples()

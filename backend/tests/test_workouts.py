@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from threading import Barrier
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.dependencies.auth import get_current_user_id
+from app.db.database import SessionLocal, engine
 from app.main import app
 from app.models.analysis import Analysis
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.models.profile import Profile
 from app.models.training import WorkoutSession, WorkoutSet
+from app.schemas.workout import WorkoutSessionCreate
+from app.services.workout import create_session
 
 
 @pytest.fixture
@@ -90,6 +96,124 @@ def _set_payload(movement: Movement, **changes):
         "intent": "training_set",
         "reps": 8,
     } | changes
+
+
+def test_one_active_session_per_user_and_completed_sessions_remain_unlimited(
+    client: TestClient, db: Session, workout_data,
+):
+    user_a, user_b, _, _ = workout_data
+    first = _start(client, user_a)
+    assert first.status_code == 201
+    same = _start(client, user_a)
+    assert same.status_code == 200
+    assert same.json()["id"] == first.json()["id"]
+    other = _start(client, user_b)
+    assert other.status_code == 201
+    assert other.json()["id"] != first.json()["id"]
+
+    for _ in range(2):
+        active_id = _start(client, user_a).json()["id"]
+        assert client.post(
+            f"/workout-sessions/{active_id}/finish",
+            headers=_auth(user_a), json={},
+        ).status_code == 200
+    new = _start(client, user_a)
+    assert new.status_code == 201
+    assert new.json()["id"] != first.json()["id"]
+    rows = list(db.scalars(select(WorkoutSession).where(WorkoutSession.user_id == user_a)))
+    assert sum(row.completed_at is None for row in rows) == 1
+    assert sum(row.completed_at is not None for row in rows) == 2
+    assert all(row.started_at.date() == rows[0].started_at.date() for row in rows)
+
+
+def test_database_rejects_a_second_active_row_even_when_service_is_bypassed(
+    client: TestClient, db: Session, workout_data,
+):
+    user_a, _, _, _ = workout_data
+    assert _start(client, user_a).status_code == 201
+    with pytest.raises(IntegrityError), db.begin_nested():
+        db.add(WorkoutSession(user_id=user_a, source="manual", started_at=datetime.now(UTC)))
+        db.flush()
+    assert db.scalar(
+        select(func.count()).select_from(WorkoutSession).where(
+            WorkoutSession.user_id == user_a, WorkoutSession.completed_at.is_(None)
+        )
+    ) == 1
+
+
+def test_concurrent_creates_return_one_active_session():
+    user_id = uuid.uuid4()
+    with SessionLocal() as setup:
+        setup.execute(text("INSERT INTO auth.users (id) VALUES (:id)"), {"id": user_id})
+        setup.add(Profile(id=user_id, display_name="Concurrent workout test", app_role="athlete", athlete_state={}))
+        setup.commit()
+    barrier = Barrier(2)
+
+    def start_concurrently() -> uuid.UUID:
+        with SessionLocal() as session:
+            barrier.wait(timeout=10)
+            workout, _ = create_session(session, user_id, WorkoutSessionCreate())
+            return workout.id
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: start_concurrently(), range(2)))
+        assert results[0] == results[1]
+        with SessionLocal() as verify:
+            assert verify.scalar(
+                select(func.count()).select_from(WorkoutSession).where(
+                    WorkoutSession.user_id == user_id, WorkoutSession.completed_at.is_(None)
+                )
+            ) == 1
+    finally:
+        with engine.begin() as connection:
+            connection.execute(text("DELETE FROM auth.users WHERE id = :id"), {"id": user_id})
+
+
+def test_only_empty_active_workouts_can_be_discarded(
+    client: TestClient, workout_data,
+):
+    user_a, _, movement, _ = workout_data
+    session_id = _start(client, user_a).json()["id"]
+    assert client.delete(f"/workout-sessions/{session_id}", headers=_auth(user_a)).json() == {"discarded": True}
+    session_id = _start(client, user_a).json()["id"]
+    assert client.post(
+        f"/workout-sessions/{session_id}/sets",
+        headers=_auth(user_a), json=_set_payload(movement),
+    ).status_code == 201
+    assert client.delete(f"/workout-sessions/{session_id}", headers=_auth(user_a)).status_code == 409
+
+
+def test_old_session_stays_open_until_explicit_finish_time(
+    client: TestClient, workout_data,
+):
+    user_a, _, movement, _ = workout_data
+    started = datetime.now(UTC) - timedelta(days=1)
+    created = client.post(
+        "/workout-sessions", headers=_auth(user_a),
+        json={"started_at": started.isoformat()},
+    )
+    session_id = created.json()["id"]
+    assert client.post(
+        f"/workout-sessions/{session_id}/sets",
+        headers=_auth(user_a), json=_set_payload(movement),
+    ).status_code == 201
+    resumed = _start(client, user_a)
+    assert resumed.status_code == 200
+    assert resumed.json()["id"] == session_id
+    assert resumed.json()["completed_at"] is None
+    assert client.post(
+        f"/workout-sessions/{session_id}/finish",
+        headers=_auth(user_a), json={},
+    ).status_code == 422
+    chosen_end = started + timedelta(minutes=45)
+    finished = client.post(
+        f"/workout-sessions/{session_id}/finish",
+        headers=_auth(user_a), json={"completed_at": chosen_end.isoformat()},
+    )
+    assert finished.status_code == 200
+    assert datetime.fromisoformat(finished.json()["completed_at"]) == chosen_end
+    assert finished.json()["set_count"] == 1
 
 
 def test_create_list_detail_finish_are_owner_scoped(

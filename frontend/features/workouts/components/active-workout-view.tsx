@@ -3,6 +3,7 @@ import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 import type { WorkoutLoggerController } from "../use-workout-logger";
+import { formatSessionTime } from "../duration";
 import { SessionSidebar } from "./session-sidebar";
 import { SessionTimer } from "./session-timer";
 import { WorkoutSetForm } from "./workout-set-form";
@@ -28,7 +29,11 @@ export function ActiveWorkoutView({ controller }: { controller: WorkoutLoggerCon
             <h2 className="mt-2 text-2xl font-medium tracking-tight">Build set {controller.nextPosition + 1}</h2>
             <p className="mt-2 text-sm text-foreground-soft">Choose the movement, record the effort, then add it to this session.</p>
           </div>
-          <SessionTimer key={controller.active.id} startedAt={controller.active.started_at} />
+          {controller.isStale ? (
+            <p className="text-xs text-foreground-faint">Started {formatSessionTime(controller.active.started_at)} · confirm the finish time when done</p>
+          ) : (
+            <SessionTimer key={controller.active.id} startedAt={controller.active.started_at} />
+          )}
         </div>
         <WorkoutSetForm controller={controller} />
       </div>

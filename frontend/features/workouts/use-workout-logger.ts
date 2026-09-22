@@ -1,17 +1,18 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import {
   useAddWorkoutSet,
   useCreateWorkoutSession,
+  useDiscardWorkoutSession,
   useFinishWorkoutSession,
   useWorkoutMovements,
   useWorkoutSession,
   useWorkoutSessions,
 } from "./hooks";
-import { resolveSessionRecovery } from "./recovery";
+import { isStaleSession, resolveSessionRecovery } from "./recovery";
 import type { WorkoutIntent, WorkoutPerformer, WorkoutSource } from "./types";
 
 function message(error: unknown) {
@@ -28,6 +29,13 @@ export function useWorkoutLogger() {
   const session = useWorkoutSession(activeSessionId);
   const addSet = useAddWorkoutSet(activeSessionId);
   const finish = useFinishWorkoutSession(activeSessionId);
+  const discard = useDiscardWorkoutSession(activeSessionId);
+  const [resumedStaleId, setResumedStaleId] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const interval = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const [measurement, setMeasurement] = useState<"reps" | "hold">("reps");
   const [movementId, setMovementId] = useState("");
@@ -44,6 +52,8 @@ export function useWorkoutLogger() {
   const operationRef = useRef(false);
 
   const active = session.data;
+  const isStale = Boolean(active && isStaleSession(active.started_at, nowMs));
+  const staleRecoveryNeeded = isStale && resumedStaleId !== activeSessionId;
   const nextPosition = active?.sets.length ?? 0;
   const pendingSet = value.trim().length > 0;
   const recentSessions = sessions.data
@@ -81,7 +91,7 @@ export function useWorkoutLogger() {
       setSelectedSessionId(created.id);
       setNotes("");
       resetSetDraft();
-      toast.success("Workout started");
+      toast.success("Workout ready");
     } catch (error) {
       toast.error(message(error));
     } finally {
@@ -146,15 +156,63 @@ export function useWorkoutLogger() {
     setIsWorking(true);
     try {
       if (pendingSet && !(await saveSetCore())) return;
+      if (isStale) {
+        setResumedStaleId(null);
+        return;
+      }
       if (nextPosition === 0 && !pendingSet) {
         setSetError("Add at least one set before finishing this workout.");
         return;
       }
-      await finish.mutateAsync(notes.trim() || undefined);
+      await finish.mutateAsync({ notes: notes.trim() || undefined });
       setSelectedSessionId(null);
       setNotes("");
       resetSetDraft();
       toast.success("Workout finished");
+    } catch (error) {
+      toast.error(message(error));
+    } finally {
+      operationRef.current = false;
+      setIsWorking(false);
+    }
+  }
+
+  async function completeStale(completedAt: string) {
+    if (operationRef.current || !active) return;
+    const end = Date.parse(completedAt);
+    if (!Number.isFinite(end) || end < Date.parse(active.started_at) || end > Date.now()) {
+      toast.error("Choose a finish time between the workout start and now.");
+      return;
+    }
+    operationRef.current = true;
+    setIsWorking(true);
+    try {
+      await finish.mutateAsync({
+        notes: notes.trim() || undefined,
+        completedAt: new Date(end).toISOString(),
+      });
+      setSelectedSessionId(null);
+      setResumedStaleId(null);
+      resetSetDraft();
+      toast.success("Workout finished");
+    } catch (error) {
+      toast.error(message(error));
+    } finally {
+      operationRef.current = false;
+      setIsWorking(false);
+    }
+  }
+
+  async function discardEmpty() {
+    if (operationRef.current) return;
+    operationRef.current = true;
+    setIsWorking(true);
+    try {
+      await discard.mutateAsync();
+      setSelectedSessionId(null);
+      setResumedStaleId(null);
+      resetSetDraft();
+      toast.success("Empty workout discarded");
     } catch (error) {
       toast.error(message(error));
     } finally {
@@ -170,10 +228,14 @@ export function useWorkoutLogger() {
     session,
     addSet,
     finish,
+    discard,
     active,
     activeSessionId,
     unfinishedSessions,
     recoveryNeeded,
+    isStale,
+    staleRecoveryNeeded,
+    resumeStale: () => setResumedStaleId(activeSessionId),
     selectSession,
     recentSessions,
     movementItems,
@@ -204,6 +266,8 @@ export function useWorkoutLogger() {
     begin,
     saveSet,
     complete,
+    completeStale,
+    discardEmpty,
   };
 }
 

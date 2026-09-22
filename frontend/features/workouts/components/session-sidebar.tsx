@@ -17,7 +17,7 @@ export function SessionSidebar({ controller }: { controller: WorkoutLoggerContro
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="font-mono text-[0.62rem] font-semibold tracking-[0.18em] text-primary uppercase">Session</p>
-          <h3 className="mt-2 text-lg font-medium">Today&apos;s sets</h3>
+          <h3 className="mt-2 text-lg font-medium">Logged sets</h3>
         </div>
         <Badge variant="outline">{sets.length} {sets.length === 1 ? "set" : "sets"}</Badge>
       </div>
@@ -58,7 +58,7 @@ export function SessionSidebar({ controller }: { controller: WorkoutLoggerContro
           value={controller.notes}
           onChange={(event) => controller.setNotes(event.target.value)}
           maxLength={2000}
-          placeholder="Optional notes about today's session…"
+          placeholder="Optional notes about this session…"
         />
       </div>
 
@@ -77,7 +77,9 @@ export function SessionSidebar({ controller }: { controller: WorkoutLoggerContro
             ? "Saving set…"
             : controller.pendingSet
               ? "Save set & finish"
-              : "Finish workout"}
+              : controller.isStale
+                ? "Choose finish time"
+                : "Finish workout"}
       </Button>
       {!sets.length && !controller.pendingSet ? (
         <p className="mt-2 text-center text-xs text-foreground-faint">Log a set before finishing.</p>

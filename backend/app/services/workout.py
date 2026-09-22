@@ -37,17 +37,45 @@ def get_owned_session(db: Session, user_id: uuid.UUID, session_id: uuid.UUID) ->
     return session
 
 
-def create_session(db: Session, user_id: uuid.UUID, payload: WorkoutSessionCreate) -> WorkoutSession:
+def create_session(
+    db: Session, user_id: uuid.UUID, payload: WorkoutSessionCreate
+) -> tuple[WorkoutSession, bool]:
+    existing = db.scalar(
+        select(WorkoutSession).where(
+            WorkoutSession.user_id == user_id,
+            WorkoutSession.completed_at.is_(None),
+        )
+    )
+    if existing is not None:
+        return existing, False
     session = WorkoutSession(
         user_id=user_id,
         source=payload.source,
         started_at=payload.started_at or datetime.now(UTC),
         notes=payload.notes,
     )
-    db.add(session)
+    try:
+        with db.begin_nested():
+            db.add(session)
+            db.flush()
+    except IntegrityError as exc:
+        if getattr(getattr(exc.orig, "diag", None), "constraint_name", None) != (
+            "uq_workout_sessions_one_active_per_user"
+        ):
+            raise
+        # A competing request may have committed the active session first.
+        existing = db.scalar(
+            select(WorkoutSession).where(
+                WorkoutSession.user_id == user_id,
+                WorkoutSession.completed_at.is_(None),
+            )
+        )
+        if existing is not None:
+            return existing, False
+        raise WorkoutConflictError("An active workout already exists.") from exc
     db.commit()
     db.refresh(session)
-    return session
+    return session, True
 
 
 def list_sessions(db: Session, user_id: uuid.UUID) -> list[tuple[WorkoutSession, int]]:
@@ -71,6 +99,22 @@ def list_sets(db: Session, session_id: uuid.UUID) -> list[tuple[WorkoutSet, str]
             .order_by(WorkoutSet.position, WorkoutSet.created_at)
         ).tuples()
     )
+
+
+def discard_empty_session(db: Session, user_id: uuid.UUID, session_id: uuid.UUID) -> None:
+    session = db.scalar(
+        select(WorkoutSession)
+        .where(WorkoutSession.id == session_id, WorkoutSession.user_id == user_id)
+        .with_for_update()
+    )
+    if session is None:
+        raise WorkoutNotFoundError
+    if session.completed_at is not None:
+        raise WorkoutConflictError("Only an unfinished workout can be discarded.")
+    if db.scalar(select(WorkoutSet.id).where(WorkoutSet.session_id == session_id).limit(1)):
+        raise WorkoutConflictError("A workout with sets cannot be discarded.")
+    db.delete(session)
+    db.commit()
 
 
 def _validate_links(

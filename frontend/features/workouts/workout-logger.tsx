@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ActiveWorkoutView } from "./components/active-workout-view";
 import { RecentSessions } from "./components/recent-sessions";
 import { SessionRecovery } from "./components/session-recovery";
+import { StaleWorkoutRecovery } from "./components/stale-workout-recovery";
 import { WorkoutStartView } from "./components/workout-start-view";
 import { useWorkoutLogger } from "./use-workout-logger";
 
@@ -39,6 +40,8 @@ export function WorkoutLogger() {
     <div>
       {controller.recoveryNeeded ? (
         <SessionRecovery sessions={controller.unfinishedSessions} onResume={controller.selectSession} />
+      ) : controller.staleRecoveryNeeded ? (
+        <StaleWorkoutRecovery controller={controller} />
       ) : controller.activeSessionId ? (
         <ActiveWorkoutView controller={controller} />
       ) : (

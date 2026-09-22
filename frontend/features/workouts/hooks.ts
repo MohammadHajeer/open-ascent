@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addWorkoutSet,
   createWorkoutSession,
+  discardWorkoutSession,
   fetchWorkoutMovements,
   fetchWorkoutSession,
   fetchWorkoutSessions,
@@ -37,7 +38,7 @@ export function useCreateWorkoutSession() {
     onSuccess: (session) => {
       queryClient.setQueryData(workoutKeys.detail(session.id), session);
       queryClient.setQueryData<WorkoutSession[]>(workoutKeys.all, (current) =>
-        current ? [session, ...current] : [session],
+        current ? [session, ...current.filter((item) => item.id !== session.id)] : [session],
       );
       void queryClient.invalidateQueries({ queryKey: workoutKeys.all });
     },
@@ -68,11 +69,26 @@ export function useAddWorkoutSet(sessionId: string | null) {
 export function useFinishWorkoutSession(sessionId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (notes?: string) => finishWorkoutSession(sessionId!, notes),
+    mutationFn: (options?: { notes?: string; completedAt?: string }) =>
+      finishWorkoutSession(sessionId!, options),
     onSuccess: (session) => {
       queryClient.setQueryData(workoutKeys.detail(session.id), session);
       queryClient.setQueryData<WorkoutSession[]>(workoutKeys.all, (current) =>
         current?.map((item) => (item.id === session.id ? session : item)),
+      );
+      void queryClient.invalidateQueries({ queryKey: workoutKeys.all });
+    },
+  });
+}
+
+export function useDiscardWorkoutSession(sessionId: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => discardWorkoutSession(sessionId!),
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: workoutKeys.detail(sessionId!) });
+      queryClient.setQueryData<WorkoutSession[]>(workoutKeys.all, (current) =>
+        current?.filter((item) => item.id !== sessionId),
       );
       void queryClient.invalidateQueries({ queryKey: workoutKeys.all });
     },

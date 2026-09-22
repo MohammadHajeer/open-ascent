@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 
 from app.api.dependencies.auth import AthleteProfile
 from app.db.database import DbSession
@@ -79,8 +79,14 @@ def create_workout_session(
     payload: WorkoutSessionCreate,
     profile: AthleteProfile,
     db: DbSession,
+    response: Response,
 ) -> WorkoutSessionDetail:
-    return _detail(db, service.create_session(db, profile.id, payload))
+    try:
+        session, created = service.create_session(db, profile.id, payload)
+    except service.WorkoutConflictError as exc:
+        _raise_service_error(exc)
+    response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+    return _detail(db, session)
 
 
 @router.get("", response_model=list[WorkoutSessionRead])
@@ -104,6 +110,19 @@ def get_workout_session(
         return _detail(db, service.get_owned_session(db, profile.id, session_id))
     except service.WorkoutNotFoundError as exc:
         _raise_service_error(exc)
+
+
+@router.delete("/{session_id}")
+def discard_empty_workout_session(
+    session_id: uuid.UUID,
+    profile: AthleteProfile,
+    db: DbSession,
+) -> dict[str, bool]:
+    try:
+        service.discard_empty_session(db, profile.id, session_id)
+    except (service.WorkoutNotFoundError, service.WorkoutConflictError) as exc:
+        _raise_service_error(exc)
+    return {"discarded": True}
 
 
 @router.post(
@@ -162,7 +181,16 @@ def finish_workout_session(
 ) -> WorkoutSessionDetail:
     try:
         session = service.get_owned_session(db, profile.id, session_id)
-        completed_at = payload.completed_at or datetime.now(UTC)
+        now = datetime.now(UTC)
+        if payload.completed_at is None and now - session.started_at >= timedelta(hours=8):
+            raise service.WorkoutValidationError(
+                "Confirm a finish time for a workout left open for eight hours or more."
+            )
+        completed_at = payload.completed_at or now
+        if completed_at.tzinfo is None or completed_at > now:
+            raise service.WorkoutValidationError(
+                "Completion must be a time with timezone and cannot be in the future."
+            )
         if completed_at < session.started_at:
             raise service.WorkoutValidationError(
                 "Completion cannot precede start time."

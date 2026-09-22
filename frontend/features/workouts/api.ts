@@ -30,12 +30,21 @@ export const addWorkoutSet = (sessionId: string, payload: WorkoutSetInput) =>
     body: JSON.stringify(payload),
   });
 
-export const finishWorkoutSession = (sessionId: string, notes?: string) =>
+export const finishWorkoutSession = (
+  sessionId: string,
+  options?: { notes?: string; completedAt?: string },
+) =>
   authApiFetch<WorkoutSessionDetail>(`/workout-sessions/${sessionId}/finish`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(notes ? { notes } : {}),
+    body: JSON.stringify({
+      ...(options?.notes ? { notes: options.notes } : {}),
+      ...(options?.completedAt ? { completed_at: options.completedAt } : {}),
+    }),
   });
+
+export const discardWorkoutSession = (sessionId: string) =>
+  authApiFetch<{ discarded: boolean }>(`/workout-sessions/${sessionId}`, { method: "DELETE" });
 
 export async function fetchWorkoutMovements(): Promise<MovementOption[]> {
   const movements = await authApiFetch<Array<{ id: string; name: string }>>(

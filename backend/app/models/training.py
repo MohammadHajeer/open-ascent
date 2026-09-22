@@ -55,6 +55,12 @@ class WorkoutSession(TimestampMixin, Base):
             "completed_at IS NULL OR completed_at >= started_at",
             name="ck_workout_sessions_time_order",
         ),
+        Index(
+            "uq_workout_sessions_one_active_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("completed_at IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
