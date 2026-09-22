@@ -32,6 +32,7 @@ export function VideoStep({
   file,
   videoUrl,
   duration,
+  onDurationChange,
   acknowledged,
   executionIntent,
   videoChoice,
@@ -51,6 +52,7 @@ export function VideoStep({
   file: File | null;
   videoUrl: string | null;
   duration: number | null;
+  onDurationChange: (value: number) => void;
   acknowledged: boolean;
   executionIntent: ExecutionIntent;
   videoChoice: VideoChoice;
@@ -160,6 +162,7 @@ export function VideoStep({
             file={file}
             videoUrl={videoUrl}
             duration={duration}
+            onDurationChange={onDurationChange}
             acknowledged={acknowledged}
             onAcknowledgedChange={onAcknowledgedChange}
             onSelectFile={onSelectFile}
@@ -294,6 +297,7 @@ function VideoReview({
   file,
   videoUrl,
   duration,
+  onDurationChange,
   acknowledged,
   onAcknowledgedChange,
   onSelectFile,
@@ -306,6 +310,7 @@ function VideoReview({
   file: File;
   videoUrl: string;
   duration: number | null;
+  onDurationChange: (value: number) => void;
   acknowledged: boolean;
   onAcknowledgedChange: (value: boolean) => void;
   onSelectFile: (file: File) => void;
@@ -327,7 +332,10 @@ function VideoReview({
               onError(
                 "The video duration could not be read. Choose another MP4 clip.",
               );
+              return;
             }
+
+            onDurationChange(value);
           }}
           onError={() =>
             onError(

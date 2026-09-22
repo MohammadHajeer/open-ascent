@@ -28,6 +28,7 @@ export function GuestAnalysisClient({
     file,
     videoUrl,
     duration,
+    setVideoDuration,
     acknowledged,
     setAcknowledged,
     executionIntent,
@@ -96,6 +97,7 @@ export function GuestAnalysisClient({
             file={file}
             videoUrl={videoUrl}
             duration={duration}
+            onDurationChange={setVideoDuration}
             acknowledged={acknowledged}
             executionIntent={executionIntent}
             videoChoice={videoChoice}

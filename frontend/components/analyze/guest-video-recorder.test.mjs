@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -63,4 +64,18 @@ test("all active camera tracks are stopped during cleanup", () => {
 
 test("permission denial has concise user-facing copy", () => {
   assert.match(cameraErrorMessage(new DOMException("denied", "NotAllowedError")), /denied/i);
+});
+
+test("uploaded video metadata commits a valid duration to review state", () => {
+  const source = readFileSync(
+    new URL("./guest-analysis-client/video-step.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /onLoadedMetadata=\{\(event\) => \{/);
+  assert.match(source, /onDurationChange\(value\);/);
+  assert.match(
+    source,
+    /!acknowledged \|\|\s*duration === null \|\|\s*duration > config\.maxDurationSeconds/,
+  );
 });

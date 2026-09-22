@@ -620,6 +620,7 @@ export function useAnalysisController({
     file,
     videoUrl,
     duration,
+    setVideoDuration: setDuration,
     acknowledged,
     setAcknowledged,
     executionIntent,
