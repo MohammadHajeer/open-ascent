@@ -1,4 +1,5 @@
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ActiveWorkoutIndicator } from "@/features/workouts/active-workout-indicator";
 
 import type { DashboardMode } from "./dashboard-navigation";
 import { DashboardMobileNav } from "./dashboard-mobile-nav";
@@ -19,6 +20,7 @@ export function DashboardShell({
 
         <div className="min-h-dvh lg:pl-24">
           <DashboardTopbar mode={mode} />
+          {mode === "user" ? <ActiveWorkoutIndicator /> : null}
 
           <main className="relative min-h-[calc(100dvh-4.5rem)] overflow-hidden">
             <div

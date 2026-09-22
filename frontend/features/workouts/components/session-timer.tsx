@@ -5,15 +5,23 @@ import { Clock3 } from "lucide-react";
 
 import { elapsedSeconds, formatElapsed } from "../duration";
 
-export function SessionTimer({ startedAt }: { startedAt: string }) {
-  const [seconds, setSeconds] = useState<number | null>(null);
+export function useSessionNow(startedAt: string | null): number | null {
+  const [nowMs, setNowMs] = useState<number | null>(null);
 
   useEffect(() => {
-    const update = () => setSeconds(elapsedSeconds(startedAt, Date.now()));
+    if (!startedAt) return;
+    const update = () => setNowMs(Date.now());
     update();
     const interval = window.setInterval(update, 1000);
     return () => window.clearInterval(interval);
   }, [startedAt]);
+
+  return startedAt ? nowMs : null;
+}
+
+export function SessionTimer({ startedAt }: { startedAt: string }) {
+  const nowMs = useSessionNow(startedAt);
+  const seconds = nowMs === null ? null : elapsedSeconds(startedAt, nowMs);
 
   return (
     <span

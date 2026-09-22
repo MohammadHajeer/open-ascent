@@ -11,7 +11,7 @@
     "test:analysis": "node --experimental-strip-types --test lib/analysis-explanation-ui.test.mjs lib/analysis-findings.test.mjs lib/analysis-movement-groups.test.mjs lib/guest-analysis-session.test.mjs lib/sse-parser.test.mjs lib/rep-classification.test.mjs features/analysis/keys.test.mjs components/analyze/guest-video-recorder.test.mjs",
     "test:subscription": "node --experimental-strip-types --test features/subscription/presentation.test.mjs",
     "test:progress": "node --experimental-strip-types --test features/progress/progress.test.mjs",
-    "test:workouts": "node --experimental-strip-types --test features/workouts/workout-logger.test.mjs"
+    "test:workouts": "node --experimental-strip-types --test features/workouts/*.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

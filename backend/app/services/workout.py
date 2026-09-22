@@ -90,6 +90,18 @@ def list_sessions(db: Session, user_id: uuid.UUID) -> list[tuple[WorkoutSession,
     )
 
 
+def get_active_session(db: Session, user_id: uuid.UUID) -> tuple[WorkoutSession, int] | None:
+    return db.execute(
+        select(WorkoutSession, func.count(WorkoutSet.id))
+        .outerjoin(WorkoutSet, WorkoutSet.session_id == WorkoutSession.id)
+        .where(
+            WorkoutSession.user_id == user_id,
+            WorkoutSession.completed_at.is_(None),
+        )
+        .group_by(WorkoutSession.id)
+    ).one_or_none()
+
+
 def list_sets(db: Session, session_id: uuid.UUID) -> list[tuple[WorkoutSet, str]]:
     return list(
         db.execute(

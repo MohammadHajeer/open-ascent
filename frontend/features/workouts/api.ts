@@ -11,6 +11,9 @@ import type {
 export const fetchWorkoutSessions = () =>
   authApiFetch<WorkoutSession[]>("/workout-sessions", { cache: "no-store" });
 
+export const fetchActiveWorkoutSession = () =>
+  authApiFetch<WorkoutSession | null>("/workout-sessions/active", { cache: "no-store" });
+
 export const fetchWorkoutSession = (sessionId: string) =>
   authApiFetch<WorkoutSessionDetail>(`/workout-sessions/${sessionId}`, {
     cache: "no-store",

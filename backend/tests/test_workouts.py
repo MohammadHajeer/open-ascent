@@ -126,6 +126,28 @@ def test_one_active_session_per_user_and_completed_sessions_remain_unlimited(
     assert all(row.started_at.date() == rows[0].started_at.date() for row in rows)
 
 
+def test_active_endpoint_is_focused_and_owner_scoped(
+    client: TestClient, workout_data,
+):
+    user_a, user_b, movement, _ = workout_data
+    assert client.get("/workout-sessions/active", headers=_auth(user_a)).json() is None
+    created = _start(client, user_a).json()
+    active = client.get("/workout-sessions/active", headers=_auth(user_a))
+    assert active.status_code == 200
+    assert active.json()["id"] == created["id"]
+    assert active.json()["set_count"] == 0
+    assert client.get("/workout-sessions/active", headers=_auth(user_b)).json() is None
+    assert client.post(
+        f"/workout-sessions/{created['id']}/sets",
+        headers=_auth(user_a), json=_set_payload(movement),
+    ).status_code == 201
+    assert client.get("/workout-sessions/active", headers=_auth(user_a)).json()["set_count"] == 1
+    assert client.post(
+        f"/workout-sessions/{created['id']}/finish", headers=_auth(user_a), json={},
+    ).status_code == 200
+    assert client.get("/workout-sessions/active", headers=_auth(user_a)).json() is None
+
+
 def test_database_rejects_a_second_active_row_even_when_service_is_bypassed(
     client: TestClient, db: Session, workout_data,
 ):

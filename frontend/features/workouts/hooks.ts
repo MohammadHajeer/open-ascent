@@ -6,11 +6,13 @@ import {
   addWorkoutSet,
   createWorkoutSession,
   discardWorkoutSession,
+  fetchActiveWorkoutSession,
   fetchWorkoutMovements,
   fetchWorkoutSession,
   fetchWorkoutSessions,
   finishWorkoutSession,
 } from "./api";
+import { clearActiveWorkout, incrementActiveSetCount } from "./active-cache";
 import { workoutKeys } from "./keys";
 import type {
   WorkoutSession,
@@ -20,6 +22,9 @@ import type {
 
 export const useWorkoutSessions = () =>
   useQuery({ queryKey: workoutKeys.all, queryFn: fetchWorkoutSessions });
+
+export const useActiveWorkoutSession = (enabled = true) =>
+  useQuery({ queryKey: workoutKeys.active, queryFn: fetchActiveWorkoutSession, enabled });
 
 export const useWorkoutSession = (sessionId: string | null) =>
   useQuery({
@@ -36,6 +41,7 @@ export function useCreateWorkoutSession() {
   return useMutation({
     mutationFn: createWorkoutSession,
     onSuccess: (session) => {
+      queryClient.setQueryData(workoutKeys.active, session);
       queryClient.setQueryData(workoutKeys.detail(session.id), session);
       queryClient.setQueryData<WorkoutSession[]>(workoutKeys.all, (current) =>
         current ? [session, ...current.filter((item) => item.id !== session.id)] : [session],
@@ -55,8 +61,11 @@ export function useAddWorkoutSet(sessionId: string | null) {
           workoutKeys.detail(sessionId),
           (current) =>
             current
-              ? { ...current, sets: [...current.sets, workoutSet] }
+              ? { ...current, set_count: current.set_count + 1, sets: [...current.sets, workoutSet] }
               : current,
+        );
+        queryClient.setQueryData<WorkoutSession | null>(workoutKeys.active, (current) =>
+          incrementActiveSetCount(current, sessionId),
         );
         void queryClient.invalidateQueries({
           queryKey: workoutKeys.detail(sessionId),
@@ -72,6 +81,9 @@ export function useFinishWorkoutSession(sessionId: string | null) {
     mutationFn: (options?: { notes?: string; completedAt?: string }) =>
       finishWorkoutSession(sessionId!, options),
     onSuccess: (session) => {
+      queryClient.setQueryData<WorkoutSession | null>(workoutKeys.active, (current) =>
+        clearActiveWorkout(current, session.id),
+      );
       queryClient.setQueryData(workoutKeys.detail(session.id), session);
       queryClient.setQueryData<WorkoutSession[]>(workoutKeys.all, (current) =>
         current?.map((item) => (item.id === session.id ? session : item)),
@@ -86,6 +98,9 @@ export function useDiscardWorkoutSession(sessionId: string | null) {
   return useMutation({
     mutationFn: () => discardWorkoutSession(sessionId!),
     onSuccess: () => {
+      queryClient.setQueryData<WorkoutSession | null>(workoutKeys.active, (current) =>
+        clearActiveWorkout(current, sessionId!),
+      );
       queryClient.removeQueries({ queryKey: workoutKeys.detail(sessionId!) });
       queryClient.setQueryData<WorkoutSession[]>(workoutKeys.all, (current) =>
         current?.filter((item) => item.id !== sessionId),

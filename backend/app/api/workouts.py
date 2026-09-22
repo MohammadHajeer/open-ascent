@@ -100,6 +100,18 @@ def list_workout_sessions(
     ]
 
 
+@router.get("/active", response_model=WorkoutSessionRead | None)
+def get_active_workout_session(
+    profile: AthleteProfile,
+    db: DbSession,
+) -> WorkoutSessionRead | None:
+    active = service.get_active_session(db, profile.id)
+    if active is None:
+        return None
+    session, set_count = active
+    return _session_read(session, set_count)
+
+
 @router.get("/{session_id}", response_model=WorkoutSessionDetail)
 def get_workout_session(
     session_id: uuid.UUID,
