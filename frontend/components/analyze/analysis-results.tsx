@@ -20,6 +20,27 @@ function seconds(ms: number) {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
+const TECHNIQUE_LABELS: Record<string, string> = {
+  limited_bottom_extension: "Limited bottom extension",
+  asymmetric_bottom_extension: "Asymmetric bottom extension",
+  excessive_knee_bend: "Excessive knee bend",
+  leg_separation: "Leg separation",
+  lower_body_asymmetry: "Lower-body asymmetry",
+  forward_leg_movement: "Forward leg movement",
+  swing_detected: "Meaningful swing",
+  substantial_swing: "Substantial swing",
+  uncontrolled_descent: "Abrupt descent",
+  inconsistent_descent: "Inconsistent descent",
+};
+
+const INTENT_LABELS: Record<string, string> = {
+  normal_training: "Normal training",
+  explosive_power: "Explosive power",
+  controlled_tempo: "Controlled tempo",
+  max_test: "Max test",
+  technique_check: "Technique check",
+};
+
 function RepAnalysis({ reps, familyMode, targetSlug }: { reps: Rep[]; familyMode: boolean; targetSlug: string }) {
   return (
     <section className="mt-16 sm:mt-20" aria-labelledby="rep-analysis-title">
@@ -93,6 +114,22 @@ function RepAnalysis({ reps, familyMode, targetSlug }: { reps: Rep[]; familyMode
                 </div>
                 {targetRelation(rep, familyMode, targetSlug) && <p className="mt-3 text-xs text-foreground-soft">{targetRelation(rep, familyMode, targetSlug)}</p>}
                 {!!rep.target_deviations?.length && <p className="mt-1 text-xs text-foreground-soft">{rep.target_deviations.map((item) => `${item.dimension.replaceAll("_", " ")}: ${item.expected.replaceAll("_", " ")} → ${item.detected.replaceAll("_", " ")}`).join(" · ")}</p>}
+                {rep.technique_findings.length > 0 && (
+                  <div className="mt-4">
+                    <span className="text-xs font-semibold text-foreground">Technique</span>
+                    <ul className="mt-2 space-y-1 text-xs text-foreground-soft">
+                      {rep.technique_findings.map((finding) => (
+                        <li key={finding}>• {TECHNIQUE_LABELS[finding] ?? finding.replaceAll("_", " ")}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {rep.tempo.ascent_ms != null && rep.tempo.descent_ms != null && (
+                  <p className="mt-4 text-xs text-foreground-soft">
+                    Tempo: {seconds(rep.tempo.ascent_ms)} up · {seconds(rep.tempo.descent_ms)} down
+                    {rep.tempo.descent_control ? ` · ${rep.tempo.descent_control.replaceAll("_", " ")}` : ""}
+                  </p>
+                )}
               </div>
             </article>
           ))}
@@ -139,6 +176,13 @@ export function AnalysisResults({
       `${Math.round(result.evidence.usable_pose_ratio * 100)}%`,
     ],
     ...(average === null ? [] : [["Average confirmed rep", seconds(average)]]),
+    ["Execution intent", INTENT_LABELS[result.execution_intent] ?? result.execution_intent],
+    ...(typeof result.set_summary.tempo?.average_ascent_ms === "number"
+      ? [["Average ascent", seconds(result.set_summary.tempo.average_ascent_ms)]]
+      : []),
+    ...(typeof result.set_summary.tempo?.average_descent_ms === "number"
+      ? [["Average descent", seconds(result.set_summary.tempo.average_descent_ms)]]
+      : []),
   ];
 
   return (

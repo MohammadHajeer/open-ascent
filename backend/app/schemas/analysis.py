@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,6 +15,13 @@ class GuestAnalysisReservationRequest(BaseModel):
     family_key: Literal["vertical_pull"] | None = None
     safety_documentation_id: uuid.UUID
     safety_ack_version: str
+    execution_intent: Literal[
+        "normal_training",
+        "explosive_power",
+        "controlled_tempo",
+        "max_test",
+        "technique_check",
+    ] = "normal_training"
 
     @property
     def family_mode(self) -> bool:
@@ -83,6 +90,9 @@ class AnalysisRepRead(BaseModel):
     variations: dict[str, str] = Field(default_factory=dict)
     target_match: bool | None = None
     target_deviations: list[dict[str, str]] = Field(default_factory=list)
+    form_quality: dict[str, Any] = Field(default_factory=dict)
+    technique_findings: list[str] = Field(default_factory=list)
+    tempo: dict[str, Any] = Field(default_factory=dict)
 
 
 class AnalysisEvidenceRead(BaseModel):
@@ -101,6 +111,14 @@ class DeterministicAnalysisRead(BaseModel):
     uncertain_rep_count: int
     reps: list[AnalysisRepRead]
     evidence: AnalysisEvidenceRead
+    execution_intent: Literal[
+        "normal_training",
+        "explosive_power",
+        "controlled_tempo",
+        "max_test",
+        "technique_check",
+    ] = "normal_training"
+    set_summary: dict[str, Any] = Field(default_factory=dict)
 
 
 class GuestAnalysisMovementRead(BaseModel):

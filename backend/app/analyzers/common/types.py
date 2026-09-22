@@ -48,6 +48,12 @@ class RepAnalysis:
     variations: dict[str, str] = field(default_factory=dict)
     target_match: bool | None = None
     target_deviations: list[dict[str, str]] = field(default_factory=list)
+    # Form quality annotates a mechanically evaluated attempt; it never changes
+    # `outcome`. Values are deliberately structured rather than collapsed into
+    # an unvalidated score.
+    form_quality: dict[str, Any] = field(default_factory=dict)
+    technique_findings: list[str] = field(default_factory=list)
+    tempo: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +80,9 @@ class MovementAnalysisResult:
     reps: list[RepAnalysis]
 
     evidence: AnalysisEvidence
+
+    execution_intent: str = "normal_training"
+    set_summary: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

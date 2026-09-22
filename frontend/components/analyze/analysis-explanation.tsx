@@ -16,11 +16,38 @@ import {
   retryGuestExplanation,
   type GuestAccess,
   type GuestResult,
+  type GroundedText,
 } from "@/lib/analysis";
 import {
   streamGuestAnalysis,
   type AnalysisProgressEvent,
 } from "@/lib/analysis-stream";
+
+function FindingGroup({
+  title,
+  items,
+}: {
+  title: string;
+  items: GroundedText[];
+}) {
+  if (!items.length) return null;
+  return (
+    <div>
+      <h4 className="font-semibold text-foreground">{title}</h4>
+      <ul className="mt-3 space-y-3">
+        {items.map((finding, index) => (
+          <li key={index} className="flex gap-3">
+            <span
+              className="mt-2 size-1.5 shrink-0 rounded-full bg-primary"
+              aria-hidden="true"
+            />
+            <span>{finding.text}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 export function AnalysisExplanationPanel({
   initial,
@@ -153,6 +180,42 @@ export function AnalysisExplanationPanel({
   }
 
   const content = current.explanation;
+  const grouped = content
+    ? {
+        positives: content.key_findings.filter((item) =>
+          item.evidence.some((id) => id.startsWith("set:positive:")),
+        ),
+        technique: content.key_findings.filter((item) =>
+          item.evidence.some(
+            (id) =>
+              id.startsWith("set:technique:") ||
+              id.startsWith("set:deterioration:"),
+          ),
+        ),
+        target: content.key_findings.filter((item) =>
+          item.evidence.some(
+            (id) => id.includes("target_") || id === "set:target_relation",
+          ),
+        ),
+        tempo: content.key_findings.filter((item) =>
+          item.evidence.some((id) => id === "set:tempo"),
+        ),
+      }
+    : null;
+  const categorized = new Set(
+    grouped
+      ? [
+          ...grouped.positives,
+          ...grouped.technique,
+          ...grouped.target,
+          ...grouped.tempo,
+        ]
+      : [],
+  );
+  const otherFindings = content?.key_findings.filter(
+    (item) => !categorized.has(item),
+  );
+
   return (
     <section
       className="mt-8 min-h-80 overflow-hidden rounded-[3px_3px_34px_3px] border border-primary/30 bg-card"
@@ -188,22 +251,11 @@ export function AnalysisExplanationPanel({
             )}
           </div>
           <div className="space-y-6 lg:border-l lg:border-border lg:pl-10">
-            {content.key_findings.length > 0 && (
-              <div>
-                <h4 className="font-semibold text-foreground">Key findings</h4>
-                <ul className="mt-3 space-y-3">
-                  {content.key_findings.map((finding, index) => (
-                    <li key={index} className="flex gap-3">
-                      <span
-                        className="mt-2 size-1.5 shrink-0 rounded-full bg-primary"
-                        aria-hidden="true"
-                      />
-                      <span>{finding.text}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+            <FindingGroup title="What went well" items={grouped?.positives ?? []} />
+            <FindingGroup title="Technique findings" items={grouped?.technique ?? []} />
+            <FindingGroup title="Target / variation consistency" items={grouped?.target ?? []} />
+            <FindingGroup title="Tempo / control" items={grouped?.tempo ?? []} />
+            <FindingGroup title="Other grounded findings" items={otherFindings ?? []} />
             <div className="border-t border-border pt-5">
               <h4 className="font-semibold text-foreground">Next set focus</h4>
               <p className="mt-2">{content.next_set_focus.text}</p>

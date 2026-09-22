@@ -32,6 +32,13 @@ from app.analyzers.pull_up.evidence import (
     calculate_hang_metrics,
     hands_are_above_shoulders,
 )
+from app.analyzers.pull_up.form_quality import (
+    EXECUTION_INTENTS,
+    FormFrameObservation,
+    aggregate_set_quality,
+    assess_rep_form,
+    observe_form_quality,
+)
 from app.analyzers.pull_up.grip import (
     GripObservation,
     HandGripDetector,
@@ -56,7 +63,10 @@ def analyze_vertical_pull_video(
     hand_model_path: Path = HAND_MODEL_PATH,
     on_rep_completed: Callable[[RepAnalysis], None] | None = None,
     on_rep_diagnostic: Callable[[dict], None] | None = None,
+    execution_intent: str = "normal_training",
 ) -> MovementAnalysisResult:
+    if execution_intent not in EXECUTION_INTENTS:
+        raise ValueError("Unsupported execution intent.")
     metadata = get_video_metadata(video_path)
 
     effective_fps = min(
@@ -97,12 +107,14 @@ def analyze_vertical_pull_video(
     reps: list[RepAnalysis] = []
     grip_observations: list[GripObservation] = []
     variation_observations: list[VariationObservation] = []
+    form_observations: list[FormFrameObservation] = []
 
     def record_rep(rep: RepAnalysis) -> None:
         classified = add_grip_variations(rep, grip_observations, config=config)
         classified = add_pose_variations(
             classified, variation_observations, config=config
         )
+        classified = assess_rep_form(classified, form_observations, config=config)
         if on_rep_diagnostic is not None:
             on_rep_diagnostic(
                 build_variation_diagnostic(
@@ -349,6 +361,9 @@ def analyze_vertical_pull_video(
             variation_observations.append(
                 observe_variation(landmarks, measurement, config=config)
             )
+            form_observations.append(
+                observe_form_quality(landmarks, measurement, config=config)
+            )
 
             completed_rep = tracker.update(
                 timestamp_ms=pose_frame.timestamp_ms,
@@ -436,6 +451,12 @@ def analyze_vertical_pull_video(
         uncertain_rep_count=uncertain_rep_count,
         reps=reps,
         evidence=evidence,
+        execution_intent=execution_intent,
+        set_summary=aggregate_set_quality(
+            reps,
+            execution_intent=execution_intent,
+            config=config,
+        ),
     )
 
 
@@ -447,6 +468,7 @@ def analyze_pull_up_video(
     hand_model_path: Path = HAND_MODEL_PATH,
     on_rep_completed: Callable[[RepAnalysis], None] | None = None,
     on_rep_diagnostic: Callable[[dict], None] | None = None,
+    execution_intent: str = "normal_training",
 ) -> MovementAnalysisResult:
     """
     Backwards-compatible entry point.
@@ -463,4 +485,5 @@ def analyze_pull_up_video(
         hand_model_path=hand_model_path,
         on_rep_completed=on_rep_completed,
         on_rep_diagnostic=on_rep_diagnostic,
+        execution_intent=execution_intent,
     )

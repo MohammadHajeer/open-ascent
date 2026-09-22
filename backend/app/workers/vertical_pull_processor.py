@@ -9,6 +9,8 @@ from threading import Event, Thread
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.analyzers.pull_up.analyzer import analyze_vertical_pull_video
+from app.analyzers.pull_up.config import DEFAULT_PULL_UP_CONFIG
+from app.analyzers.pull_up.form_quality import aggregate_set_quality
 from app.analyzers.pull_up.targets import compare_rep
 from app.core.config import settings
 from app.core.supabase import supabase
@@ -118,6 +120,7 @@ def process_vertical_pull(claim: AnalysisClaim) -> AnalysisProcessingResult:
         ):
             raise ValueError("Unsupported analysis movement family.")
         target_slug = movement.slug if movement else None
+        execution_intent = getattr(analysis, "execution_intent", "normal_training")
 
     stop_heartbeat = Event()
 
@@ -170,6 +173,7 @@ def process_vertical_pull(claim: AnalysisClaim) -> AnalysisProcessingResult:
             result = analyze_vertical_pull_video(
                 video_path,
                 on_rep_completed=completed_rep,
+                execution_intent=execution_intent,
             )
             final_reps = []
             provenance_by_rep = {}
@@ -193,8 +197,13 @@ def process_vertical_pull(claim: AnalysisClaim) -> AnalysisProcessingResult:
             rep_data = asdict(rep)
             rep_data["_classification_provenance"] = provenance_by_rep[rep.rep_index]
             result_data["reps"].append(rep_data)
+        result_data["set_summary"] = aggregate_set_quality(
+            final_reps,
+            execution_intent=execution_intent,
+            config=DEFAULT_PULL_UP_CONFIG,
+        )
     return AnalysisProcessingResult(
         result_data=result_data,
-        analyzer_version="vertical_pull_v3",
+        analyzer_version="vertical_pull_v4",
         model_version="mediapipe_tasks",
     )

@@ -57,6 +57,13 @@ export type AnalysisOutcome =
 
 export type RepOutcome = "valid" | "partial" | "uncertain";
 
+export type ExecutionIntent =
+  | "normal_training"
+  | "explosive_power"
+  | "controlled_tempo"
+  | "max_test"
+  | "technique_check";
+
 export type TargetDeviation = {
   dimension: string;
   expected: string;
@@ -83,6 +90,16 @@ export type Rep = {
   };
   target_match?: boolean | null;
   target_deviations?: TargetDeviation[];
+  form_quality: Record<string, string | number | null>;
+  technique_findings: string[];
+  tempo: {
+    ascent_ms?: number | null;
+    top_transition_ms?: number | null;
+    descent_ms?: number | null;
+    total_ms?: number | null;
+    descent_control?: string;
+    descent_monotonic_ratio?: number | null;
+  };
 };
 
 export type RepClassification = Pick<
@@ -97,6 +114,14 @@ export type DeterministicResult = {
   partial_rep_count: number;
   uncertain_rep_count: number;
   reps: Rep[];
+  execution_intent: ExecutionIntent;
+  set_summary: {
+    finding_reps?: Record<string, number[]>;
+    positive_patterns?: string[];
+    deterioration_patterns?: string[];
+    next_set_focus?: string;
+    tempo?: Record<string, string | number | null>;
+  };
   evidence: {
     total_sampled_frames: number;
     usable_pose_frames: number;
@@ -152,6 +177,7 @@ export function reserveGuestAnalysis(
   movementId: string | null,
   safetyDocumentationId: string,
   safetyAckVersion: string,
+  executionIntent: ExecutionIntent,
   guestCredential?: string | null,
 ) {
   return apiFetch<GuestAccess>("/analyses/guest", {
@@ -167,6 +193,7 @@ export function reserveGuestAnalysis(
         : { family_key: "vertical_pull" }),
       safety_documentation_id: safetyDocumentationId,
       safety_ack_version: safetyAckVersion,
+      execution_intent: executionIntent,
     }),
   });
 }

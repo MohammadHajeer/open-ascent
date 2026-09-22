@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, Camera, ScanLine, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import type { ExecutionIntent } from "@/lib/analysis";
 
 import { GuestVideoRecorder as AnalysisVideoRecorder } from "../guest-video-recorder";
 import type {
@@ -12,6 +13,15 @@ import type {
   UploadConfig,
   VideoChoice,
 } from "./types";
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 
 export function VideoStep({
   step,
@@ -23,9 +33,11 @@ export function VideoStep({
   videoUrl,
   duration,
   acknowledged,
+  executionIntent,
   videoChoice,
   safetyGuidance,
   onAcknowledgedChange,
+  onExecutionIntentChange,
   onVideoChoiceChange,
   onSelectFile,
   onAnalyze,
@@ -40,9 +52,11 @@ export function VideoStep({
   videoUrl: string | null;
   duration: number | null;
   acknowledged: boolean;
+  executionIntent: ExecutionIntent;
   videoChoice: VideoChoice;
   safetyGuidance: ReactNode;
   onAcknowledgedChange: (value: boolean) => void;
+  onExecutionIntentChange: (value: ExecutionIntent) => void;
   onVideoChoiceChange: (value: VideoChoice) => void;
   onSelectFile: (file: File, knownDuration?: number) => void;
   onAnalyze: (file?: File, duration?: number | null) => void;
@@ -80,6 +94,41 @@ export function VideoStep({
             Selected:{" "}
             <strong className="text-foreground">{movement.name}</strong>
           </span>
+        </div>
+
+        <div className="mt-6 max-w-sm">
+          <Label htmlFor="execution-intent">Execution intent</Label>
+
+          <Select
+            value={executionIntent}
+            disabled={Boolean(access)}
+            onValueChange={(value) => {
+              if (value) {
+                onExecutionIntentChange(value as ExecutionIntent);
+              }
+            }}
+          >
+            <SelectTrigger id="execution-intent" className="mt-2 w-full">
+              <SelectValue placeholder="Select execution intent" />
+            </SelectTrigger>
+
+            <SelectContent>
+              <SelectItem value="normal_training">Normal training</SelectItem>
+
+              <SelectItem value="explosive_power">Explosive power</SelectItem>
+
+              <SelectItem value="controlled_tempo">Controlled tempo</SelectItem>
+
+              <SelectItem value="max_test">Max test</SelectItem>
+
+              <SelectItem value="technique_check">Technique check</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <p className="mt-2 text-sm leading-5 text-foreground-soft">
+            Optional context for tempo feedback; it does not change rep
+            counting.
+          </p>
         </div>
 
         {step === "video" && !videoChoice ? (
@@ -186,7 +235,9 @@ function VideoSourceChoice({
             </span>
 
             <span className="mt-8">
-              <span className="block text-base font-semibold">Upload video</span>
+              <span className="block text-base font-semibold">
+                Upload video
+              </span>
               <span className="mt-1 block text-sm leading-5 text-primary-foreground/80">
                 Choose an existing movement clip from your device.
               </span>
@@ -279,7 +330,9 @@ function VideoReview({
             }
           }}
           onError={() =>
-            onError("This video could not be previewed. Choose another MP4 clip.")
+            onError(
+              "This video could not be previewed. Choose another MP4 clip.",
+            )
           }
         />
         <span className="absolute top-4 left-4 rounded-full bg-visual-surface/80 px-3 py-2 font-mono text-[0.55rem] text-visual-foreground uppercase">

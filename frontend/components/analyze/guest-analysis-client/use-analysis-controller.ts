@@ -21,6 +21,7 @@ import {
   type GuestAccess,
   type GuestResult,
   type RepClassification,
+  type ExecutionIntent,
 } from "@/lib/analysis";
 import {
   streamGuestAnalysis,
@@ -165,6 +166,8 @@ export function useAnalysisController({
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
+  const [executionIntent, setExecutionIntent] =
+    useState<ExecutionIntent>("normal_training");
   const [access, setAccess] = useState<AnalysisAccess | null>(null);
   const [status, setStatus] = useState<AnalysisStatus>("reserved");
   const [observing, setObserving] = useState(false);
@@ -521,11 +524,13 @@ export function useAnalysisController({
               movement.id,
               movement.safetyDocumentationId,
               config.safetyAckVersion,
+              executionIntent,
             )
           : await reserveGuestAnalysis(
               movement.id,
               movement.safetyDocumentationId,
               config.safetyAckVersion,
+              executionIntent,
               getGuestIdentityCredential(),
             );
 
@@ -589,6 +594,7 @@ export function useAnalysisController({
     setRecoveryIssue(null);
     setVideoChoice(null);
     setAcknowledged(false);
+    setExecutionIntent("normal_training");
     setStep("video");
 
     router.replace("/analyze");
@@ -616,6 +622,8 @@ export function useAnalysisController({
     duration,
     acknowledged,
     setAcknowledged,
+    executionIntent,
+    setExecutionIntent,
     access,
     status,
     observing,

@@ -27,6 +27,22 @@ def test_family_mode_fingerprint_is_distinct_and_has_no_target():
     assert build_request_fingerprint(family) != build_request_fingerprint(specific)
 
 
+def test_execution_intent_is_separate_and_part_of_reservation_identity():
+    shared = {
+        "family_key": "vertical_pull",
+        "safety_documentation_id": uuid.uuid4(),
+        "safety_ack_version": "v1",
+    }
+    normal = GuestAnalysisReservationRequest(**shared)
+    controlled = GuestAnalysisReservationRequest(
+        **shared,
+        execution_intent="controlled_tempo",
+    )
+    assert normal.execution_intent == "normal_training"
+    assert controlled.execution_intent == "controlled_tempo"
+    assert build_request_fingerprint(normal) != build_request_fingerprint(controlled)
+
+
 def test_rep_event_persists_only_allowlisted_classification_and_target_fields():
     db = CaptureSession()
     record_analysis_event(

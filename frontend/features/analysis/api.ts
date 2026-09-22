@@ -3,7 +3,7 @@ import { ApiError } from "@/lib/api";
 import { authApiFetch, authApiRequest } from "@/lib/auth-api";
 import { decodeAnalysisProgress, type AnalysisProgressEvent } from "@/lib/analysis-stream";
 import { SseParser } from "@/lib/sse-parser";
-import type { AnalysisStatus } from "@/lib/analysis";
+import type { AnalysisStatus, ExecutionIntent } from "@/lib/analysis";
 
 import type {
   AnalysisHistoryItem,
@@ -23,6 +23,7 @@ export async function reserveAuthenticatedAnalysis(
   movementId: string | null,
   safetyDocumentationId: string,
   safetyAckVersion: string,
+  executionIntent: ExecutionIntent,
 ): Promise<AuthenticatedAnalysisAccess> {
   const reservation = await authApiFetch<{ analysis_id: string }>("/analyses", {
     method: "POST",
@@ -34,6 +35,7 @@ export async function reserveAuthenticatedAnalysis(
       ...(movementId ? { movement_id: movementId } : { family_key: "vertical_pull" }),
       safety_documentation_id: safetyDocumentationId,
       safety_ack_version: safetyAckVersion,
+      execution_intent: executionIntent,
     }),
   });
   return { analysis_id: reservation.analysis_id, kind: "authenticated" };

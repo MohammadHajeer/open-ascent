@@ -73,3 +73,26 @@ test("per-attempt landmark wording preserves mechanical uncertainty", () => {
     "Pose-landmark evidence was not sufficient to fully validate this attempt.",
   );
 });
+
+test("multiple deterministic technique findings from one rep stay visible", () => {
+  const result = {
+    reps: [
+      {
+        reason_codes: [],
+        technique_findings: [
+          "limited_bottom_extension",
+          "excessive_knee_bend",
+          "leg_separation",
+          "swing_detected",
+        ],
+        variations: {},
+      },
+    ],
+    evidence: { reason_codes: [] },
+  };
+  const findings = strongestFindings(result);
+  assert.equal(findings.length, 3);
+  assert.ok(findings.some((item) => item.headline === "Bottom extension limited"));
+  assert.ok(findings.some((item) => item.headline === "Knee bend increased"));
+  assert.ok(findings.some((item) => item.headline === "Legs separated"));
+});

@@ -180,5 +180,34 @@ class PullUpAnalyzerConfig:
     # evidence for an analysis.
     min_usable_evidence_seconds: float = 1.0
 
+    # ---------------------------------------------------------
+    # FORM QUALITY (annotation only; never changes rep outcome)
+    # ---------------------------------------------------------
+
+    form_min_samples: int = 5
+    form_persistence_ratio: float = 0.30
+    bottom_quality_window_ms: int = 300
+    bottom_extension_good_deg: float = 155.0
+    bottom_extension_limited_deg: float = 150.0
+    bottom_extension_asymmetry_deg: float = 15.0
+    bottom_extension_max_range_deg: float = 12.0
+    knee_bend_excessive_deg: float = 145.0
+    knee_bend_acceptable_deg: float = 160.0
+    knee_asymmetry_deg: float = 22.0
+    leg_separation_issue_ratio: float = 1.60
+    leg_separation_acceptable_ratio: float = 1.20
+    lower_body_asymmetry_ratio: float = 0.55
+    forward_leg_issue_deg: float = 135.0
+    forward_leg_acceptable_deg: float = 155.0
+    swing_meaningful_ratio: float = 0.30
+    swing_substantial_ratio: float = 0.55
+    swing_delta_deadband_ratio: float = 0.05
+    controlled_descent_min_monotonic_ratio: float = 0.75
+    uncontrolled_descent_max_monotonic_ratio: float = 0.60
+    rapid_descent_ms: int = 550
+    abrupt_descent_ms: int = 400
+    tempo_consistency_cv: float = 0.15
+    explosive_fast_ascent_ms: int = 900
+
 
 DEFAULT_PULL_UP_CONFIG = PullUpAnalyzerConfig()

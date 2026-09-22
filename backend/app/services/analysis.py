@@ -95,6 +95,7 @@ def build_request_fingerprint(
         "movement_id": str(payload.movement_id),
         "safety_documentation_id": str(payload.safety_documentation_id),
         "safety_ack_version": payload.safety_ack_version,
+        "execution_intent": payload.execution_intent,
     }
     if payload.family_key is not None:
         data["family_key"] = payload.family_key
@@ -298,9 +299,9 @@ def reserve_guest_analysis(
             settings.guest_token_secret,
         )
         known_identity = db.scalar(
-            select(GuestAnalysisUsage.id).where(
-                GuestAnalysisUsage.guest_identity_key == identity_key
-            ).limit(1)
+            select(GuestAnalysisUsage.id)
+            .where(GuestAnalysisUsage.guest_identity_key == identity_key)
+            .limit(1)
         )
         if known_identity is None:
             raise InvalidGuestIdentityCredentialError
@@ -408,6 +409,7 @@ def reserve_guest_analysis(
     analysis = Analysis(
         movement_id=movement.id if movement is not None else None,
         family_key=safety_movement.family_key,
+        execution_intent=payload.execution_intent,
         safety_documentation_id=documentation.id,
         safety_ack_version=(CURRENT_SAFETY_ACK_VERSION),
         safety_acknowledged_at=now,
@@ -559,6 +561,7 @@ def reserve_authenticated_analysis(
         user_id=user_id,
         movement_id=movement.id if movement is not None else None,
         family_key=safety_movement.family_key,
+        execution_intent=payload.execution_intent,
         safety_documentation_id=documentation.id,
         safety_ack_version=CURRENT_SAFETY_ACK_VERSION,
         safety_acknowledged_at=now,

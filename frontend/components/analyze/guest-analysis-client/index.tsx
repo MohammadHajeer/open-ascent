@@ -30,6 +30,8 @@ export function GuestAnalysisClient({
     duration,
     acknowledged,
     setAcknowledged,
+    executionIntent,
+    setExecutionIntent,
     access,
     status,
     observing,
@@ -95,9 +97,11 @@ export function GuestAnalysisClient({
             videoUrl={videoUrl}
             duration={duration}
             acknowledged={acknowledged}
+            executionIntent={executionIntent}
             videoChoice={videoChoice}
             safetyGuidance={safetyGuidance}
             onAcknowledgedChange={setAcknowledged}
+            onExecutionIntentChange={setExecutionIntent}
             onVideoChoiceChange={setVideoChoice}
             onSelectFile={selectFile}
             onAnalyze={(selectedFile, selectedDuration) => {

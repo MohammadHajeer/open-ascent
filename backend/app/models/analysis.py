@@ -44,6 +44,11 @@ class Analysis(TimestampMixin, Base):
             name="ck_analyses_terminal_outcome",
         ),
         CheckConstraint(
+            "execution_intent IN ('normal_training', 'explosive_power', "
+            "'controlled_tempo', 'max_test', 'technique_check')",
+            name="ck_analyses_execution_intent",
+        ),
+        CheckConstraint(
             "(valid_rep_count IS NULL OR valid_rep_count >= 0) AND "
             "(partial_rep_count IS NULL OR partial_rep_count >= 0) AND "
             "(uncertain_rep_count IS NULL OR uncertain_rep_count >= 0)",
@@ -138,6 +143,9 @@ class Analysis(TimestampMixin, Base):
         nullable=True,
     )
     family_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    execution_intent: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'normal_training'")
+    )
     safety_documentation_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("movement_documentation.id", ondelete="RESTRICT"),

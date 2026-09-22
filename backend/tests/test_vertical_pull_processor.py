@@ -38,7 +38,9 @@ def test_processor_dispatches_supported_exercises_by_family(
     class FakeSession:
         def get(self, model, key):
             if model is Analysis:
-                return SimpleNamespace(movement_id=movement_id, family_key="vertical_pull")
+                return SimpleNamespace(
+                    movement_id=movement_id, family_key="vertical_pull"
+                )
             if model is Movement:
                 assert key == movement_id
                 return SimpleNamespace(slug=slug, family_key="vertical_pull")
@@ -55,10 +57,11 @@ def test_processor_dispatches_supported_exercises_by_family(
 
         def download(self, path):
             assert path == "private/source.mp4"
-            return b"video bytes"
+            return b"\x00\x00\x00\x18ftypisom"
 
-    def fake_analyzer(path, *, on_rep_completed):
-        assert path.read_bytes() == b"video bytes"
+    def fake_analyzer(path, *, on_rep_completed, execution_intent):
+        assert execution_intent == "normal_training"
+        assert path.read_bytes() == b"\x00\x00\x00\x18ftypisom"
         on_rep_completed(
             RepAnalysis(
                 rep_index=1,
@@ -99,7 +102,7 @@ def test_processor_dispatches_supported_exercises_by_family(
     assert result.result_data["reps"][0]["target_match"] is (
         True if slug == "pull-up" else False if slug == "chin-up" else None
     )
-    assert result.analyzer_version == "vertical_pull_v3"
+    assert result.analyzer_version == "vertical_pull_v4"
     assert [event_type for event_type, _ in published] == [
         "video_loaded",
         "movement_analysis_started",
@@ -151,9 +154,7 @@ def test_processor_persists_and_publishes_fused_rep_before_target_comparison(
                     movement_id=movement_id, family_key="vertical_pull"
                 )
             if model is Movement:
-                return SimpleNamespace(
-                    slug="high-pull-up", family_key="vertical_pull"
-                )
+                return SimpleNamespace(slug="high-pull-up", family_key="vertical_pull")
             raise AssertionError("Unexpected model")
 
     @contextmanager
@@ -165,7 +166,7 @@ def test_processor_persists_and_publishes_fused_rep_before_target_comparison(
             return self
 
         def download(self, path):
-            return b"video bytes"
+            return b"\x00\x00\x00\x18ftypisom"
 
     deterministic = RepAnalysis(
         rep_index=1,
@@ -180,7 +181,8 @@ def test_processor_persists_and_publishes_fused_rep_before_target_comparison(
         },
     )
 
-    def fake_analyzer(path, *, on_rep_completed):
+    def fake_analyzer(path, *, on_rep_completed, execution_intent):
+        assert execution_intent == "normal_training"
         on_rep_completed(deterministic)
         return SimpleNamespace(
             to_dict=lambda: {

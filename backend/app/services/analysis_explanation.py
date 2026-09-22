@@ -32,7 +32,7 @@ DETECTION_CLAIM = re.compile(
 
 SELECTION_INSTRUCTIONS = """Select an explanation plan using only the supplied choices.
 The analyzer's outcome, counts, rep results, movement, grip, width, height,
-and target-comparison facts are
+target-comparison facts, form-quality findings, timing, and execution intent are
 authoritative. The supplied choice text and evidence are already grounded;
 return ONLY choice IDs, never write or edit explanation prose. Select two to
 four distinct finding IDs when available (one only when it is the sole choice),
@@ -42,6 +42,9 @@ one focus ID, and at most one safety ID. Prioritize
 (3) resolved movement, grip-width, pull-height, and target-relation patterns,
 (4) explicit limits in evidence quality, and (5) the single most useful
 next-set focus tied to those findings.
+When form findings exist, select the single supplied priority focus rather than
+combining several corrections. Interpret tempo only through the supplied
+execution-intent alignment fact. Never infer fatigue from slower repetitions.
 For a clean set, acknowledge consistent completion without inventing a flaw.
 Prefer set-level pattern choices over repeated per-rep choices. Never infer
 timing consistency or strong tracking from the absence of a warning. Keep
@@ -93,6 +96,65 @@ EVIDENCE_REASON_COPY: dict[str, tuple[str, str]] = {
         "The analyzer could not confirm a starting hang.",
         "Begin from a clearly visible starting hang.",
     ),
+}
+
+FORM_FINDING_COPY: dict[str, tuple[str, str]] = {
+    "substantial_swing": (
+        "Substantial lower-body swing was detected in {reps}.",
+        "Reduce lower-body swing before adding speed or repetitions.",
+    ),
+    "swing_detected": (
+        "Meaningful lower-body swing was detected in {reps}.",
+        "Stabilize the lower body and reduce swing on the next set.",
+    ),
+    "limited_bottom_extension": (
+        "Bottom arm extension was limited in {reps}.",
+        "Reach a stable, comfortably extended bottom position before starting the next repetition.",
+    ),
+    "asymmetric_bottom_extension": (
+        "Bottom arm extension was asymmetric in {reps}.",
+        "Settle into an even bottom position through both arms before the next pull.",
+    ),
+    "lower_body_asymmetry": (
+        "The legs behaved asymmetrically in {reps}.",
+        "Keep both legs moving together through the next set.",
+    ),
+    "forward_leg_movement": (
+        "Meaningful forward leg movement was detected in {reps}.",
+        "Keep the legs beneath the torso and limit forward drift.",
+    ),
+    "leg_separation": (
+        "The legs separated meaningfully in {reps}.",
+        "Keep the legs together while maintaining the same pulling range.",
+    ),
+    "excessive_knee_bend": (
+        "Meaningful knee bend persisted in {reps}.",
+        "Keep the knees quieter and the lower body long on the next set.",
+    ),
+    "uncontrolled_descent": (
+        "An abrupt, uncontrolled descent was detected in {reps}.",
+        "Control the lowering phase through the return to the bottom.",
+    ),
+    "inconsistent_descent": (
+        "Descent control was inconsistent in {reps}.",
+        "Use a smooth, continuous lowering phase on the next set.",
+    ),
+    "tempo_inconsistent": (
+        "Repetition tempo varied meaningfully across the set.",
+        "Use a repeatable pace while preserving range and body control.",
+    ),
+    "target_not_maintained": (
+        "The selected movement target was not maintained in {reps}.",
+        "Prioritize the selected variation before adding repetitions.",
+    ),
+}
+
+POSITIVE_COPY = {
+    "all_repetitions_completed": "All evaluated repetitions were mechanically completed.",
+    "bottom_extension_maintained": "Acceptable bottom arm extension was maintained across the evaluated repetitions.",
+    "minimal_swing": "Lower-body swing remained minimal across the evaluated repetitions.",
+    "stable_body_line": "Body-line control remained stable across the evaluated repetitions.",
+    "descent_controlled": "The lowering phases remained controlled across the evaluated repetitions.",
 }
 
 REP_ORDINALS = (
@@ -327,6 +389,9 @@ def build_explanation_input(
                 **semantic_values,
                 "target_relation": target_relation,
                 "mechanical_findings": list(rep.reason_codes),
+                "technique_findings": list(rep.technique_findings),
+                "form_quality": rep.form_quality,
+                "tempo": rep.tempo,
                 "uncertainty_reason": next(
                     (
                         code
@@ -337,6 +402,31 @@ def build_explanation_input(
                 ),
             }
         )
+        for finding in rep.technique_findings:
+            add(
+                f"{prefix}:technique:{finding}",
+                f"Rep {rep.rep_index} deterministic technique finding: {finding}.",
+            )
+        for metric, value in rep.form_quality.items():
+            if metric.endswith("frames") or value is None:
+                continue
+            add(
+                f"{prefix}:form:{metric}",
+                f"Rep {rep.rep_index} form metric {metric}: {value}.",
+            )
+        for metric in (
+            "ascent_ms",
+            "top_transition_ms",
+            "descent_ms",
+            "total_ms",
+            "descent_control",
+        ):
+            value = rep.tempo.get(metric)
+            if value is not None:
+                add(
+                    f"{prefix}:tempo:{metric}",
+                    f"Rep {rep.rep_index} tempo {metric}: {value}.",
+                )
         if rep.target_match is not None:
             add(
                 f"{prefix}:target_match",
@@ -466,6 +556,36 @@ def build_explanation_input(
         f"confirmed={result.valid_rep_count}, partial={result.partial_rep_count}, "
         f"uncertain={result.uncertain_rep_count}.",
     )
+    set_summary = result.set_summary
+    finding_reps = set_summary.get("finding_reps", {})
+    positive_patterns = set_summary.get("positive_patterns", [])
+    deterioration_patterns = set_summary.get("deterioration_patterns", [])
+    tempo_summary = set_summary.get("tempo", {})
+    add(
+        "set:execution_intent",
+        f"Selected execution intent: {result.execution_intent}.",
+    )
+    for finding, rep_indexes in finding_reps.items():
+        add(
+            f"set:technique:{finding}",
+            f"Technique finding {finding} occurred in reps {rep_indexes}.",
+        )
+    for pattern in positive_patterns:
+        add(f"set:positive:{pattern}", f"Supported positive pattern: {pattern}.")
+    for pattern in deterioration_patterns:
+        add(
+            f"set:deterioration:{pattern}",
+            f"The finding {pattern} increased in later repetitions.",
+        )
+    if tempo_summary:
+        add(
+            "set:tempo",
+            "Set tempo evidence: "
+            f"state={tempo_summary.get('state')}, trend={tempo_summary.get('trend')}, "
+            f"ascent_trend={tempo_summary.get('ascent_trend')}, "
+            f"descent_trend={tempo_summary.get('descent_trend')}, "
+            f"intent_alignment={tempo_summary.get('intent_alignment')}.",
+        )
 
     if safety.notice:
         add("safety:notice", safety.notice[:240])
@@ -482,6 +602,22 @@ def build_explanation_input(
     summary_text, summary_evidence = _summary_copy(
         result=result, attempts=attempts, patterns=patterns
     )
+    if result.reps and result.valid_rep_count == len(result.reps):
+        if deterioration_patterns:
+            summary_text += " Every repetition counted, although technique became less consistent later in the set."
+            summary_evidence = (
+                summary_evidence + [f"set:deterioration:{deterioration_patterns[0]}"]
+            )[:4]
+        elif finding_reps:
+            summary_text += " Repetition completion was consistent, with specific technique findings to address."
+            summary_evidence = (
+                summary_evidence + [f"set:technique:{next(iter(finding_reps))}"]
+            )[:4]
+        elif positive_patterns:
+            summary_text += " Overall performance was strong in this set."
+            summary_evidence = (
+                summary_evidence + [f"set:positive:{positive_patterns[0]}"]
+            )[:4]
 
     uncertainty_note = None
     if result.uncertain_rep_count > 0:
@@ -576,7 +712,76 @@ def build_explanation_input(
             }
         )
 
+    for pattern in positive_patterns:
+        if pattern in POSITIVE_COPY:
+            choices["findings"].append(
+                {
+                    "id": f"finding:positive:{pattern}",
+                    "text": POSITIVE_COPY[pattern],
+                    "evidence": [f"set:positive:{pattern}"],
+                }
+            )
+
+    for finding, rep_indexes in finding_reps.items():
+        if finding not in FORM_FINDING_COPY:
+            continue
+        rep_label = (
+            f"rep {rep_indexes[0]}"
+            if len(rep_indexes) == 1
+            else "reps " + ", ".join(map(str, rep_indexes))
+        )
+        text, _ = FORM_FINDING_COPY[finding]
+        evidence = [f"set:technique:{finding}"]
+        if finding in deterioration_patterns:
+            text = (
+                text.format(reps=rep_label).removesuffix(".")
+                + " and increased later in the set."
+            )
+            evidence.append(f"set:deterioration:{finding}")
+        else:
+            text = text.format(reps=rep_label)
+        choices["findings"].append(
+            {
+                "id": f"finding:technique:{finding}",
+                "text": text,
+                "evidence": evidence,
+            }
+        )
+
+    alignment = tempo_summary.get("intent_alignment")
+    tempo_text = None
+    if result.execution_intent == "explosive_power":
+        if alignment == "aligned":
+            tempo_text = "Fast ascent was paired with maintained body control, aligning with explosive-power intent."
+        elif alignment == "speed_with_control_breakdown":
+            tempo_text = "Ascent speed was high, but deterministic control findings show that speed was not maintained cleanly."
+    elif result.execution_intent == "controlled_tempo" and alignment == "aligned":
+        tempo_text = "The slower, consistent pacing aligned with controlled-tempo intent while body control was maintained."
+    elif result.execution_intent == "max_test" and alignment == "speed_decreased":
+        tempo_text = "Repetition speed decreased across this set."
+    elif alignment == "rushed_with_control_breakdown":
+        tempo_text = "Later repetitions became faster while deterministic control findings increased."
+    if tempo_text:
+        choices["findings"].append(
+            {
+                "id": "finding:tempo:intent",
+                "text": tempo_text,
+                "evidence": ["set:execution_intent", "set:tempo"],
+            }
+        )
+
     focus_codes: set[str] = set()
+    priority_focus = set_summary.get("next_set_focus")
+    if priority_focus in FORM_FINDING_COPY:
+        _, focus_text = FORM_FINDING_COPY[priority_focus]
+        choices["focus"].append(
+            {
+                "id": f"focus:technique:{priority_focus}",
+                "text": focus_text,
+                "evidence": [f"set:technique:{priority_focus}"],
+            }
+        )
+        focus_codes.add(f"technique:{priority_focus}")
     outcome_groups: dict[tuple[str, str | None], list[Any]] = {}
     for rep in result.reps:
         if rep.outcome not in {"partial", "uncertain"}:

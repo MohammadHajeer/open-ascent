@@ -41,6 +41,46 @@ const explanations: Record<string, { headline: string; detail: string }> = {
     detail:
       "The analyzer could not confirm a clear starting hang in this clip.",
   },
+  limited_bottom_extension: {
+    headline: "Bottom extension limited",
+    detail: "The arms remained meaningfully flexed in a stable bottom window.",
+  },
+  asymmetric_bottom_extension: {
+    headline: "Uneven bottom extension",
+    detail: "Left and right arm extension differed meaningfully at the bottom.",
+  },
+  excessive_knee_bend: {
+    headline: "Knee bend increased",
+    detail: "Meaningful knee flexion persisted through part of the repetition.",
+  },
+  leg_separation: {
+    headline: "Legs separated",
+    detail: "Knee or ankle separation was large relative to body scale.",
+  },
+  lower_body_asymmetry: {
+    headline: "Lower-body asymmetry",
+    detail: "The two legs moved differently beyond the stable evidence threshold.",
+  },
+  forward_leg_movement: {
+    headline: "Forward leg movement",
+    detail: "Hip flexion brought the legs meaningfully forward of the body line.",
+  },
+  swing_detected: {
+    headline: "Meaningful swing",
+    detail: "Body-relative hip or ankle motion changed direction across the repetition.",
+  },
+  substantial_swing: {
+    headline: "Substantial swing",
+    detail: "Large, reversing lower-body motion was present during the repetition.",
+  },
+  uncontrolled_descent: {
+    headline: "Abrupt descent",
+    detail: "The lowering phase was both abrupt and mechanically inconsistent.",
+  },
+  inconsistent_descent: {
+    headline: "Inconsistent descent",
+    detail: "The lowering trajectory did not remain smooth and monotonic.",
+  },
 };
 
 export function describeReason(code: string): string | null {
@@ -51,6 +91,8 @@ export function strongestFindings(result: DeterministicResult): Finding[] {
   const counts = new Map<string, number>();
   for (const rep of result.reps) {
     for (const code of rep.reason_codes)
+      counts.set(code, (counts.get(code) ?? 0) + 1);
+    for (const code of rep.technique_findings ?? [])
       counts.set(code, (counts.get(code) ?? 0) + 1);
   }
   for (const code of result.evidence.reason_codes) {

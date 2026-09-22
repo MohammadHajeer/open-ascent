@@ -6,6 +6,7 @@ import type {
   GuestAccess,
   GuestResult,
   RepClassification,
+  ExecutionIntent,
 } from "@/lib/analysis";
 
 export type SelectedMovement = {
@@ -48,6 +49,7 @@ export type AnalysisControllerState = {
   videoUrl: string | null;
   duration: number | null;
   acknowledged: boolean;
+  executionIntent: ExecutionIntent;
   access: AnalysisAccess | null;
   status: AnalysisStatus;
   observing: boolean;

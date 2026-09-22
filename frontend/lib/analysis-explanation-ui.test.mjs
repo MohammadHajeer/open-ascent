@@ -35,3 +35,15 @@ test("pending and completed explanations share one reserved card position", () =
 test("explanation completion does not auto-scroll the result page", () => {
   assert.doesNotMatch(explanationSource, /scrollIntoView|window\.scroll|scrollTo/);
 });
+
+test("grounded coaching output is grouped into the requested sections", () => {
+  for (const heading of [
+    "What went well",
+    "Technique findings",
+    "Target / variation consistency",
+    "Tempo / control",
+    "Next set focus",
+  ]) {
+    assert.match(explanationSource, new RegExp(heading.replace("/", "\\/")));
+  }
+});
