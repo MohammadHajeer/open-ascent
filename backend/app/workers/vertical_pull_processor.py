@@ -21,6 +21,7 @@ from app.services.analysis_jobs import (
     AnalysisClaimLostError,
     renew_analysis_lease,
 )
+from app.services.analysis_storage import uploaded_video_suffix
 from app.services.vertical_pull_visual_classifier import (
     classify_rep_visual,
     extract_representative_frames,
@@ -160,7 +161,9 @@ def process_vertical_pull(claim: AnalysisClaim) -> AnalysisProcessingResult:
         )
 
         with tempfile.TemporaryDirectory() as temporary_directory:
-            video_path = Path(temporary_directory) / "source.mp4"
+            video_path = Path(temporary_directory) / (
+                "source" + uploaded_video_suffix(video_bytes)
+            )
             video_path.write_bytes(video_bytes)
             publish("video_loaded")
             publish("movement_analysis_started")

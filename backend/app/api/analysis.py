@@ -201,7 +201,7 @@ def list_authenticated_analysis_history(
 @router.get("/guest/config", response_model=GuestAnalysisConfigResponse)
 def get_guest_analysis_config() -> GuestAnalysisConfigResponse:
     return GuestAnalysisConfigResponse(
-        allowed_content_types=["video/mp4"],
+        allowed_content_types=["video/mp4", "video/webm"],
         max_size_bytes=settings.guest_video_max_size_mb * 1024 * 1024,
         max_duration_seconds=settings.guest_video_max_duration_seconds,
         authenticated_max_size_bytes=(
@@ -356,6 +356,7 @@ def create_guest_analysis_upload(
         max_size_bytes=max_size_bytes,
         allowed_content_types=[
             "video/mp4",
+            "video/webm",
         ],
     )
 

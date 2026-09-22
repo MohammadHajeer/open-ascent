@@ -25,7 +25,7 @@ export default async function AnalyzePage({ searchParams }: AnalyzePageProps) {
         <div>
           <Badge variant="outline"><ShieldCheck aria-hidden="true" /> {authenticated ? "Private saved analysis" : "Guest analysis"}</Badge>
           <h1 className="mt-5 text-[clamp(3.2rem,8vw,7.2rem)] leading-[0.88] font-medium tracking-[-0.072em] text-foreground">Analyze your movement.</h1>
-          <p className="mt-6 max-w-2xl text-base leading-7 text-foreground-soft sm:text-lg sm:leading-8">Upload a short movement video for deterministic rep counts and evidence findings.</p>
+          <p className="mt-6 max-w-2xl text-base leading-7 text-foreground-soft sm:text-lg sm:leading-8">Upload or record a short movement video for deterministic rep counts and evidence findings.</p>
         </div>
         <p className="max-w-xs text-xs leading-6 text-foreground-soft">Your video is uploaded to private storage for analysis. {authenticated ? "The result is saved to your history; raw video is removed after processing." : "Guest access expires after a limited time."}</p>
       </header>

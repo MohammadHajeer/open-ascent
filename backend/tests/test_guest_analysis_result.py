@@ -138,7 +138,7 @@ def result_url(analysis: Analysis) -> str:
 def test_guest_config_exposes_backend_limits(client: TestClient) -> None:
     response = client.get("/analyses/guest/config")
     assert response.status_code == 200
-    assert response.json()["allowed_content_types"] == ["video/mp4"]
+    assert response.json()["allowed_content_types"] == ["video/mp4", "video/webm"]
     assert (
         response.json()["max_size_bytes"]
         == settings.guest_video_max_size_mb * 1024 * 1024

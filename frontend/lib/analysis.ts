@@ -188,10 +188,8 @@ export async function uploadGuestVideo(access: GuestAccess, file: File) {
     },
   );
 
-  if (
-    file.size > upload.max_size_bytes ||
-    !upload.allowed_content_types.includes("video/mp4")
-  ) {
+  const contentType = file.type.split(";", 1)[0].toLowerCase();
+  if (file.size > upload.max_size_bytes || !upload.allowed_content_types.includes(contentType)) {
     throw new Error("This video does not meet the upload requirements.");
   }
 
@@ -200,7 +198,7 @@ export async function uploadGuestVideo(access: GuestAccess, file: File) {
   const { error } = await supabase.storage
     .from(upload.bucket)
     .uploadToSignedUrl(upload.path, upload.token, file, {
-      contentType: "video/mp4",
+      contentType,
     });
 
   if (error) {

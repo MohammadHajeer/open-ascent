@@ -222,7 +222,7 @@ def test_upload_authorization_uses_exact_reserved_path(
 
     assert body["max_size_bytes"] == (settings.guest_video_max_size_mb * 1024 * 1024)
 
-    assert body["allowed_content_types"] == ["video/mp4"]
+    assert body["allowed_content_types"] == ["video/mp4", "video/webm"]
 
     # Supabase was asked to sign only this exact path.
     assert bucket.signed_paths == [expected_path]
@@ -695,3 +695,11 @@ def test_authenticated_duration_above_20_seconds_uses_existing_limit(
         max_size_bytes=settings.authenticated_video_max_size_mb * 1024 * 1024,
         max_duration_seconds=settings.authenticated_video_max_duration_seconds,
     )
+
+
+def test_browser_recording_container_detection_accepts_mp4_and_webm() -> None:
+    assert analysis_storage.uploaded_video_suffix(b"\x00\x00\x00\x14ftypisom") == ".mp4"
+    assert analysis_storage.uploaded_video_suffix(b"\x1a\x45\xdf\xa3webm") == ".webm"
+
+    with pytest.raises(analysis_storage.InvalidUploadedVideoError):
+        analysis_storage.uploaded_video_suffix(b"not-a-video")

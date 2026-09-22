@@ -47,12 +47,13 @@ export async function uploadAuthenticatedVideo(
     `/analyses/${access.analysis_id}/upload`,
     { method: "POST" },
   );
-  if (file.size > upload.max_size_bytes || !upload.allowed_content_types.includes("video/mp4")) {
+  const contentType = file.type.split(";", 1)[0].toLowerCase();
+  if (file.size > upload.max_size_bytes || !upload.allowed_content_types.includes(contentType)) {
     throw new Error("This video does not meet the upload requirements.");
   }
   const { error } = await createBrowserSupabaseClient().storage
     .from(upload.bucket)
-    .uploadToSignedUrl(upload.path, upload.token, file, { contentType: "video/mp4" });
+    .uploadToSignedUrl(upload.path, upload.token, file, { contentType });
   if (error) throw new Error(error.message);
   await authApiFetch(`/analyses/${access.analysis_id}/finalize`, { method: "POST" });
 }

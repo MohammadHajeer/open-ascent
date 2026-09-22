@@ -40,6 +40,14 @@ class UploadedVideoTooLongError(Exception):
     pass
 
 
+def uploaded_video_suffix(video_bytes: bytes) -> str:
+    if len(video_bytes) >= 12 and video_bytes[4:8] == b"ftyp":
+        return ".mp4"
+    if video_bytes.startswith(b"\x1a\x45\xdf\xa3"):
+        return ".webm"
+    raise InvalidUploadedVideoError
+
+
 def build_analysis_video_path(
     analysis_id: uuid.UUID,
 ) -> str:
@@ -99,15 +107,13 @@ def _validate_video_bytes(
     if len(video_bytes) > max_size_bytes:
         raise UploadedVideoTooLargeError
 
-    # Basic MP4 container check.
-    if len(video_bytes) < 12 or video_bytes[4:8] != b"ftyp":
-        raise InvalidUploadedVideoError
+    suffix = uploaded_video_suffix(video_bytes)
 
     temp_path: Path | None = None
 
     try:
         with tempfile.NamedTemporaryFile(
-            suffix=".mp4",
+            suffix=suffix,
             delete=False,
         ) as temp_file:
             temp_file.write(video_bytes)
