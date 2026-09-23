@@ -445,3 +445,44 @@
     animation-iteration-count: 1 !important;
   }
 }
+/* Keep the Coach's message pane inside the visible dashboard viewport. */
+.dashboard-body:has([data-coach-page]) {
+  display: flex;
+  height: var(--coach-viewport-height, 100dvh);
+  min-height: 0;
+  flex-direction: column;
+}
+
+.dashboard-body:has([data-coach-page]) > .dashboard-main {
+  height: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+@media (max-width: 1023px) {
+  .dashboard-main:has([data-coach-page]) > .dashboard-content {
+    height: 100%;
+    padding-top: 0.75rem;
+    padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+  }
+
+  .dashboard-main:has([data-coach-page] textarea:focus) > .dashboard-content {
+    padding-bottom: 0.75rem;
+  }
+
+  .dashboard-main:has([data-coach-page] textarea:focus) [data-coach-page] > header {
+    display: none;
+  }
+
+  body:has([data-coach-page] textarea:focus) .dashboard-mobile-nav {
+    display: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  .dashboard-main:has([data-coach-page]) > .dashboard-content {
+    height: 100%;
+    padding-top: 1.5rem;
+    padding-bottom: 1.5rem;
+  }
+}

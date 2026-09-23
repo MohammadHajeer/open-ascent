@@ -67,7 +67,7 @@ export function DashboardTour() {
   };
 
   return <>
-    {prompt && step === null && <div className="fixed bottom-20 right-4 z-50 w-[min(340px,calc(100vw-32px))] rounded-2xl border border-border bg-card p-5 text-foreground shadow-xl lg:bottom-6 lg:right-6" role="dialog" aria-label="Dashboard tour invitation">
+    {prompt && step === null && <div className="fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] right-4 z-50 max-h-[calc(100dvh-8rem-env(safe-area-inset-bottom))] w-[min(340px,calc(100vw-32px))] overflow-y-auto rounded-2xl border border-border bg-card p-5 text-foreground shadow-xl lg:bottom-6 lg:right-6 lg:max-h-[calc(100dvh-3rem)]" role="dialog" aria-label="Dashboard tour invitation">
       <h2 className="text-base font-semibold">Want a quick tour of Open Ascent?</h2>
       <p className="mt-2 text-sm text-foreground-soft">A short walkthrough of your training workspace.</p>
       <div className="mt-4 flex gap-2">

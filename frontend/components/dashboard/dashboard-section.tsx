@@ -14,7 +14,7 @@ export function DashboardSection({
   return (
     <section className="overflow-hidden rounded-[1.6rem] border border-border/80 bg-card/65">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border/75 px-5 py-5 sm:px-7">
-        <div>
+        <div className="min-w-0 flex-1">
           <p className="font-mono text-[0.56rem] font-semibold tracking-[0.14em] text-primary uppercase">
             {eyebrow}
           </p>
@@ -27,7 +27,7 @@ export function DashboardSection({
             </p>
           ) : null}
         </div>
-        {aside}
+        {aside ? <div className="min-w-0 max-w-full max-sm:w-full max-sm:[&>*]:w-full">{aside}</div> : null}
       </div>
       {children}
     </section>

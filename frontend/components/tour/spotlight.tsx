@@ -30,6 +30,7 @@ export function Spotlight({
   const [box, setBox] = useState<Box | null>(null);
   const [card, setCard] = useState({ top: 0, left: 0 });
   const cardRef = useRef<HTMLDivElement>(null);
+  const updateRef = useRef<() => void>(() => {});
   const previousFocus = useRef<HTMLElement | null>(null);
   const ready = box !== null;
 
@@ -39,6 +40,14 @@ export function Spotlight({
   }, []);
 
   useEffect(() => { if (ready) cardRef.current?.focus(); }, [ready]);
+
+  useEffect(() => {
+    if (!ready || !cardRef.current) return;
+    const observer = new ResizeObserver(() => updateRef.current());
+    observer.observe(cardRef.current);
+    updateRef.current();
+    return () => observer.disconnect();
+  }, [ready]);
 
   useEffect(() => {
     let frame = 0;
@@ -64,12 +73,14 @@ export function Spotlight({
         const height = Math.min(window.innerHeight - top - 8, rect.height + gap * 2);
         setBox({ top, left, width, height });
         const cardWidth = Math.min(360, window.innerWidth - 24);
+        const cardHeight = cardRef.current?.getBoundingClientRect().height ?? 230;
         const below = rect.bottom + 18;
-        const above = rect.top - 230;
-        const cardTop = below + 230 < window.innerHeight ? below : Math.max(12, above);
-        setCard({ top: Math.max(12, Math.min(cardTop, window.innerHeight - 235)), left: Math.max(12, Math.min(rect.left, window.innerWidth - cardWidth - 12)) });
+        const above = rect.top - cardHeight - 18;
+        const cardTop = below + cardHeight + 12 <= window.innerHeight ? below : above;
+        setCard({ top: Math.max(12, Math.min(cardTop, window.innerHeight - cardHeight - 12)), left: Math.max(12, Math.min(rect.left, window.innerWidth - cardWidth - 12)) });
       });
     };
+    updateRef.current = update;
     const observer = new MutationObserver(update);
     observer.observe(document.body, { subtree: true, childList: true });
     window.addEventListener("resize", update);

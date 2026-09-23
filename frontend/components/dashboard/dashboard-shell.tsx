@@ -19,11 +19,11 @@ export function DashboardShell({
       <div className="min-h-dvh bg-background text-foreground">
         <DashboardRail mode={mode} />
 
-        <div className="min-h-dvh lg:pl-24">
+        <div className="dashboard-body min-h-dvh lg:pl-24">
           <DashboardTopbar mode={mode} />
           {mode === "user" ? <ActiveWorkoutIndicator /> : null}
 
-          <main className="relative min-h-[calc(100dvh-4.5rem)] overflow-hidden">
+          <main className="dashboard-main relative min-h-[calc(100dvh-4.5rem)] overflow-hidden">
             <div
               className="cv-grid cv-grid-radial pointer-events-none absolute inset-x-0 top-0 h-136 opacity-[0.16]"
               aria-hidden="true"
@@ -38,7 +38,7 @@ export function DashboardShell({
               aria-hidden="true"
             />
 
-            <div className="relative mx-auto w-full max-w-[1600px] px-4 pt-6 pb-28 sm:px-6 sm:pt-8 lg:px-8 lg:pt-10 lg:pb-12 xl:px-10">
+            <div className={`dashboard-content relative mx-auto w-full max-w-[1600px] px-4 pt-6 sm:px-6 sm:pt-8 lg:px-8 lg:pt-10 lg:pb-12 xl:px-10 ${mode === "admin" ? "pb-28" : "pb-[calc(7rem+env(safe-area-inset-bottom))]"}`}>
               {children}
             </div>
           </main>

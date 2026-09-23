@@ -61,6 +61,24 @@ export function CoachWorkspace() {
   const selectedRef = useRef<string | null>(null);
   const selectionRevision = useRef(0);
 
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const updateHeight = () => {
+      document.documentElement.style.setProperty(
+        "--coach-viewport-height",
+        `${viewport?.height ?? window.innerHeight}px`,
+      );
+    };
+    updateHeight();
+    viewport?.addEventListener("resize", updateHeight);
+    window.addEventListener("resize", updateHeight);
+    return () => {
+      viewport?.removeEventListener("resize", updateHeight);
+      window.removeEventListener("resize", updateHeight);
+      document.documentElement.style.removeProperty("--coach-viewport-height");
+    };
+  }, []);
+
   const refreshList = useCallback(async () => {
     setConversations(await listConversations());
   }, []);
@@ -396,10 +414,10 @@ export function CoachWorkspace() {
 
   return (
     <section
-      className="flex min-h-0 flex-1 overflow-hidden border-y border-border/75 bg-background/35 md:border-x"
+      className="flex min-h-0 min-w-0 flex-1 overflow-hidden border-y border-border/75 bg-background/35 lg:border-x"
       aria-label="AI Coach workspace"
     >
-      <aside className="hidden w-[18rem] shrink-0 border-r border-border/70 bg-background-alt/30 md:block xl:w-76">
+      <aside className="hidden w-[18rem] shrink-0 border-r border-border/70 bg-background-alt/30 lg:block xl:w-76">
         {sidebar}
       </aside>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -410,7 +428,7 @@ export function CoachWorkspace() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="md:hidden"
+                  className="lg:hidden"
                   aria-label="Open conversations"
                 />
               }
