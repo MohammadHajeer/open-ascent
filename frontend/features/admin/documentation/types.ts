@@ -7,6 +7,20 @@ export type { Difficulty } from "@/features/admin/movements/types";
 
 export type DocumentationStatus = "draft" | "published" | "archived";
 
+export type ReadinessPerformanceRule = {
+  code: string;
+  type: "movement_performance";
+  prerequisite_index: number;
+  movement_id: string;
+  metric: "reps" | "hold_seconds";
+  operator: ">=";
+  value: number | string;
+  max_age_days: number;
+  accepted_sources: Array<
+    "uploaded_analysis" | "live_coach" | "manual" | "self_reported" | "initial_assessment"
+  >;
+};
+
 export type MovementSafetyContent = {
   notice?: string | null;
   difficulty?: Difficulty | null;
@@ -16,6 +30,7 @@ export type MovementSafetyContent = {
   stop_conditions?: string[] | null;
   easier_option?: string | null;
   setup?: string[] | null;
+  readiness_rules?: ReadinessPerformanceRule[] | null;
 };
 
 export type MovementDocumentation = {

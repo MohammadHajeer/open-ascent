@@ -33,6 +33,7 @@ def _admin_read(
         slug=movement.slug,
         name=movement.name,
         family_key=movement.family_key,
+        prescription_type=movement.prescription_type,
         illustration_path=movement.illustration_path,
         illustration_url=get_illustration_url(movement.illustration_path),
         upload_analysis_supported=movement.upload_analysis_supported,
@@ -140,6 +141,7 @@ def list_movements(db: DbSession) -> list[MovementListItemRead]:
             slug=movement.slug,
             name=movement.name,
             family_key=movement.family_key,
+            prescription_type=movement.prescription_type,
             difficulty=MovementSafetyContent.model_validate(
                 documentation.content
             ).difficulty,
@@ -177,6 +179,7 @@ def get_movement_guide(
         slug=movement.slug,
         name=movement.name,
         family_key=movement.family_key,
+        prescription_type=movement.prescription_type,
         illustration_url=get_illustration_url(movement.illustration_path),
         upload_analysis_supported=movement.upload_analysis_supported,
         live_coach_supported=movement.live_coach_supported,

@@ -13,6 +13,7 @@ from app.schemas.movement_safety import MovementSafetyContent
 MOVEMENTS = [
     {
         "slug": "pull-up",
+        "prescription_type": "repetitions",
         "name": "Pull-Up",
         "family_key": "vertical_pull",
         "illustration_path": "pull-up.png",
@@ -57,6 +58,7 @@ MOVEMENTS = [
     },
     {
         "slug": "chin-up",
+        "prescription_type": "repetitions",
         "name": "Chin-Up",
         "family_key": "vertical_pull",
         "illustration_path": "chin-up.png",
@@ -98,6 +100,7 @@ MOVEMENTS = [
     },
     {
         "slug": "close-grip-pull-up",
+        "prescription_type": "repetitions",
         "name": "Close-Grip Pull-Up",
         "family_key": "vertical_pull",
         "illustration_path": "close-grip-pull-up.png",
@@ -140,6 +143,7 @@ MOVEMENTS = [
     },
     {
         "slug": "wide-grip-pull-up",
+        "prescription_type": "repetitions",
         "name": "Wide-Grip Pull-Up",
         "family_key": "vertical_pull",
         "illustration_path": "wide-grip-pull-up.png",
@@ -180,6 +184,7 @@ MOVEMENTS = [
     },
     {
         "slug": "high-pull-up",
+        "prescription_type": "repetitions",
         "name": "High Pull-Up",
         "family_key": "vertical_pull",
         "illustration_path": "high-pull-up.png",
@@ -221,6 +226,7 @@ MOVEMENTS = [
     },
     {
         "slug": "muscle-up",
+        "prescription_type": "repetitions",
         "name": "Muscle-Up",
         "family_key": "muscle_up",
         "illustration_path": "muscle-up.png",
@@ -269,6 +275,7 @@ MOVEMENTS = [
     },
     {
         "slug": "dips",
+        "prescription_type": "repetitions",
         "name": "Dips",
         "family_key": "vertical_push",
         "illustration_path": "dips.png",
@@ -309,6 +316,7 @@ MOVEMENTS = [
     },
     {
         "slug": "push-up",
+        "prescription_type": "repetitions",
         "name": "Push-Up",
         "family_key": "horizontal_push",
         "illustration_path": "push-up.png",
@@ -349,6 +357,7 @@ MOVEMENTS = [
     },
     {
         "slug": "front-lever",
+        "prescription_type": "duration",
         "name": "Front Lever",
         "family_key": "lever",
         "illustration_path": "front-lever.png",
@@ -393,6 +402,7 @@ MOVEMENTS = [
     },
     {
         "slug": "back-lever",
+        "prescription_type": "duration",
         "name": "Back Lever",
         "family_key": "lever",
         "illustration_path": "back-lever.png",
@@ -437,6 +447,7 @@ MOVEMENTS = [
     },
     {
         "slug": "inverted-deadlift",
+        "prescription_type": "repetitions",
         "name": "Inverted Deadlift",
         "family_key": "inverted_pull",
         "illustration_path": "inverted-deadlift.png",
@@ -517,6 +528,7 @@ def seed_movement(
             slug=seed["slug"],
             name=seed["name"],
             family_key=seed["family_key"],
+            prescription_type=seed["prescription_type"],
             illustration_path=seed["illustration_path"],
             upload_analysis_supported=seed["family_key"] == "vertical_pull",
             live_coach_supported=seed["slug"] == "pull-up",
@@ -530,6 +542,8 @@ def seed_movement(
         print(f"Created movement: {movement.name}")
     else:
         # Do not overwrite movement data that may later be managed by an admin.
+        if movement.prescription_type is None:
+            movement.prescription_type = seed["prescription_type"]
         if movement.illustration_path is None:
             movement.illustration_path = seed["illustration_path"]
 

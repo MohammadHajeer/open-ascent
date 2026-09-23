@@ -1,10 +1,12 @@
 export type Difficulty = "beginner" | "intermediate" | "advanced";
+export type PrescriptionType = "repetitions" | "duration";
 
 export type MovementAdminRead = {
   id: string;
   slug: string;
   name: string;
   family_key: string;
+  prescription_type: PrescriptionType | null;
   illustration_path: string | null;
   illustration_url: string | null;
   upload_analysis_supported: boolean;
@@ -21,6 +23,7 @@ export type MovementCreateInput = {
   name: string;
   slug: string;
   family_key: string;
+  prescription_type: PrescriptionType;
   illustration_path?: string | null;
   upload_analysis_supported: boolean;
   live_coach_supported: boolean;

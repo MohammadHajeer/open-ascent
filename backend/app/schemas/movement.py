@@ -3,8 +3,9 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from app.models.enums import MovementPrescriptionType
 from app.schemas.movement_documentation import MovementDocumentationRead
 from app.schemas.movement_safety import Difficulty
 
@@ -41,6 +42,7 @@ class MovementListItemRead(BaseModel):
     slug: str
     name: str
     family_key: str
+    prescription_type: MovementPrescriptionType | None
     difficulty: Difficulty
     illustration_url: str | None
     upload_analysis_supported: bool
@@ -52,6 +54,7 @@ class MovementGuideRead(BaseModel):
     slug: str
     name: str
     family_key: str
+    prescription_type: MovementPrescriptionType | None
 
     illustration_url: str | None
 
@@ -66,6 +69,7 @@ class MovementAdminRead(BaseModel):
     slug: str
     name: str
     family_key: str
+    prescription_type: MovementPrescriptionType | None
     illustration_path: str | None
     illustration_url: str | None
     upload_analysis_supported: bool
@@ -81,6 +85,7 @@ class MovementCreate(BaseModel):
     name: MovementName
     slug: MovementSlug
     family_key: MovementFamilyKey
+    prescription_type: MovementPrescriptionType
     illustration_path: IllustrationPath | None = None
     upload_analysis_supported: bool = Field(default=False)
     live_coach_supported: bool = Field(default=False)
@@ -92,6 +97,13 @@ class MovementUpdate(BaseModel):
     name: MovementName | None = None
     slug: MovementSlug | None = None
     family_key: MovementFamilyKey | None = None
+    prescription_type: MovementPrescriptionType | None = None
     illustration_path: IllustrationPath | None = None
     upload_analysis_supported: bool | None = None
     live_coach_supported: bool | None = None
+
+    @model_validator(mode="after")
+    def preserve_prescription_type(self) -> MovementUpdate:
+        if "prescription_type" in self.model_fields_set and self.prescription_type is None:
+            raise ValueError("A movement prescription type cannot be cleared.")
+        return self

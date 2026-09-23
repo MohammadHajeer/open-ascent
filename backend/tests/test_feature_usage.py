@@ -147,6 +147,41 @@ def test_entitlement_semantics_fail_closed(db: Session) -> None:
     )
 
 
+def test_plan_generation_one_operation_uses_one_unit(
+    db: Session,
+) -> None:
+    user_id = _create_user(db, label="plan quota")
+    entitlement = _free_entitlement(db, FeatureKey.TRAINING_PLAN_GENERATION)
+    assert entitlement.allowance_units == 1
+    at = datetime.now(UTC)
+
+    def reserve(operation: str) -> FeatureUsage | None:
+        return reserve_usage(
+            db,
+            user_id=user_id,
+            feature_key=FeatureKey.TRAINING_PLAN_GENERATION,
+            operation_key=operation,
+            request_fingerprint=f"plan:{operation}",
+            reservation_expires_at=at + timedelta(minutes=15),
+            as_of=at,
+        )
+
+    generation = reserve("request-one")
+    assert generation is not None
+    assert reserve("request-one").id == generation.id
+    consume_usage(db, generation.id, user_id=user_id)
+    assert generation.units == 1
+    assert generation.status == FeatureUsageStatus.CONSUMED.value
+    with pytest.raises(QuotaExceededError):
+        reserve("request-two")
+    assert len(list(db.scalars(
+        select(FeatureUsage).where(
+            FeatureUsage.user_id == user_id,
+            FeatureUsage.feature_key == FeatureKey.TRAINING_PLAN_GENERATION,
+        )
+    ))) == 1
+
+
 def test_user_isolation_and_period_windows(db: Session) -> None:
     user_a = _create_user(db, label="user A")
     user_b = _create_user(db, label="user B")

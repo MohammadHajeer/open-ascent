@@ -53,6 +53,7 @@ def movement_payload(slug: str = "new-admin-movement") -> dict[str, object]:
         "name": "New Admin Movement",
         "slug": slug,
         "family_key": "vertical_pull",
+        "prescription_type": "repetitions",
         "illustration_path": "new-admin-movement.png",
         "upload_analysis_supported": True,
         "live_coach_supported": False,
@@ -68,6 +69,7 @@ def test_admin_can_create_and_list_movement(admin_client: TestClient) -> None:
     created = response.json()
     assert created["name"] == "New Admin Movement"
     assert created["slug"] == "new-admin-movement"
+    assert created["prescription_type"] == "repetitions"
     assert created["published_documentation_id"] is None
 
     listed = admin_client.get("/movements/admin", headers=bearer())
@@ -156,6 +158,7 @@ def test_admin_can_patch_movement_and_preserve_untouched_fields(
     assert updated["name"] == "Updated Movement"
     assert updated["slug"] == "updated-movement"
     assert updated["family_key"] == "vertical_pull"
+    assert updated["prescription_type"] == "repetitions"
     assert updated["upload_analysis_supported"] is True
 
     assert (

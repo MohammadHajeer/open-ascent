@@ -54,11 +54,8 @@ class PlanDefinition:
     entitlements: tuple[EntitlementDefinition, ...]
 
 
-# Product has not selected numeric quotas yet. A metered entitlement with a null
-# allowance is deliberately "limit pending configuration", not unlimited. The
-# distinct UNLIMITED type prevents a missing quota from silently granting
-# unlimited access. Once product selects numbers, this is the only catalog that
-# needs to change and the idempotent seed updates existing rows.
+# Video-analysis quotas remain pending product configuration. Null metered
+# allowances fail closed; unlimited access always uses the distinct type.
 PLAN_CATALOG = (
     PlanDefinition(
         code=PlanCode.FREE,
@@ -71,7 +68,7 @@ PLAN_CATALOG = (
             EntitlementDefinition.boolean(FeatureKey.AI_COACH_REPLY, enabled=False),
             EntitlementDefinition.metered(
                 FeatureKey.TRAINING_PLAN_GENERATION,
-                allowance_units=None,
+                allowance_units=1,
             ),
             EntitlementDefinition.boolean(FeatureKey.LIVE_COACH, enabled=False),
             EntitlementDefinition.boolean(
@@ -95,7 +92,7 @@ PLAN_CATALOG = (
             EntitlementDefinition.unlimited(FeatureKey.AI_COACH_REPLY),
             EntitlementDefinition.metered(
                 FeatureKey.TRAINING_PLAN_GENERATION,
-                allowance_units=None,
+                allowance_units=10,
             ),
             EntitlementDefinition.boolean(FeatureKey.LIVE_COACH, enabled=True),
             EntitlementDefinition.boolean(

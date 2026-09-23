@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import uuid
+from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Literal
 
@@ -15,6 +18,10 @@ class ReadinessStatus(StrEnum):
 class ReadinessEvidence(BaseModel):
     requirement: str
     satisfied: bool | None = None
+    source: str | None = None
+    observed_at: datetime | None = None
+    reference_id: uuid.UUID | None = None
+    observed_value: Decimal | None = None
 
 
 class ReadinessResult(BaseModel):

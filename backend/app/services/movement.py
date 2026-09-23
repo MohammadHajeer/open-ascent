@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import re
 import uuid
+from decimal import Decimal
+from math import isfinite
 
 from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.enums import MovementPrescriptionType
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.schemas.movement import MovementCreate, MovementUpdate
@@ -40,6 +43,24 @@ class MovementSlugAlreadyExistsError(Exception):
 
 
 class MovementService:
+    @staticmethod
+    def is_plan_prescription_compatible(
+        movement: Movement,
+        *,
+        reps: int | None,
+        hold_seconds: Decimal | float | None,
+    ) -> bool:
+        if movement.prescription_type == MovementPrescriptionType.REPETITIONS:
+            return type(reps) is int and reps > 0 and hold_seconds is None
+        if movement.prescription_type == MovementPrescriptionType.DURATION:
+            return (
+                type(hold_seconds) in (Decimal, float, int)
+                and isfinite(hold_seconds)
+                and hold_seconds > 0
+                and reps is None
+            )
+        return False
+
     @staticmethod
     def _normalized(value: str) -> str:
         return re.sub(r"[^a-z0-9]", "", value.lower()).removesuffix("s")
@@ -118,6 +139,7 @@ class MovementService:
             name=payload.name,
             slug=payload.slug,
             family_key=payload.family_key,
+            prescription_type=payload.prescription_type.value,
             illustration_path=payload.illustration_path,
             upload_analysis_supported=payload.upload_analysis_supported,
             live_coach_supported=payload.live_coach_supported,
@@ -163,6 +185,8 @@ class MovementService:
             raise MovementSlugAlreadyExistsError
 
         for field, value in updates.items():
+            if field == "prescription_type" and value is not None:
+                value = value.value
             setattr(movement, field, value)
 
         try:

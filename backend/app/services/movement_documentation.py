@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.models.enums import MovementPrescriptionType
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.schemas.movement_documentation import (
@@ -106,7 +107,7 @@ class MovementDocumentationService:
             movement_id=movement_id,
             version=cls._next_version(db, movement_id),
             status="draft",
-            content=payload.content.model_dump(exclude_none=True),
+            content=payload.content.model_dump(mode="json", exclude_none=True),
             created_by=actor_id,
             edit_revision=1,
         )
@@ -135,7 +136,17 @@ class MovementDocumentationService:
         if documentation.status != "draft":
             raise ImmutableDocumentationError
 
-        updates = payload.content.model_dump(exclude_unset=True)
+        updates = payload.content.model_dump(mode="json", exclude_unset=True)
+
+        if (
+            "prerequisites" in updates
+            and updates["prerequisites"] != documentation.content.get("prerequisites")
+            and updates.get("readiness_rules", documentation.content.get("readiness_rules"))
+            == documentation.content.get("readiness_rules")
+        ):
+            # A prose edit may change what an index means. Require rules to be
+            # explicitly reauthored before they can confer readiness again.
+            updates["readiness_rules"] = None
 
         documentation.content = {
             **documentation.content,
@@ -205,7 +216,19 @@ class MovementDocumentationService:
         except ValidationError as exc:
             raise InvalidSafetyContentError from exc
 
-        draft.content = validated_content.model_dump(exclude_none=True)
+        for rule in validated_content.readiness_rules or []:
+            source_movement = db.get(Movement, rule.movement_id)
+            expected = (
+                MovementPrescriptionType.REPETITIONS
+                if rule.metric == "reps"
+                else MovementPrescriptionType.DURATION
+            )
+            if source_movement is None or source_movement.prescription_type != expected:
+                raise InvalidSafetyContentError(
+                    "Readiness rule movement and metric must match."
+                )
+
+        draft.content = validated_content.model_dump(mode="json", exclude_none=True)
 
         cls._lock_movement(db, draft.movement_id)
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine, event, func, select, text
@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.core.safety import GLOBAL_SAFETY_GUIDANCE
 from app.models.enums import EntitlementType, FeatureKey, PlanCode, ResetPolicy
-from app.models.subscription import PlanEntitlement, SubscriptionPlan
+from app.models.subscription import FeatureUsage, PlanEntitlement, SubscriptionPlan
+from app.services import feature_usage as usage_service
 from app.services.entitlements import (
     UnconfiguredAllowanceError,
     get_feature_allowance,
@@ -20,6 +21,7 @@ from app.services.entitlements import (
     resolve_effective_plan,
     seed_plan_catalog,
 )
+from app.services.feature_usage import QuotaExceededError, consume_usage, reserve_usage
 from app.subscriptions.catalog import PLAN_CATALOG, EntitlementDefinition
 
 EXPECTED_FEATURES = {
@@ -41,17 +43,19 @@ def subscription_db() -> Session:
         connection.create_function(
             "gen_random_uuid",
             0,
-            lambda: str(uuid.uuid4()),
+            lambda: uuid.uuid4().hex,
         )
 
     SubscriptionPlan.__table__.create(engine)
     PlanEntitlement.__table__.create(engine)
+    FeatureUsage.__table__.create(engine)
     # The resolver only joins these two columns. Keeping this local table small
     # avoids pulling the external Supabase auth schema into unit tests.
     with engine.begin() as connection:
         connection.exec_driver_sql(
             "CREATE TABLE user_subscriptions "
-            "(user_id UUID UNIQUE NOT NULL, plan_id UUID NOT NULL, "
+            "(id UUID PRIMARY KEY DEFAULT (gen_random_uuid()), "
+            "user_id UUID UNIQUE NOT NULL, plan_id UUID NOT NULL, "
             "provider_status TEXT, effective_start TIMESTAMP, effective_end TIMESTAMP, "
             "current_period_start TIMESTAMP, current_period_end TIMESTAMP, "
             "cancel_at_period_end BOOLEAN NOT NULL DEFAULT 0, "
@@ -100,7 +104,7 @@ def attach_subscription(
         ),
         {
             "user_id": user_id.hex,
-            "plan_id": str(plan.id),
+            "plan_id": plan.id.hex,
             "provider_status": provider_status,
             "start": start,
             "end": end,
@@ -142,6 +146,80 @@ def test_free_and_pro_exist_with_central_entitlements(
         for plan in plans
     }
     assert live_coach == {PlanCode.FREE: False, PlanCode.PRO: True}
+
+
+def test_training_plan_generation_has_monthly_free_and_pro_allowances(
+    seeded_catalog: Session,
+) -> None:
+    free_user = uuid.uuid4()
+    pro_user = uuid.uuid4()
+    attach_subscription(
+        seeded_catalog, user_id=pro_user, plan_code=PlanCode.PRO
+    )
+    for user_id, expected in ((free_user, 1), (pro_user, 10)):
+        entitlement = get_user_entitlement(
+            seeded_catalog, user_id, FeatureKey.TRAINING_PLAN_GENERATION
+        )
+        assert entitlement is not None
+        assert entitlement.entitlement_type is EntitlementType.METERED
+        assert entitlement.enabled is True
+        assert entitlement.allowance_units == expected
+        assert entitlement.reset_policy == ResetPolicy.CALENDAR_MONTH_UTC
+        assert get_feature_allowance(
+            seeded_catalog, user_id, FeatureKey.TRAINING_PLAN_GENERATION
+        ) == expected
+
+
+def test_plan_generation_uses_one_ledger_unit_per_operation_and_month(
+    seeded_catalog: Session, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # SQLite cannot execute PostgreSQL's advisory transaction lock. The
+    # existing PostgreSQL concurrency tests cover that lock independently.
+    monkeypatch.setattr(usage_service, "_lock_admission", lambda *_args: None)
+    at = datetime(2026, 9, 23, tzinfo=UTC)
+    for code, allowance in ((PlanCode.FREE, 1), (PlanCode.PRO, 10)):
+        user_id = uuid.uuid4()
+        if code is PlanCode.PRO:
+            attach_subscription(seeded_catalog, user_id=user_id, plan_code=code)
+        for number in range(allowance):
+            key = f"{code.value}-{number}"
+            arguments = {
+                "user_id": user_id,
+                "feature_key": FeatureKey.TRAINING_PLAN_GENERATION,
+                "operation_key": key,
+                "request_fingerprint": f"plan:{key}",
+                "reservation_expires_at": at + timedelta(days=45),
+                "as_of": at,
+            }
+            reserved = reserve_usage(seeded_catalog, **arguments)
+            assert reserved is not None
+            assert reserve_usage(seeded_catalog, **arguments).id == reserved.id
+            consume_usage(seeded_catalog, reserved.id, user_id=user_id)
+        with pytest.raises(QuotaExceededError):
+            reserve_usage(
+                seeded_catalog,
+                user_id=user_id,
+                feature_key=FeatureKey.TRAINING_PLAN_GENERATION,
+                operation_key=f"{code.value}-over-limit",
+                request_fingerprint="another-generation",
+                reservation_expires_at=at + timedelta(days=45),
+                as_of=at,
+            )
+        assert seeded_catalog.query(FeatureUsage).filter_by(
+            user_id=user_id,
+            feature_key=FeatureKey.TRAINING_PLAN_GENERATION.value,
+        ).count() == allowance
+        if code is PlanCode.FREE:
+            october = datetime(2026, 10, 1, tzinfo=UTC)
+            assert reserve_usage(
+                seeded_catalog,
+                user_id=user_id,
+                feature_key=FeatureKey.TRAINING_PLAN_GENERATION,
+                operation_key="next-month",
+                request_fingerprint="next-month-plan",
+                reservation_expires_at=october + timedelta(days=15),
+                as_of=october,
+            ) is not None
 
 
 def test_seed_is_idempotent(seeded_catalog: Session) -> None:

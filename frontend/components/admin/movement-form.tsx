@@ -7,18 +7,22 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type {
   MovementAdminRead,
   MovementCreateInput,
-  MovementUpdateInput,
+  PrescriptionType,
 } from "@/features/admin/movements/types";
 
-type MovementFormValues = MovementCreateInput;
+type MovementFormValues = Omit<MovementCreateInput, "prescription_type"> & {
+  prescription_type: PrescriptionType | "";
+};
 
 const emptyValues: MovementFormValues = {
   name: "",
   slug: "",
   family_key: "",
+  prescription_type: "",
   illustration_path: "",
   upload_analysis_supported: false,
   live_coach_supported: false,
@@ -31,9 +35,10 @@ export function MovementForm({
 }: {
   movement?: MovementAdminRead;
   saving?: boolean;
-  onSubmit: (values: MovementCreateInput | MovementUpdateInput) => void;
+  onSubmit: (values: MovementCreateInput) => void;
 }) {
   const [values, setValues] = useState<MovementFormValues>(() => toValues(movement));
+  const [missingPrescription, setMissingPrescription] = useState(false);
 
   function setField<K extends keyof MovementFormValues>(key: K, value: MovementFormValues[K]) {
     setValues((current) => ({ ...current, [key]: value }));
@@ -41,8 +46,13 @@ export function MovementForm({
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const payload = {
+    if (!values.prescription_type) {
+      setMissingPrescription(true);
+      return;
+    }
+    const payload: MovementCreateInput = {
       ...values,
+      prescription_type: values.prescription_type,
       name: values.name.trim(),
       slug: values.slug.trim(),
       family_key: values.family_key.trim(),
@@ -66,6 +76,24 @@ export function MovementForm({
         <Field label="Family key" description="Analyzer/catalog family identifier. Use an existing product family key.">
           <Input required pattern="[a-z][a-z0-9_-]*" maxLength={100} value={values.family_key} onChange={(event) => setField("family_key", event.target.value)} placeholder="e.g. vertical_pull" />
         </Field>
+        <Field label="Plan prescription" description="Choose the target used when this movement appears in a training plan.">
+          <Select value={values.prescription_type} onValueChange={(value) => {
+            setField("prescription_type", value as PrescriptionType | "");
+            setMissingPrescription(false);
+          }}>
+            <SelectTrigger className="h-9 w-full" aria-label="Plan prescription" aria-invalid={missingPrescription}>
+              <SelectValue placeholder="Select a prescription" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="repetitions">Repetitions</SelectItem>
+              <SelectItem value="duration">Hold duration</SelectItem>
+            </SelectContent>
+          </Select>
+          {missingPrescription ? <p className="text-xs text-destructive">Choose a plan prescription.</p> : null}
+        </Field>
+      </div>
+
+      <div className="grid gap-5 md:grid-cols-2">
         <Field label="Illustration asset path" description="Optional path in the movement-illustrations storage bucket.">
           <Input maxLength={255} value={values.illustration_path ?? ""} onChange={(event) => setField("illustration_path", event.target.value)} placeholder="e.g. pull-up.png" />
         </Field>
@@ -92,6 +120,7 @@ function toValues(movement?: MovementAdminRead): MovementFormValues {
     name: movement.name,
     slug: movement.slug,
     family_key: movement.family_key,
+    prescription_type: movement.prescription_type ?? "",
     illustration_path: movement.illustration_path,
     upload_analysis_supported: movement.upload_analysis_supported,
     live_coach_supported: movement.live_coach_supported,

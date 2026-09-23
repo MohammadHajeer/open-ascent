@@ -12,6 +12,11 @@ class DocumentationStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+class MovementPrescriptionType(StrEnum):
+    REPETITIONS = "repetitions"
+    DURATION = "duration"
+
+
 class AnalysisOwnerKind(StrEnum):
     GUEST = "guest"
     AUTHENTICATED = "authenticated"
