@@ -71,12 +71,6 @@ export const fetchAuthenticatedAnalysisResult = (analysisId: string) =>
     cache: "no-store",
   });
 
-export const retryAuthenticatedExplanation = (analysisId: string) =>
-  authApiFetch<{ explanation_status: "pending" | "running" }>(
-    `/analyses/${analysisId}/explanation/retry`,
-    { method: "POST" },
-  );
-
 export const fetchAnalysisHistory = (limit = 50) =>
   authApiFetch<AnalysisHistoryItem[]>(`/analyses?limit=${limit}`, { cache: "no-store" });
 

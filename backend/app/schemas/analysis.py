@@ -139,10 +139,6 @@ class GuestAnalysisResultResponse(BaseModel):
     explanation_retry_available: bool = False
 
 
-class GuestExplanationRetryResponse(BaseModel):
-    explanation_status: Literal["pending", "running"]
-
-
 class AnalysisHistoryMovementRead(BaseModel):
     id: uuid.UUID | None
     slug: str

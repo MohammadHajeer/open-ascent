@@ -31,6 +31,7 @@ from app.services.explanation_jobs import (
     claim_next_explanation,
     complete_explanation,
     fail_explanation,
+    retry_failed_explanation,
 )
 from app.workers import explanation_worker
 
@@ -856,7 +857,7 @@ def test_explanation_failure_preserves_deterministic_result(
     assert body["movement"]["safety"]["stop_conditions"] == ["Sharp pain"]
     assert body["explanation_status"] == "failed"
     assert body["explanation"] is None
-    assert body["explanation_retry_available"] is True
+    assert body["explanation_retry_available"] is False
     stream = client.get(
         f"/analyses/{analysis.id}/events",
         headers={"Authorization": f"Bearer {credential}"},
@@ -866,7 +867,7 @@ def test_explanation_failure_preserves_deterministic_result(
     assert str(provider_error) not in stream.text
 
 
-def test_guest_retry_only_requeues_explanation_and_reuses_events(
+def test_manual_retry_only_requeues_explanation_and_reuses_events(
     client: TestClient, db: Session, guest_result_analysis
 ) -> None:
     analysis, credential = guest_result_analysis
@@ -877,18 +878,11 @@ def test_guest_retry_only_requeues_explanation_and_reuses_events(
     fail_explanation(db, first)
 
     endpoint = f"/analyses/{analysis.id}/explanation/retry"
-    assert client.post(endpoint).status_code == 401
-    assert (
-        client.post(endpoint, headers={"Authorization": "Bearer wrong"}).status_code
-        == 401
-    )
+    assert client.post(endpoint).status_code == 404
     headers = {"Authorization": f"Bearer {credential}"}
-    retried = client.post(endpoint, headers=headers)
-    assert retried.status_code == 200
-    assert retried.json() == {"explanation_status": "pending"}
-    duplicate = client.post(endpoint, headers=headers)
-    assert duplicate.status_code == 200
-    assert duplicate.json() == retried.json()
+    assert client.post(endpoint, headers=headers).status_code == 404
+    assert retry_failed_explanation(db, analysis.id) == "pending"
+    assert retry_failed_explanation(db, analysis.id) == "pending"
     db.refresh(analysis)
     assert analysis.ai_feedback_attempts == 1
     assert analysis.status == "completed"
@@ -899,9 +893,7 @@ def test_guest_retry_only_requeues_explanation_and_reuses_events(
 
     second = claim_next_explanation(db)
     assert second is not None and second.attempt == 2
-    assert client.post(endpoint, headers=headers).json() == {
-        "explanation_status": "running"
-    }
+    assert retry_failed_explanation(db, analysis.id) == "running"
     complete_explanation(db, second, grounded_candidate())
     result = client.get(result_url(analysis), headers=headers).json()
     assert result["explanation_status"] == "completed"
@@ -911,7 +903,7 @@ def test_guest_retry_only_requeues_explanation_and_reuses_events(
         result["explanation"]["summary"]["text"]
         == grounded_candidate()["summary"]["text"]
     )
-    assert client.post(endpoint, headers=headers).status_code == 409
+    assert client.post(endpoint, headers=headers).status_code == 404
     events = list(
         db.scalars(
             select(AnalysisEvent)
@@ -941,12 +933,10 @@ def test_explanation_retry_limit_and_refresh_never_queue_work(
             result = client.get(result_url(analysis), headers=headers).json()
             assert result["result"]["valid_rep_count"] == 1
             assert result["explanation_status"] == "failed"
-            assert result["explanation_retry_available"] is (
-                attempt < MAX_EXPLANATION_ATTEMPTS
-            )
+            assert result["explanation_retry_available"] is False
         if attempt < MAX_EXPLANATION_ATTEMPTS:
-            assert client.post(endpoint, headers=headers).status_code == 200
-    assert client.post(endpoint, headers=headers).status_code == 409
+            assert retry_failed_explanation(db, analysis.id) == "pending"
+    assert client.post(endpoint, headers=headers).status_code == 404
     db.refresh(analysis)
     assert analysis.ai_feedback_attempts == MAX_EXPLANATION_ATTEMPTS
     assert claim_next_explanation(db) is None
@@ -979,7 +969,7 @@ def test_expired_final_explanation_claim_becomes_retryable_unavailable(
         ]
         is False
     )
-    assert client.post(endpoint, headers=headers).status_code == 409
+    assert client.post(endpoint, headers=headers).status_code == 404
     events = list(
         db.scalars(
             select(AnalysisEvent)

@@ -116,6 +116,12 @@ def retry_failed_explanation(db: Session, analysis_id: uuid.UUID) -> str:
     if analysis is None or analysis.status != "completed" or analysis.result is None:
         db.rollback()
         raise ExplanationRetryUnavailableError("Analysis is not completed.")
+    if analysis.owner_kind == "guest" and (
+        analysis.access_expires_at is None
+        or analysis.access_expires_at <= db.scalar(select(func.now()))
+    ):
+        db.rollback()
+        raise ExplanationRetryUnavailableError("Guest access has expired.")
     if analysis.ai_feedback_status in {"pending", "running"}:
         current_status = analysis.ai_feedback_status
         db.rollback()

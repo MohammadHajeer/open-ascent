@@ -16,6 +16,7 @@ from app.services.analysis_jobs import (
     complete_analysis,
     fail_analysis,
 )
+from app.services.worker_monitor import WorkerMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ AnalysisProcessor = Callable[
 
 def process_one_analysis(
     processor: AnalysisProcessor,
+    monitor: WorkerMonitor | None = None,
 ) -> bool:
     # ---------------------------------------------------------
     # 1. Claim the job in a short DB transaction.
@@ -45,6 +47,9 @@ def process_one_analysis(
 
     if claim is None:
         return False
+
+    if monitor is not None:
+        monitor.set_job(claim.analysis_id)
 
     # ---------------------------------------------------------
     # 2. Process WITHOUT an open DB transaction.
@@ -77,6 +82,8 @@ def process_one_analysis(
                     claim.attempt,
                 )
 
+        if monitor is not None:
+            monitor.set_job(None)
         return True
 
     # ---------------------------------------------------------
@@ -99,6 +106,9 @@ def process_one_analysis(
                 claim.attempt,
             )
 
+    if monitor is not None:
+        monitor.set_job(None)
+
     return True
 
 
@@ -106,17 +116,22 @@ def run_worker(
     processor: AnalysisProcessor,
 ) -> None:
     logger.info("Open Ascent analysis worker started.")
-
-    while True:
-        try:
-            found_job = process_one_analysis(processor)
-
-        except SQLAlchemyError:
-            logger.exception("Analysis worker database error")
-
-            time.sleep(settings.analysis_worker_poll_interval_seconds)
-
-            continue
-
-        if not found_job:
-            time.sleep(settings.analysis_worker_poll_interval_seconds)
+    monitor = WorkerMonitor("analysis")
+    monitor.start()
+    failed = False
+    try:
+        while True:
+            try:
+                found_job = process_one_analysis(processor, monitor)
+            except SQLAlchemyError:
+                logger.exception("Analysis worker database error")
+                monitor.set_job(None)
+                time.sleep(settings.analysis_worker_poll_interval_seconds)
+                continue
+            if not found_job:
+                time.sleep(settings.analysis_worker_poll_interval_seconds)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        monitor.stop(failed=failed)

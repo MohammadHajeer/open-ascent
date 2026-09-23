@@ -20,29 +20,32 @@ from app.services.explanation_jobs import (
     complete_explanation,
     fail_explanation,
 )
+from app.services.worker_monitor import WorkerMonitor
 
 logger = logging.getLogger(__name__)
 
 
-def process_one_explanation() -> bool:
+def process_one_explanation(monitor: WorkerMonitor | None = None) -> bool:
     with SessionLocal() as db:
         claim = claim_next_explanation(db)
     if claim is None:
         return False
+
+    if monitor is not None:
+        monitor.set_job(claim.analysis_id)
 
     try:
         with SessionLocal() as db:
             analysis = db.get(Analysis, claim.analysis_id)
             if analysis is None or analysis.result is None:
                 raise ValueError("Completed analysis result is missing.")
-            movement = db.get(Movement, analysis.movement_id) if analysis.movement_id else None
+            movement = (
+                db.get(Movement, analysis.movement_id) if analysis.movement_id else None
+            )
             documentation = db.get(
                 MovementDocumentation, analysis.safety_documentation_id
             )
-            if (
-                documentation is None
-                or documentation.published_at is None
-            ):
+            if documentation is None or documentation.published_at is None:
                 raise ValueError("Published movement guidance is missing.")
             source = build_explanation_input(
                 result_data=analysis.result,
@@ -65,16 +68,28 @@ def process_one_explanation() -> bool:
                     "Failed explanation claim expired: analysis_id=%s",
                     claim.analysis_id,
                 )
+    if monitor is not None:
+        monitor.set_job(None)
     return True
 
 
 def run_explanation_worker() -> None:
     logger.info("Open Ascent explanation worker started.")
-    while True:
-        try:
-            found_job = process_one_explanation()
-        except SQLAlchemyError:
-            logger.exception("Explanation worker database error")
-            found_job = False
-        if not found_job:
-            time.sleep(settings.analysis_worker_poll_interval_seconds)
+    monitor = WorkerMonitor("explanation")
+    monitor.start()
+    failed = False
+    try:
+        while True:
+            try:
+                found_job = process_one_explanation(monitor)
+            except SQLAlchemyError:
+                logger.exception("Explanation worker database error")
+                monitor.set_job(None)
+                found_job = False
+            if not found_job:
+                time.sleep(settings.analysis_worker_poll_interval_seconds)
+    except Exception:
+        failed = True
+        raise
+    finally:
+        monitor.stop(failed=failed)

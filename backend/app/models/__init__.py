@@ -22,6 +22,7 @@ from app.models.training import (
     WorkoutSession,
     WorkoutSet,
 )
+from app.models.worker_instance import WorkerInstance
 
 __all__ = [
     "AIRun",
@@ -41,6 +42,7 @@ __all__ = [
     "TrainingPlan",
     "TrainingPlanPreview",
     "UserSubscription",
+    "WorkerInstance",
     "WorkoutSession",
     "WorkoutSet",
     "auth_users",

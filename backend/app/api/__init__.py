@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.admin_operations import router as admin_operations_router
 from app.api.analysis import router as analysis_router
 from app.api.analysis_stream import router as analysis_stream_router
 from app.api.coach import router as coach_router
@@ -17,6 +18,7 @@ from app.api.workouts import router as workouts_router
 api_router = APIRouter()
 
 api_router.include_router(movements_router)
+api_router.include_router(admin_operations_router)
 api_router.include_router(onboarding_router)
 api_router.include_router(progress_router)
 api_router.include_router(movement_documentation_router)

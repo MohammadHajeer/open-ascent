@@ -16,6 +16,13 @@ class AnalysisClaimLostError(Exception):
     pass
 
 
+class AnalysisRetryUnavailableError(Exception):
+    pass
+
+
+MAX_ANALYSIS_ATTEMPTS = 3
+
+
 @dataclass(frozen=True)
 class AnalysisClaim:
     analysis_id: uuid.UUID
@@ -29,10 +36,46 @@ def claim_next_analysis(
 ) -> AnalysisClaim | None:
     from app.services.analysis_events import record_analysis_event
 
+    exhausted = db.scalar(
+        select(Analysis)
+        .where(
+            Analysis.status.in_(["queued", "running"]),
+            Analysis.attempts >= MAX_ANALYSIS_ATTEMPTS,
+            or_(Analysis.status == "queued", Analysis.lease_expires_at <= func.now()),
+        )
+        .order_by(Analysis.created_at)
+        .with_for_update(skip_locked=True)
+        .limit(1)
+    )
+    if exhausted is not None:
+        exhausted.status = "failed"
+        exhausted.stage = "failed"
+        exhausted.error_code = "attempts_exhausted"
+        exhausted.failed_at = db.scalar(select(func.now()))
+        exhausted.claim_token = None
+        exhausted.lease_expires_at = None
+        if exhausted.owner_kind == "authenticated":
+            exhausted.video_delete_after = exhausted.failed_at
+        if exhausted.feature_usage_id is not None:
+            release_usage(
+                db,
+                exhausted.feature_usage_id,
+                reason="analysis_failed:attempts_exhausted",
+            )
+        record_analysis_event(
+            db,
+            analysis_id=exhausted.id,
+            attempt=exhausted.attempts,
+            event_type="failed",
+        )
+        db.commit()
+        return None
+
     analysis = db.scalar(
         select(Analysis)
         .where(
             Analysis.video_path.is_not(None),
+            Analysis.attempts < MAX_ANALYSIS_ATTEMPTS,
             or_(
                 Analysis.owner_kind != "guest", Analysis.access_expires_at > func.now()
             ),
@@ -92,6 +135,37 @@ def claim_next_analysis(
         attempt=analysis.attempts,
         video_path=analysis.video_path,
     )
+
+
+def retry_failed_analysis(db: Session, analysis_id: uuid.UUID) -> None:
+    """Manual guest retry only; authenticated usage and media may be released."""
+    analysis = db.scalar(
+        select(Analysis)
+        .where(Analysis.id == analysis_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if (
+        analysis is None
+        or analysis.status != "failed"
+        or analysis.owner_kind != "guest"
+        or analysis.feature_usage_id is not None
+        or analysis.video_path is None
+        or analysis.guest_cleaned_at is not None
+        or analysis.access_expires_at is None
+        or analysis.access_expires_at <= db.scalar(select(func.now()))
+        or analysis.attempts >= MAX_ANALYSIS_ATTEMPTS
+    ):
+        db.rollback()
+        raise AnalysisRetryUnavailableError("This analysis cannot be retried safely.")
+    analysis.status = "queued"
+    analysis.stage = "queued"
+    analysis.error_code = None
+    analysis.failed_at = None
+    analysis.claim_token = None
+    analysis.lease_expires_at = None
+    analysis.progress_snapshot = {}
+    db.commit()
 
 
 def renew_analysis_lease(

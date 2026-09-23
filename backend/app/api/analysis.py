@@ -28,7 +28,6 @@ from app.schemas.analysis import (
     GuestAnalysisResultResponse,
     GuestAnalysisStatusResponse,
     GuestAnalysisUploadAuthorizationResponse,
-    GuestExplanationRetryResponse,
 )
 from app.schemas.analysis_explanation import AnalysisExplanation
 from app.schemas.movement_safety import MovementSafetyContentDraft
@@ -60,11 +59,6 @@ from app.services.analysis_storage import (
     finalize_analysis_upload,
 )
 from app.services.entitlements import UnconfiguredAllowanceError
-from app.services.explanation_jobs import (
-    MAX_EXPLANATION_ATTEMPTS,
-    ExplanationRetryUnavailableError,
-    retry_failed_explanation,
-)
 from app.services.feature_usage import FeatureAccessDeniedError, QuotaExceededError
 
 router = APIRouter(
@@ -482,28 +476,5 @@ def get_guest_analysis_result(
         result=result,
         explanation_status=analysis.ai_feedback_status,
         explanation=explanation,
-        explanation_retry_available=(
-            result is not None
-            and analysis.ai_feedback_status == "failed"
-            and analysis.ai_feedback_attempts < MAX_EXPLANATION_ATTEMPTS
-        ),
+        explanation_retry_available=False,
     )
-
-
-@router.post(
-    "/{analysis_id}/explanation/retry",
-    response_model=GuestExplanationRetryResponse,
-)
-def retry_guest_analysis_explanation(
-    analysis_id: uuid.UUID,
-    analysis: AnalysisAccess,
-    db: DbSession,
-) -> GuestExplanationRetryResponse:
-    try:
-        explanation_status = retry_failed_explanation(db, analysis.id)
-    except ExplanationRetryUnavailableError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=str(exc),
-        ) from exc
-    return GuestExplanationRetryResponse(explanation_status=explanation_status)

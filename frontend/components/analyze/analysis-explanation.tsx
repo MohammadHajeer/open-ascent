@@ -6,14 +6,12 @@ import { LoaderCircle } from "lucide-react";
 import { ThemedAsset } from "@/components/shared/themed-asset";
 import {
   fetchAuthenticatedAnalysisResult,
-  retryAuthenticatedExplanation,
   streamAuthenticatedAnalysis,
 } from "@/features/analysis/api";
 import type { AuthenticatedAnalysisAccess } from "@/features/analysis/types";
 import { assets } from "@/lib/assets";
 import {
   getGuestResult,
-  retryGuestExplanation,
   type GuestAccess,
   type GuestResult,
   type GroundedText,
@@ -59,8 +57,6 @@ export function AnalysisExplanationPanel({
   authenticated?: boolean;
 }) {
   const [current, setCurrent] = useState(initial);
-  const [retrying, setRetrying] = useState(false);
-  const [retryError, setRetryError] = useState(false);
   const cursor = useRef(0);
   const activeStatus = current.explanation_status;
   const watching = activeStatus === "pending" || activeStatus === "running";
@@ -148,36 +144,6 @@ export function AnalysisExplanationPanel({
       controller.abort();
     };
   }, [access, watching, authenticated]);
-
-  async function retry() {
-    if (!access || retrying || !current.explanation_retry_available) return;
-    setRetrying(true);
-    setRetryError(false);
-    try {
-      const queued = authenticated
-        ? await retryAuthenticatedExplanation(access.analysis_id)
-        : await retryGuestExplanation(access as GuestAccess);
-      setCurrent((previous) => ({
-        ...previous,
-        explanation_status: queued.explanation_status,
-        explanation: null,
-        explanation_retry_available: false,
-      }));
-    } catch {
-      setRetryError(true);
-      try {
-        setCurrent(
-          authenticated
-            ? await fetchAuthenticatedAnalysisResult(access.analysis_id)
-            : await getGuestResult(access as GuestAccess),
-        );
-      } catch {
-        // Keep the completed deterministic result visible.
-      }
-    } finally {
-      setRetrying(false);
-    }
-  }
 
   const content = current.explanation;
   const grouped = content
@@ -294,19 +260,6 @@ export function AnalysisExplanationPanel({
             Explanation unavailable. Your analysis findings and safety guidance
             remain available on this page.
           </p>
-          {activeStatus === "failed" && current.explanation_retry_available && access && (
-            <button
-              type="button"
-              onClick={() => void retry()}
-              disabled={retrying}
-              className="rounded-md border border-border px-4 py-2 font-medium text-foreground hover:bg-muted disabled:opacity-50"
-            >
-              {retrying ? "Preparing explanation…" : "Try explanation again"}
-            </button>
-          )}
-          {retryError && (
-            <p role="alert">Could not start the explanation. Please try again.</p>
-          )}
         </div>
       )}
     </section>

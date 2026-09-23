@@ -252,11 +252,3 @@ export const getGuestResult = (access: GuestAccess) =>
     headers: authorization(access.credential),
     cache: "no-store",
   });
-
-export const retryGuestExplanation = (access: GuestAccess) =>
-  apiFetch<{
-    explanation_status: "pending" | "running";
-  }>(`/analyses/${access.analysis_id}/explanation/retry`, {
-    method: "POST",
-    headers: authorization(access.credential),
-  });
