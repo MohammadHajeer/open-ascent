@@ -30,14 +30,18 @@ def build_assessment(answers: AssessmentAnswers, submitted_at: datetime) -> dict
         "baseline": {
             "overall_level": LEVEL_BY_EXPERIENCE[answers.training_experience],
             "dimension_levels": {
-                dimension: LEVEL_BY_STAGE[stages[dimension]]
-                for dimension in DIMENSIONS
+                dimension: LEVEL_BY_STAGE[stages[dimension]] for dimension in DIMENSIONS
             },
         },
     }
 
 
-def derive_athlete_state(initial_assessment: dict) -> dict:
+REP_CAPABILITIES = {"pull-up": "pull_up", "push-up": "push_up", "dips": "dips"}
+
+
+def derive_athlete_state(
+    initial_assessment: dict, movement_ids: dict[str, str] | None = None
+) -> dict:
     baseline = initial_assessment["baseline"]
     as_of = initial_assessment["submitted_at"]
     dimensions = {}
@@ -60,10 +64,32 @@ def derive_athlete_state(initial_assessment: dict) -> dict:
             "observed_at": as_of,
             "evidence_refs": evidence,
         }
+    reported_reps = (initial_assessment.get("answers") or {}).get(
+        "max_clean_reps"
+    ) or {}
+    capabilities = {}
+    for slug, answer_key in REP_CAPABILITIES.items():
+        value = reported_reps.get(answer_key)
+        movement_id = (movement_ids or {}).get(slug)
+        if type(value) is int and movement_id is not None:
+            capabilities[movement_id] = {
+                "movement_id": movement_id,
+                "movement_slug": slug,
+                "metric": "reps",
+                "intent": "max_test",
+                "value": value,
+                "source": "self_reported",
+                "confidence": "provisional",
+                "observed_at": as_of,
+                "evidence_refs": [
+                    f"initial_assessment.answers.max_clean_reps.{answer_key}"
+                ],
+            }
     return {
         "schema_version": 1,
         "overall_level": baseline["overall_level"],
         "overall_source": "self_reported",
         "dimensions": dimensions,
+        "capabilities": capabilities,
         "updated_at": as_of,
     }

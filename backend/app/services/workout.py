@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models.analysis import Analysis
 from app.models.movement import Movement
+from app.models.profile import Profile
 from app.models.training import WorkoutSession, WorkoutSet
 from app.schemas.workout import WorkoutSessionCreate, WorkoutSetCreate, WorkoutSetUpdate
 
@@ -25,7 +26,9 @@ class WorkoutConflictError(Exception):
     pass
 
 
-def get_owned_session(db: Session, user_id: uuid.UUID, session_id: uuid.UUID) -> WorkoutSession:
+def get_owned_session(
+    db: Session, user_id: uuid.UUID, session_id: uuid.UUID
+) -> WorkoutSession:
     session = db.scalar(
         select(WorkoutSession).where(
             WorkoutSession.id == session_id,
@@ -102,7 +105,9 @@ def list_recent_coach_sessions(
     if movement_id is not None:
         statement = statement.where(WorkoutSet.movement_id == movement_id)
     sessions = db.scalars(
-        statement.distinct().order_by(WorkoutSession.started_at.desc(), WorkoutSession.id.desc()).limit(limit)
+        statement.distinct()
+        .order_by(WorkoutSession.started_at.desc(), WorkoutSession.id.desc())
+        .limit(limit)
     ).all()
     result = []
     for session in sessions:
@@ -119,7 +124,9 @@ def list_recent_coach_sessions(
     return result
 
 
-def get_active_session(db: Session, user_id: uuid.UUID) -> tuple[WorkoutSession, int] | None:
+def get_active_session(
+    db: Session, user_id: uuid.UUID
+) -> tuple[WorkoutSession, int] | None:
     return db.execute(
         select(WorkoutSession, func.count(WorkoutSet.id))
         .outerjoin(WorkoutSet, WorkoutSet.session_id == WorkoutSession.id)
@@ -142,7 +149,9 @@ def list_sets(db: Session, session_id: uuid.UUID) -> list[tuple[WorkoutSet, str]
     )
 
 
-def discard_empty_session(db: Session, user_id: uuid.UUID, session_id: uuid.UUID) -> None:
+def discard_empty_session(
+    db: Session, user_id: uuid.UUID, session_id: uuid.UUID
+) -> None:
     session = db.scalar(
         select(WorkoutSession)
         .where(WorkoutSession.id == session_id, WorkoutSession.user_id == user_id)
@@ -152,7 +161,9 @@ def discard_empty_session(db: Session, user_id: uuid.UUID, session_id: uuid.UUID
         raise WorkoutNotFoundError
     if session.completed_at is not None:
         raise WorkoutConflictError("Only an unfinished workout can be discarded.")
-    if db.scalar(select(WorkoutSet.id).where(WorkoutSet.session_id == session_id).limit(1)):
+    if db.scalar(
+        select(WorkoutSet.id).where(WorkoutSet.session_id == session_id).limit(1)
+    ):
         raise WorkoutConflictError("A workout with sets cannot be discarded.")
     db.delete(session)
     db.commit()
@@ -185,7 +196,9 @@ def _validate_links(
     elif analysis_id is not None:
         raise WorkoutValidationError("analysis_id requires uploaded_analysis source.")
     if source != "live_coach" and live_coach_session_ref is not None:
-        raise WorkoutValidationError("live_coach_session_ref requires live_coach source.")
+        raise WorkoutValidationError(
+            "live_coach_session_ref requires live_coach source."
+        )
 
 
 def add_set(
@@ -206,10 +219,19 @@ def add_set(
     workout_set = WorkoutSet(session_id=session_id, **payload.model_dump())
     db.add(workout_set)
     try:
+        db.flush()
+        if workout_set.analysis_id is not None:
+            from app.services.athlete_state import recalibrate_from_analysis
+
+            recalibrate_from_analysis(
+                db, user_id=user_id, analysis_id=workout_set.analysis_id
+            )
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise WorkoutConflictError("Set position is already used in this session.") from exc
+        raise WorkoutConflictError(
+            "Set position is already used in this session."
+        ) from exc
     db.refresh(workout_set)
     return workout_set
 
@@ -231,6 +253,27 @@ def update_set(
     if workout_set is None:
         raise WorkoutNotFoundError
     changes = payload.model_dump(exclude_unset=True)
+    if workout_set.analysis_id is not None and any(
+        field in changes and changes[field] != getattr(workout_set, field)
+        for field in ("source", "performer", "intent", "analysis_id")
+    ):
+        profile = db.scalar(
+            select(Profile).where(Profile.id == user_id).with_for_update()
+        )
+        evidence_ref = f"analysis:{workout_set.analysis_id}"
+        capabilities = (
+            (profile.athlete_state or {}).get("capabilities", {}) if profile else {}
+        )
+        for capability in capabilities.values():
+            if not isinstance(capability, dict):
+                continue
+            versions = [capability, *(capability.get("history") or [])]
+            if any(
+                evidence_ref in version.get("evidence_refs", []) for version in versions
+            ):
+                raise WorkoutValidationError(
+                    "An analysis used as measured profile evidence must retain its attribution."
+                )
     values = {
         "source": workout_set.source,
         "analysis_id": workout_set.analysis_id,
@@ -251,9 +294,18 @@ def update_set(
     for field, value in changes.items():
         setattr(workout_set, field, value)
     try:
+        db.flush()
+        if workout_set.analysis_id is not None:
+            from app.services.athlete_state import recalibrate_from_analysis
+
+            recalibrate_from_analysis(
+                db, user_id=user_id, analysis_id=workout_set.analysis_id
+            )
         db.commit()
     except IntegrityError as exc:
         db.rollback()
-        raise WorkoutConflictError("Set position is already used in this session.") from exc
+        raise WorkoutConflictError(
+            "Set position is already used in this session."
+        ) from exc
     db.refresh(workout_set)
     return workout_set

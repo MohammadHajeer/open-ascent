@@ -47,7 +47,9 @@ def _result(profile: Profile) -> OnboardingResult:
     )
 
 
-def _completed_response(profile: Profile, payload: OnboardingSubmit) -> OnboardingResult:
+def _completed_response(
+    profile: Profile, payload: OnboardingSubmit
+) -> OnboardingResult:
     expected_context = payload.coaching_context.model_dump(mode="json") | {
         "schema_version": 1
     }
@@ -91,7 +93,9 @@ def complete_onboarding(
     movements = (
         {
             item.id: item
-            for item in db.scalars(select(Movement).where(Movement.id.in_(selected_ids)))
+            for item in db.scalars(
+                select(Movement).where(Movement.id.in_(selected_ids))
+            )
         }
         if selected_ids
         else {}
@@ -99,7 +103,9 @@ def complete_onboarding(
     if selected_ids - movements.keys():
         raise HTTPException(status_code=422, detail="Unknown catalog movement.")
     if skill is not None and movements[skill.movement_id].slug not in SKILL_SLUGS:
-        raise HTTPException(status_code=422, detail="Invalid skill progression movement.")
+        raise HTTPException(
+            status_code=422, detail="Invalid skill progression movement."
+        )
 
     if profile is None:
         db.execute(
@@ -107,7 +113,9 @@ def complete_onboarding(
             .values(id=user_id, display_name=payload.display_name)
             .on_conflict_do_nothing(index_elements=[Profile.id])
         )
-        profile = db.scalar(select(Profile).where(Profile.id == user_id).with_for_update())
+        profile = db.scalar(
+            select(Profile).where(Profile.id == user_id).with_for_update()
+        )
         if profile is None:
             raise HTTPException(status_code=500, detail="Profile could not be created.")
         if profile.app_role != "athlete":
@@ -122,7 +130,15 @@ def complete_onboarding(
         "schema_version": 1
     }
     profile.initial_assessment = initial_assessment
-    profile.athlete_state = derive_athlete_state(initial_assessment)
+    capability_movements = {
+        item.slug: str(item.id)
+        for item in db.scalars(
+            select(Movement).where(Movement.slug.in_(("pull-up", "push-up", "dips")))
+        )
+    }
+    profile.athlete_state = derive_athlete_state(
+        initial_assessment, capability_movements
+    )
     profile.safety_ack_version = CURRENT_SAFETY_ACK_VERSION
     profile.safety_acknowledged_at = now
     profile.onboarding_completed_at = now
