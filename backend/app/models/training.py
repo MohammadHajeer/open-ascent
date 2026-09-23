@@ -44,6 +44,32 @@ class TrainingPlan(TimestampMixin, Base):
     plan_document: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
 
+class TrainingPlanPreview(TimestampMixin, Base):
+    __tablename__ = "training_plan_previews"
+    __table_args__ = (
+        UniqueConstraint("coach_generation_id", name="uq_plan_previews_generation"),
+        UniqueConstraint("saved_plan_id", name="uq_plan_previews_saved_plan"),
+        Index("ix_training_plan_previews_user_id", "user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("profiles.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    coach_generation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("coach_generations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    plan_document: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    saved_plan_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("training_plans.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+
+
 class WorkoutSession(TimestampMixin, Base):
     __tablename__ = "workout_sessions"
     __table_args__ = (

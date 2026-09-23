@@ -1,0 +1,493 @@
+"""COACH-06 admission, validation, preview, ownership, and explicit Save tests."""
+
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime
+from types import SimpleNamespace
+
+import pytest
+from fastapi.testclient import TestClient
+from pydantic import ValidationError
+from sqlalchemy import create_engine, event, func, select
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.api.dependencies.auth import require_athlete
+from app.db.database import get_db
+from app.main import app
+from app.models.coach import CoachGeneration, Conversation, Message
+from app.models.enums import FeatureKey
+from app.models.movement import Movement
+from app.models.movement_documentation import MovementDocumentation
+from app.models.profile import Profile
+from app.models.training import TrainingPlan, TrainingPlanPreview
+from app.schemas.readiness import ReadinessEvidence
+from app.schemas.training_plan import WeeklyPlanCandidate, WeeklyPlanProposal
+from app.services import coach, training_plan
+from app.services import coach_plan_generation as plan_generation
+from app.services.feature_usage import QuotaExceededError
+from app.services.readiness_evidence import ReadinessEvidenceBuilder
+
+
+@compiles(JSONB, "sqlite")
+def _jsonb_sqlite(_type, _compiler, **_kwargs):
+    return "JSON"
+
+
+@pytest.fixture
+def plan_db(monkeypatch):
+    engine = create_engine(
+        "sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False}
+    )
+
+    @event.listens_for(engine, "connect")
+    def register_functions(connection, _record):
+        connection.create_function("gen_random_uuid", 0, lambda: uuid.uuid4().hex)
+        connection.create_function("now", 0, lambda: datetime.now(UTC).isoformat())
+
+    defaults = [
+        (column, column.server_default)
+        for column in Profile.__table__.columns
+        if isinstance(column.type, JSONB)
+    ]
+    for column, _default in defaults:
+        column.server_default = None
+    try:
+        Profile.__table__.create(engine)
+    finally:
+        for column, default in defaults:
+            column.server_default = default
+    for table in (
+        Movement.__table__, MovementDocumentation.__table__,
+        Conversation.__table__, Message.__table__, CoachGeneration.__table__,
+        TrainingPlan.__table__, TrainingPlanPreview.__table__,
+    ):
+        table.create(engine)
+    factory = sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(coach, "SessionLocal", factory)
+    owner = Profile(
+        id=uuid.uuid4(), display_name="Owner", coaching_context={},
+        initial_assessment={}, athlete_state={},
+    )
+    stranger = Profile(
+        id=uuid.uuid4(), display_name="Stranger", coaching_context={},
+        initial_assessment={}, athlete_state={},
+    )
+    movement = Movement(
+        slug="test-pull-up", name="Pull-Up", family_key="pull",
+        prescription_type="repetitions", upload_analysis_supported=True,
+        live_coach_supported=False,
+    )
+    with factory() as db:
+        db.add_all((owner, stranger, movement))
+        db.flush()
+        db.add(MovementDocumentation(
+            movement_id=movement.id, version=1, status="published",
+            content={
+                "notice": "Train within your capacity.",
+                "difficulty": "beginner",
+                "stressed_areas": ["shoulders"],
+                "prerequisites": ["Demonstrate control."],
+                "cautions": ["Avoid painful movement."],
+                "stop_conditions": ["Stop for pain."],
+            },
+            published_at=datetime.now(UTC),
+        ))
+        db.commit()
+    yield factory, owner, stranger, movement
+    engine.dispose()
+
+
+def candidate(canonical_movement_id: uuid.UUID, **exercise_changes) -> WeeklyPlanCandidate:
+    exercise = {
+        "movement_id": str(canonical_movement_id), "sets": 3, "reps": 5,
+        "hold_seconds": None, "rest_seconds": 90, "notes": None,
+    }
+    exercise.update(exercise_changes)
+    return WeeklyPlanCandidate.model_validate({
+        "title": "Weekly strength", "summary": "A modest week.",
+        "days": [{"day_index": 1, "label": "Strength", "exercises": [exercise]}],
+    })
+
+
+def generation(db, owner: Profile, status: str = "streaming") -> CoachGeneration:
+    conversation = Conversation(user_id=owner.id, title="Plan")
+    db.add(conversation)
+    db.flush()
+    user = Message(
+        conversation_id=conversation.id, position=0, role="user",
+        content="Build a weekly plan", status="completed",
+    )
+    assistant = Message(
+        conversation_id=conversation.id, position=1, role="assistant",
+        content="", status="streaming",
+    )
+    db.add_all((user, assistant))
+    db.flush()
+    item = CoachGeneration(
+        conversation_id=conversation.id, user_message_id=user.id,
+        assistant_message_id=assistant.id, client_request_id=uuid.uuid4(),
+        kind="plan", status=status,
+    )
+    db.add(item)
+    db.commit()
+    return item
+
+
+def evidence(monkeypatch, satisfied: bool | None):
+    monkeypatch.setattr(
+        ReadinessEvidenceBuilder, "build",
+        staticmethod(lambda *_args, **_kwargs: [ReadinessEvidence(
+            requirement="Verified prerequisite", satisfied=satisfied,
+            source="uploaded_analysis" if satisfied is not None else None,
+        )]),
+    )
+
+
+@pytest.mark.parametrize("satisfied,code", [(False, "readiness_failed"), (None, "readiness_unknown")])
+def test_only_pass_readiness_can_be_previewed(plan_db, monkeypatch, satisfied, code):
+    factory, owner, _stranger, movement = plan_db
+    evidence(monkeypatch, satisfied)
+    with factory() as db:
+        item = generation(db, owner)
+        with pytest.raises(training_plan.PlanValidationError) as exc:
+            training_plan.complete_preview(
+                db, generation_id=item.id, user_id=owner.id,
+                candidate=candidate(movement.id), provider_response_id="resp_invalid",
+            )
+        assert exc.value.code == code
+        assert db.scalar(select(func.count(TrainingPlanPreview.id))) == 0
+        assert db.scalar(select(func.count(TrainingPlan.id))) == 0
+
+
+def test_missing_rules_remain_unknown(plan_db):
+    factory, owner, _stranger, movement = plan_db
+    with factory() as db:
+        with pytest.raises(training_plan.PlanValidationError) as exc:
+            training_plan.validate_candidate(db, owner.id, candidate(movement.id))
+        assert exc.value.code == "readiness_unknown"
+
+
+def test_canonical_and_prescription_gates(plan_db, monkeypatch):
+    factory, owner, _stranger, movement = plan_db
+    evidence(monkeypatch, True)
+    with factory() as db:
+        with pytest.raises(training_plan.PlanValidationError) as exc:
+            training_plan.validate_candidate(db, owner.id, candidate(uuid.uuid4()))
+        assert exc.value.code == "movement_not_found"
+        with pytest.raises(training_plan.PlanValidationError) as exc:
+            training_plan.validate_candidate(
+                db, owner.id, candidate(movement.id, reps=None, hold_seconds=10)
+            )
+        assert exc.value.code == "prescription_mismatch"
+        with pytest.raises(ValidationError):
+            candidate(movement.id, reps=5, hold_seconds=10)
+        with pytest.raises(ValidationError):
+            candidate(movement.id, sets=999)
+
+
+def test_duration_movement_uses_hold_target(plan_db, monkeypatch):
+    factory, owner, _stranger, _movement = plan_db
+    evidence(monkeypatch, True)
+    with factory() as db:
+        hold = Movement(
+            slug="front-lever-test", name="Front Lever", family_key="lever",
+            prescription_type="duration", upload_analysis_supported=False,
+            live_coach_supported=False,
+        )
+        db.add(hold)
+        db.flush()
+        db.add(MovementDocumentation(
+            movement_id=hold.id, version=1, status="published",
+            content={
+                "notice": "Train within your capacity.", "difficulty": "advanced",
+                "stressed_areas": ["shoulders"], "prerequisites": [],
+                "cautions": ["Avoid painful movement."],
+                "stop_conditions": ["Stop for pain."],
+            },
+            published_at=datetime.now(UTC),
+        ))
+        db.commit()
+        training_plan.validate_candidate(
+            db, owner.id, candidate(hold.id, reps=None, hold_seconds=12)
+        )
+        with pytest.raises(training_plan.PlanValidationError) as exc:
+            training_plan.validate_candidate(db, owner.id, candidate(hold.id))
+        assert exc.value.code == "prescription_mismatch"
+
+
+@pytest.mark.parametrize("change", [
+    {"movement_id": "not-a-uuid"}, {"sets": 0}, {"reps": 0},
+    {"rest_seconds": -1}, {"rest_seconds": 601},
+    {"notes": "x" * 281}, {"reps": None, "hold_seconds": None},
+    {"user_id": "model-supplied"},
+])
+def test_untrusted_exercise_fields_are_rejected(change):
+    with pytest.raises(ValidationError):
+        candidate(uuid.uuid4(), **change)
+
+
+def test_weekly_shape_and_unknown_fields_are_rejected():
+    movement_id = str(uuid.uuid4())
+    valid_exercise = {
+        "movement_id": movement_id, "sets": 2, "reps": 5,
+        "hold_seconds": None, "rest_seconds": 60, "notes": None,
+    }
+    base = {"title": "Plan", "summary": None, "days": [{
+        "day_index": 1, "label": None, "exercises": [valid_exercise],
+    }]}
+    for invalid in (
+        {**base, "user_id": str(uuid.uuid4())},
+        {**base, "title": "x" * 121},
+        {**base, "days": []},
+        {**base, "days": [base["days"][0]] * 2},
+        {**base, "days": [{**base["days"][0], "exercises": [valid_exercise] * 9}]},
+        {**base, "days": [{"day_index": n, "label": None, "exercises": [valid_exercise] * 4} for n in range(1, 8)]},
+    ):
+        with pytest.raises(ValidationError):
+            WeeklyPlanCandidate.model_validate(invalid)
+    with pytest.raises(ValidationError):
+        WeeklyPlanProposal.model_validate({**base, "user_id": str(uuid.uuid4())})
+
+
+def test_unpublished_movement_cannot_be_previewed(plan_db, monkeypatch):
+    factory, owner, _stranger, movement = plan_db
+    evidence(monkeypatch, True)
+    with factory() as db:
+        guide = db.scalar(select(MovementDocumentation).where(
+            MovementDocumentation.movement_id == movement.id
+        ))
+        guide.status = "archived"
+        db.commit()
+        with pytest.raises(training_plan.PlanValidationError) as exc:
+            training_plan.validate_candidate(db, owner.id, candidate(movement.id))
+        assert exc.value.code == "movement_unpublished"
+
+
+def test_preview_requires_explicit_save_and_is_idempotent(plan_db, monkeypatch):
+    factory, owner, stranger, movement = plan_db
+    evidence(monkeypatch, True)
+    with factory() as db:
+        item = generation(db, owner)
+        with pytest.raises(training_plan.PlanNotFoundError):
+            training_plan.complete_preview(
+                db, generation_id=item.id, user_id=stranger.id,
+                candidate=candidate(movement.id), provider_response_id="resp_wrong_owner",
+            )
+        preview = training_plan.complete_preview(
+            db, generation_id=item.id, user_id=owner.id,
+            candidate=candidate(movement.id), provider_response_id="resp_valid",
+        )
+        assert db.scalar(select(func.count(TrainingPlan.id))) == 0
+        assert training_plan.preview_read(db, preview)["days"][0]["exercises"][0]["movement_slug"] == movement.slug
+        with pytest.raises(training_plan.PlanNotFoundError):
+            training_plan.get_owned_preview(db, stranger.id, preview.id)
+        with pytest.raises(training_plan.PlanNotFoundError):
+            training_plan.save_preview(db, stranger.id, preview.id)
+        first = training_plan.save_preview(db, owner.id, preview.id)
+        second = training_plan.save_preview(db, owner.id, preview.id)
+        assert first.id == second.id
+        assert db.scalar(select(func.count(TrainingPlan.id))) == 1
+        with pytest.raises(training_plan.PlanNotFoundError):
+            training_plan.get_owned_plan(db, stranger.id, first.id)
+
+
+def test_save_rechecks_readiness_and_rejects_tampering(plan_db, monkeypatch):
+    factory, owner, _stranger, movement = plan_db
+    evidence(monkeypatch, True)
+    with factory() as db:
+        item = generation(db, owner)
+        preview = training_plan.complete_preview(
+            db, generation_id=item.id, user_id=owner.id,
+            candidate=candidate(movement.id), provider_response_id="resp_save_gate",
+        )
+        evidence(monkeypatch, None)
+        with pytest.raises(training_plan.PlanValidationError) as exc:
+            training_plan.save_preview(db, owner.id, preview.id)
+        assert exc.value.code == "readiness_unknown"
+        evidence(monkeypatch, True)
+        preview.plan_document = candidate(uuid.uuid4()).model_dump(mode="json")
+        db.commit()
+        with pytest.raises(training_plan.PlanValidationError) as exc:
+            training_plan.save_preview(db, owner.id, preview.id)
+        assert exc.value.code == "movement_not_found"
+        assert db.scalar(select(func.count(TrainingPlan.id))) == 0
+
+
+def test_api_rejects_client_plan_payload_and_cross_user_access(plan_db, monkeypatch):
+    factory, owner, stranger, movement = plan_db
+    evidence(monkeypatch, True)
+    with factory() as db:
+        item = generation(db, owner)
+        preview = training_plan.complete_preview(
+            db, generation_id=item.id, user_id=owner.id,
+            candidate=candidate(movement.id), provider_response_id="resp_api",
+        )
+
+    identity = {"profile": stranger}
+
+    def database():
+        with factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = database
+    app.dependency_overrides[require_athlete] = lambda: identity["profile"]
+    try:
+        with TestClient(app) as client:
+            path = f"/coach/plans/previews/{preview.id}"
+            assert client.get(path).status_code == 404
+            assert client.post(path + "/save", json={}).status_code == 404
+            identity["profile"] = owner
+            assert client.post(path + "/save", json={"title": "Tampered"}).status_code == 422
+            with factory() as db:
+                assert db.scalar(select(func.count(TrainingPlan.id))) == 0
+            assert client.get(path).status_code == 200
+            history = client.get(f"/coach/conversations/{item.conversation_id}")
+            assert history.status_code == 200
+            assert history.json()["messages"][1]["plan_preview_id"] == str(preview.id)
+            saved = client.post(path + "/save", json={})
+            assert saved.status_code == 200
+            assert client.post(path + "/save", json={}).json()["id"] == saved.json()["id"]
+            identity["profile"] = stranger
+            assert client.get(f"/coach/plans/{saved.json()['id']}").status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_plan_admission_uses_one_plan_unit_and_safe_idempotency(plan_db, monkeypatch):
+    factory, owner, _stranger, _movement = plan_db
+    calls = []
+
+    def reserve(_db, **kwargs):
+        calls.append(kwargs)
+
+    monkeypatch.setattr(coach, "reserve_usage", reserve)
+    with factory() as db:
+        request_id = uuid.uuid4()
+        _conversation, item, created = coach.create_and_reserve_generation(
+            db, owner, request_id, "Build me a weekly plan", kind="plan"
+        )
+        assert created and item.kind == "plan"
+        _conversation, retry, created = coach.create_and_reserve_generation(
+            db, owner, request_id, "Build me a weekly plan", kind="plan"
+        )
+        assert not created and retry.id == item.id
+        assert len(calls) == 1
+        assert calls[0]["feature_key"] is FeatureKey.TRAINING_PLAN_GENERATION
+        assert calls[0]["operation_key"] == str(request_id)
+        with pytest.raises(ValueError):
+            coach.create_and_reserve_generation(
+                db, owner, request_id, "Build me a weekly plan", kind="chat"
+            )
+
+
+def test_plan_quota_failure_creates_no_generation(plan_db, monkeypatch):
+    factory, owner, _stranger, _movement = plan_db
+
+    def denied(*_args, **_kwargs):
+        raise QuotaExceededError("limit")
+
+    monkeypatch.setattr(coach, "reserve_usage", denied)
+    with factory() as db:
+        with pytest.raises(QuotaExceededError):
+            coach.create_and_reserve_generation(
+                db, owner, uuid.uuid4(), "Build me a weekly plan", kind="plan"
+            )
+        db.rollback()
+        assert db.scalar(select(func.count(CoachGeneration.id))) == 0
+
+
+def test_provider_tool_round_yields_structured_preview_without_saving(plan_db, monkeypatch):
+    factory, owner, _stranger, movement = plan_db
+    evidence(monkeypatch, True)
+    monkeypatch.setattr(plan_generation, "SessionLocal", factory)
+    monkeypatch.setattr(plan_generation, "build_coach_context", lambda *_args: "Goal: strength")
+    monkeypatch.setattr(plan_generation, "_eligible_movements", lambda *_args: [
+        {"id": str(movement.id), "name": movement.name, "prescription_type": "repetitions"}
+    ])
+    seen_tools = []
+    monkeypatch.setattr(
+        plan_generation, "execute_tool",
+        lambda _db, context, name, arguments: (
+            seen_tools.append((context.user_id, name, arguments)) or '{"goal":"strength"}'
+        ),
+    )
+    calls = []
+    proposal = plan_generation.WeeklyPlanProposal.model_validate(
+        candidate(movement.id).model_dump(mode="json")
+    )
+
+    class FakeResponses:
+        def parse(self, **kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                return SimpleNamespace(
+                    id="resp_tool", status="completed", output=[SimpleNamespace(
+                        type="function_call", call_id="call_1",
+                        name="get_athlete_profile_context", arguments="{}",
+                    )], output_parsed=None,
+                )
+            return SimpleNamespace(
+                id="resp_plan", status="completed", output=[], output_parsed=proposal,
+            )
+
+    class FakeOpenAI:
+        def __init__(self, **_kwargs):
+            self.conversations = SimpleNamespace(create=lambda: SimpleNamespace(id="conv_plan"))
+            self.responses = FakeResponses()
+
+    monkeypatch.setattr(plan_generation, "OpenAI", FakeOpenAI)
+    with factory() as db:
+        item = generation(db, owner, status="reserved")
+        conversation_id = item.conversation_id
+    coach.run_generation(item.id, owner.id)
+    with factory() as db:
+        assert db.get(CoachGeneration, item.id).status == "completed"
+        assert db.scalar(select(func.count(TrainingPlanPreview.id))) == 1
+        assert db.scalar(select(func.count(TrainingPlan.id))) == 0
+        assert db.get(Conversation, conversation_id).openai_conversation_id == "conv_plan"
+    assert len(calls) == 2
+    assert calls[0]["text_format"] is plan_generation.WeeklyPlanProposal
+    assert calls[0]["conversation"] == "conv_plan"
+    assert calls[1]["input"][0]["type"] == "function_call_output"
+    assert seen_tools == [(owner.id, "get_athlete_profile_context", "{}")]
+    assert len(calls[0]["tools"]) == 7
+    assert all(item["type"] == "function" for item in calls[0]["tools"])
+
+
+def test_malformed_provider_plan_cannot_create_preview(plan_db, monkeypatch):
+    factory, owner, _stranger, movement = plan_db
+    evidence(monkeypatch, True)
+    monkeypatch.setattr(plan_generation, "SessionLocal", factory)
+    monkeypatch.setattr(plan_generation, "build_coach_context", lambda *_args: "Goal: strength")
+    monkeypatch.setattr(plan_generation, "_eligible_movements", lambda *_args: [
+        {"id": str(movement.id), "name": movement.name, "prescription_type": "repetitions"}
+    ])
+
+    class FakeOpenAI:
+        def __init__(self, **_kwargs):
+            self.conversations = SimpleNamespace(create=lambda: SimpleNamespace(id="conv_bad"))
+            self.responses = SimpleNamespace(parse=lambda **_kwargs: SimpleNamespace(
+                id="resp_bad", status="completed", output=[],
+                output_parsed=plan_generation.WeeklyPlanProposal.model_validate({
+                    "title": "Bad", "summary": None,
+                    "days": [{"day_index": 1, "label": None, "exercises": [{
+                        "movement_id": str(movement.id), "sets": -1, "reps": 5,
+                        "hold_seconds": None, "rest_seconds": 30, "notes": None,
+                    }]}],
+                }),
+            ))
+
+    monkeypatch.setattr(plan_generation, "OpenAI", FakeOpenAI)
+    with factory() as db:
+        item = generation(db, owner, status="reserved")
+    coach.run_generation(item.id, owner.id)
+    with factory() as db:
+        updated = db.get(CoachGeneration, item.id)
+        assert updated.status == "failed"
+        assert updated.error_code == "invalid_plan"
+        assert db.scalar(select(func.count(TrainingPlanPreview.id))) == 0
+        assert db.scalar(select(func.count(TrainingPlan.id))) == 0

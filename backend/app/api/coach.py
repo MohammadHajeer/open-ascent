@@ -4,6 +4,7 @@ import asyncio
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -13,6 +14,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.api.dependencies.auth import AthleteProfile
 from app.db.database import DbSession, SessionLocal
 from app.models.coach import CoachGeneration, Conversation, Message
+from app.models.training import TrainingPlanPreview
 from app.services import coach as service
 from app.services.coach_live import LiveSnapshot, live_hub
 from app.services.entitlements import UnconfiguredAllowanceError
@@ -30,6 +32,7 @@ TERMINAL = ("completed", "failed", "interrupted")
 class SendInput(BaseModel):
     client_request_id: uuid.UUID
     content: str = Field(min_length=1, max_length=4000)
+    kind: Literal["chat", "plan"] = "chat"
 
 
 class TitleInput(BaseModel):
@@ -93,7 +96,7 @@ def send_first_message(payload: SendInput, profile: AthleteProfile, db: DbSessio
         raise HTTPException(422, "Message cannot be blank.")
     try:
         conversation, generation, created = service.create_and_reserve_generation(
-            db, profile, payload.client_request_id, content
+            db, profile, payload.client_request_id, content, kind=payload.kind
         )
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
@@ -103,7 +106,10 @@ def send_first_message(payload: SendInput, profile: AthleteProfile, db: DbSessio
         UnconfiguredAllowanceError,
     ) as exc:
         raise HTTPException(
-            403, "AI Coach requires an available Pro entitlement."
+            403,
+            "Training plan generation is unavailable or its monthly allowance is exhausted."
+            if payload.kind == "plan"
+            else "AI Coach requires an available Pro entitlement.",
         ) from exc
     if created and generation.status == "reserved":
         service.start_generation(generation.id, profile.id)
@@ -129,6 +135,17 @@ def get_conversation(
             )
         )
     }
+    previews_by_generation = {
+        item.coach_generation_id: item.id
+        for item in db.scalars(
+            select(TrainingPlanPreview)
+            .join(CoachGeneration, CoachGeneration.id == TrainingPlanPreview.coach_generation_id)
+            .where(
+                TrainingPlanPreview.user_id == profile.id,
+                CoachGeneration.conversation_id == conversation.id,
+            )
+        )
+    }
     return {
         **_conversation(conversation),
         "messages": [
@@ -136,6 +153,10 @@ def get_conversation(
                 **_message(item),
                 "generation_id": str(generation_by_message[item.id])
                 if item.id in generation_by_message
+                else None,
+                "plan_preview_id": str(previews_by_generation[generation_by_message[item.id]])
+                if item.id in generation_by_message
+                and generation_by_message[item.id] in previews_by_generation
                 else None,
             }
             for item in service.conversation_messages(db, conversation.id)
@@ -177,6 +198,7 @@ def send_message(
             conversation_id,
             payload.client_request_id,
             payload.content.strip(),
+            kind=payload.kind,
         )
     except LookupError as exc:
         raise HTTPException(404, "Conversation not found.") from exc
@@ -188,7 +210,10 @@ def send_message(
         UnconfiguredAllowanceError,
     ) as exc:
         raise HTTPException(
-            403, "AI Coach requires an available Pro entitlement."
+            403,
+            "Training plan generation is unavailable or its monthly allowance is exhausted."
+            if payload.kind == "plan"
+            else "AI Coach requires an available Pro entitlement.",
         ) from exc
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc

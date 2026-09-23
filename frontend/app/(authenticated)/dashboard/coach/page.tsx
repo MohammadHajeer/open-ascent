@@ -2,7 +2,7 @@ import { CoachWorkspace } from "@/features/coach/coach-workspace";
 
 export default function CoachPage() {
   return (
-    <div className="flex h-[calc(100dvh-12.5rem)] min-h-[25rem] flex-col gap-4 lg:h-[calc(100dvh-10rem)]">
+    <div className="flex h-[calc(100dvh-12.5rem)] min-h-100 flex-col gap-4 lg:h-[calc(100dvh-10rem)]">
       <header className="flex shrink-0 items-end justify-between gap-5">
         <div>
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">Athlete guidance</p>

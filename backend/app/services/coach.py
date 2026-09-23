@@ -111,7 +111,7 @@ def derive_conversation_title(content: str) -> str:
 
 
 def create_and_reserve_generation(
-    db: Session, profile: Profile, request_id: uuid.UUID, content: str
+    db: Session, profile: Profile, request_id: uuid.UUID, content: str, kind: str = "chat"
 ) -> tuple[Conversation, CoachGeneration, bool]:
     """Serialize first sends on the owner row so ambiguous retries reuse one chat."""
     db.scalar(select(Profile.id).where(Profile.id == profile.id).with_for_update())
@@ -132,7 +132,7 @@ def create_and_reserve_generation(
         db.add(existing)
         db.flush()
     generation, created = reserve_generation(
-        db, profile, existing.id, request_id, content
+        db, profile, existing.id, request_id, content, kind=kind
     )
     return existing, generation, created
 
@@ -143,7 +143,10 @@ def reserve_generation(
     conversation_id: uuid.UUID,
     request_id: uuid.UUID,
     content: str,
+    kind: str = "chat",
 ) -> tuple[CoachGeneration, bool]:
+    if kind not in {"chat", "plan"}:
+        raise ValueError("Unknown generation kind.")
     conversation = db.scalar(
         select(Conversation)
         .where(Conversation.id == conversation_id, Conversation.user_id == profile.id)
@@ -159,7 +162,7 @@ def reserve_generation(
     )
     if existing is not None:
         original = db.get(Message, existing.user_message_id)
-        if original.content != content:
+        if original.content != content or existing.kind != kind:
             raise ValueError("Request ID was used for another message.")
         return existing, False
     active = db.scalar(
@@ -199,7 +202,7 @@ def reserve_generation(
             .limit(4)
         )
     )
-    domain = classify_coach_request(content, prior_user_messages)
+    domain = classify_coach_request(content, prior_user_messages) if kind == "chat" else "in_domain"
     domain_reply = (
         DOMAIN_REDIRECT if domain == "unrelated" else
         DOMAIN_CLARIFICATION if domain == "uncertain" else None
@@ -212,12 +215,12 @@ def reserve_generation(
     usage = None
     if safety_reply is None and domain_reply is None:
         fingerprint = hashlib.sha256(
-            f"{conversation_id}:{content}".encode()
+            f"{conversation_id}:{kind}:{content}".encode()
         ).hexdigest()
         usage = reserve_usage(
             db,
             user_id=profile.id,
-            feature_key=FeatureKey.AI_COACH_REPLY,
+            feature_key=(FeatureKey.TRAINING_PLAN_GENERATION if kind == "plan" else FeatureKey.AI_COACH_REPLY),
             operation_key=str(request_id),
             request_fingerprint=fingerprint,
             reservation_expires_at=reservation_expiry(minutes=15),
@@ -252,6 +255,7 @@ def reserve_generation(
         assistant_message_id=assistant.id,
         client_request_id=request_id,
         feature_usage_id=usage.id if usage else None,
+        kind=kind,
         status="completed" if safety_reply or domain_reply else "reserved",
     )
     db.add(generation)
@@ -305,6 +309,16 @@ def run_generation(
     generation_id: uuid.UUID, authenticated_user_id: uuid.UUID | None = None
 ) -> None:
     """One provider attempt. Any uncertain outcome stays visible for recovery."""
+    with SessionLocal() as db:
+        generation = db.get(CoachGeneration, generation_id)
+        if generation is None:
+            return
+        generation_kind = generation.kind
+    if generation_kind == "plan":
+        from app.services.coach_plan_generation import run_plan_generation
+
+        run_plan_generation(generation_id, authenticated_user_id)
+        return
     content = ""
     response_id = None
     request_started = False

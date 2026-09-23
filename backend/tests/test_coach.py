@@ -23,7 +23,12 @@ from app.main import app
 from app.models.coach import CoachGeneration, Conversation, Message
 from app.models.movement import Movement
 from app.models.profile import Profile
-from app.models.training import WorkoutSession, WorkoutSet
+from app.models.training import (
+    TrainingPlan,
+    TrainingPlanPreview,
+    WorkoutSession,
+    WorkoutSet,
+)
 from app.services import coach
 from app.services.coach_context import build_coach_context
 from app.services.coach_domain import DOMAIN_REDIRECT, classify_coach_request
@@ -66,6 +71,8 @@ def session_factory(monkeypatch):
         Message.__table__,
         CoachGeneration.__table__,
         Movement.__table__,
+        TrainingPlan.__table__,
+        TrainingPlanPreview.__table__,
         WorkoutSession.__table__,
         WorkoutSet.__table__,
     ):

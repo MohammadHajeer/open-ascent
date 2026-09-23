@@ -1,4 +1,6 @@
 export type Conversation = { id: string; title: string; created_at: string; updated_at: string };
-export type CoachMessage = { id: string; role: "user" | "assistant"; content: string; status: "streaming" | "completed" | "failed" | "interrupted"; created_at: string; generation_id: string | null };
+export type CoachMessage = { id: string; role: "user" | "assistant"; content: string; status: "streaming" | "completed" | "failed" | "interrupted"; created_at: string; generation_id: string | null; plan_preview_id?: string | null };
 export type ConversationDetail = Conversation & { messages: CoachMessage[] };
 export type Generation = { id: string; status: CoachMessage["status"] | "reserved" | "requesting"; content: string; error_code: string | null };
+export type PlanExercise = { movement_id: string; movement_name: string; movement_slug: string | null; sets: number; reps: number | null; hold_seconds: number | null; rest_seconds: number; notes: string | null };
+export type PlanPreview = { id: string; saved_plan_id: string | null; title: string; summary: string | null; days: { day_index: number; label: string | null; exercises: PlanExercise[] }[] };

@@ -85,6 +85,7 @@ class CoachGeneration(TimestampMixin, Base):
             "status IN ('reserved', 'requesting', 'streaming', 'completed', 'failed', 'interrupted')",
             name="ck_coach_generations_status",
         ),
+        CheckConstraint("kind IN ('chat', 'plan')", name="ck_coach_generations_kind"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -119,5 +120,8 @@ class CoachGeneration(TimestampMixin, Base):
     )
     status: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'reserved'")
+    )
+    kind: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'chat'")
     )
     error_code: Mapped[str | None] = mapped_column(Text, nullable=True)

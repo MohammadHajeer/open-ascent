@@ -1,6 +1,7 @@
 import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CoachMarkdown } from "./coach-markdown";
+import { PlanPreviewCard } from "./plan-preview";
 import type { CoachMessage } from "./types";
 
 export type DisplayMessage = CoachMessage & { delivery?: "sending" | "accepted" | "failed" };
@@ -24,6 +25,7 @@ export function CoachMessageRow({ message, onRetry }: { message: DisplayMessage;
             {message.status === "streaming" ? <><span className="size-1.5 animate-pulse rounded-full bg-primary" />Thinking…</> : "No response was saved."}
           </p>
         )}
+        {!athlete && message.plan_preview_id && <PlanPreviewCard previewId={message.plan_preview_id} />}
         {message.delivery === "sending" && <p className="mt-1 text-xs text-foreground-faint">Sending…</p>}
         {message.delivery === "accepted" && <p className="mt-1 text-xs text-foreground-faint">Saving response…</p>}
         {message.delivery === "failed" && (

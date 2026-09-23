@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { CoachWorkspace } from "./coach-workspace";
 import { CoachMarkdown } from "./coach-markdown";
 import { CoachComposer } from "./coach-composer";
+import { PlanPreviewCard } from "./plan-preview";
 import { ConversationSidebar, shortConversationTitle } from "./conversation-sidebar";
 import { MessageList } from "./message-list";
 import { useCoachReveal } from "./use-coach-reveal";
@@ -16,12 +17,15 @@ vi.mock("./api", () => ({
   sendMessage: vi.fn(),
   renameConversation: vi.fn(),
   streamGeneration: vi.fn(),
+  getPlanPreview: vi.fn(),
+  savePlanPreview: vi.fn(),
 }));
 
 const first = { id: "first", title: "Improving Pull-Ups", created_at: "2026-09-23", updated_at: "2026-09-23" };
 const second = { id: "second", title: "Front Lever", created_at: "2026-09-22", updated_at: "2026-09-22" };
 const user = { id: "user-1", role: "user" as const, content: "Help my Pull-Ups", status: "completed" as const, created_at: "2026-09-23", generation_id: null };
 const assistant = { id: "assistant-1", role: "assistant" as const, content: "", status: "streaming" as const, created_at: "2026-09-23", generation_id: "generation-1" };
+const planPreview = { id: "preview-1", saved_plan_id: null, title: "Weekly strength", summary: "A modest week.", days: [{ day_index: 1, label: "Strength", exercises: [{ movement_id: "movement-1", movement_name: "Pull-Up", movement_slug: "pull-up", sets: 3, reps: 5, hold_seconds: null, rest_seconds: 90, notes: null }] }] };
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -38,6 +42,8 @@ beforeEach(() => {
   vi.mocked(api.sendMessage).mockResolvedValue({ generation_id: "generation-1", created: true });
   vi.mocked(api.renameConversation).mockResolvedValue(first);
   vi.mocked(api.streamGeneration).mockImplementation(async () => {});
+  vi.mocked(api.getPlanPreview).mockResolvedValue(planPreview);
+  vi.mocked(api.savePlanPreview).mockResolvedValue({ id: "saved-1", title: "Weekly strength", saved_at: "2026-09-23" });
   vi.stubGlobal("crypto", { randomUUID: () => "00000000-0000-4000-8000-000000000001" });
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
@@ -223,6 +229,37 @@ describe("Coach workspace", () => {
     expect(onSend).not.toHaveBeenCalled();
     fireEvent.keyDown(screen.getByLabelText("Message your coach"), { key: "Enter" });
     expect(onSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("requests a structured plan through the separate plan action", async () => {
+    render(<CoachWorkspace />);
+    await screen.findByText("Ask your Open Ascent Coach");
+    fireEvent.change(screen.getByLabelText("Message your coach"), { target: { value: "Build my week" } });
+    fireEvent.click(screen.getByRole("button", { name: "Generate weekly plan" }));
+    await waitFor(() => expect(api.sendFirstMessage).toHaveBeenCalledWith("Build my week", expect.any(String), "plan"));
+  });
+
+  it("shows a plan preview without saving, then saves only on explicit click", async () => {
+    render(<PlanPreviewCard previewId="preview-1" />);
+    expect(await screen.findByText("Weekly strength")).toBeTruthy();
+    expect(screen.getByText("Preview · not saved")).toBeTruthy();
+    expect(screen.getByText(/3 sets × 5 reps/)).toBeTruthy();
+    expect(api.savePlanPreview).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save Plan" }));
+    await waitFor(() => expect(api.savePlanPreview).toHaveBeenCalledWith("preview-1"));
+    expect(await screen.findByText("Saved plan")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Saved" }).hasAttribute("disabled")).toBe(true);
+    expect(api.savePlanPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the preview unsaved when save-time validation fails", async () => {
+    vi.mocked(api.savePlanPreview).mockRejectedValue(new Error("Readiness evidence is no longer sufficient."));
+    render(<PlanPreviewCard previewId="preview-1" />);
+    await screen.findByText("Weekly strength");
+    fireEvent.click(screen.getByRole("button", { name: "Save Plan" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Readiness evidence is no longer sufficient.");
+    expect(screen.getByText("Preview · not saved")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save Plan" }).hasAttribute("disabled")).toBe(false);
   });
 
   it("renders partial and complete Markdown without executing HTML", () => {

@@ -16,7 +16,12 @@ from app.models.subscription import (
     SubscriptionPlan,
     UserSubscription,
 )
-from app.models.training import TrainingPlan, WorkoutSession, WorkoutSet
+from app.models.training import (
+    TrainingPlan,
+    TrainingPlanPreview,
+    WorkoutSession,
+    WorkoutSet,
+)
 
 __all__ = [
     "AIRun",
@@ -34,6 +39,7 @@ __all__ = [
     "StripeWebhookEvent",
     "SubscriptionPlan",
     "TrainingPlan",
+    "TrainingPlanPreview",
     "UserSubscription",
     "WorkoutSession",
     "WorkoutSet",
