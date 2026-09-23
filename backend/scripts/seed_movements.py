@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
@@ -496,6 +497,54 @@ MOVEMENTS = [
     },
 ]
 
+# A completed, target-matched repetition is necessary progression evidence for
+# these variants. It does not replace the qualitative prerequisites above.
+# Existing safety guides receive the same additions in the content migration.
+CURATED_READINESS_RULES = {
+    "close-grip-pull-up": (
+        ("one_verified_pull_up_rep", "pull-up", "At least one analyzer-confirmed Pull-Up repetition"),
+    ),
+    "wide-grip-pull-up": (
+        ("one_verified_pull_up_rep", "pull-up", "At least one analyzer-confirmed Pull-Up repetition"),
+    ),
+    "high-pull-up": (
+        ("one_verified_pull_up_rep", "pull-up", "At least one analyzer-confirmed Pull-Up repetition"),
+    ),
+    "muscle-up": (
+        ("one_verified_pull_up_rep", "pull-up", "At least one analyzer-confirmed Pull-Up repetition"),
+        ("one_verified_high_pull_up_rep", "high-pull-up", "At least one analyzer-confirmed High Pull-Up repetition"),
+    ),
+}
+
+
+def curated_documentation(db: Session, seed: dict) -> MovementSafetyContent:
+    content = deepcopy(seed["documentation"])
+    rules = CURATED_READINESS_RULES.get(seed["slug"], ())
+    if not rules:
+        return MovementSafetyContent.model_validate(content)
+
+    content["readiness_rules"] = []
+    for code, source_slug, requirement in rules:
+        source = db.scalar(select(Movement).where(Movement.slug == source_slug))
+        if source is None or source.prescription_type != "repetitions":
+            raise ValueError(f"Curated rule source is unavailable: {source_slug}")
+        prerequisite_index = len(content["prerequisites"])
+        content["prerequisites"].append(requirement)
+        content["readiness_rules"].append(
+            {
+                "code": code,
+                "type": "movement_performance",
+                "prerequisite_index": prerequisite_index,
+                "movement_id": source.id,
+                "metric": "reps",
+                "operator": ">=",
+                "value": 1,
+                "max_age_days": 365,
+                "accepted_sources": ["uploaded_analysis"],
+            }
+        )
+    return MovementSafetyContent.model_validate(content)
+
 
 def next_documentation_version(
     db: Session,
@@ -574,13 +623,13 @@ def seed_movement(
         print("  Draft documentation already exists; leaving documentation untouched.")
         return movement_created, documentation_created
 
-    validated_content = MovementSafetyContent.model_validate(seed["documentation"])
+    validated_content = curated_documentation(db, seed)
 
     documentation = MovementDocumentation(
         movement_id=movement.id,
         version=next_documentation_version(db, movement.id),
         status="published",
-        content=validated_content.model_dump(exclude_none=True),
+        content=validated_content.model_dump(mode="json", exclude_none=True),
         created_by=None,
         published_by=None,
         published_at=datetime.now(UTC),

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from importlib.util import module_from_spec, spec_from_file_location
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -27,6 +29,7 @@ from app.services.movement_documentation import (
 )
 from app.services.readiness import ReadinessService
 from app.services.readiness_evidence import ReadinessEvidenceBuilder
+from scripts.seed_movements import CURATED_READINESS_RULES, MOVEMENTS, seed_movement
 
 
 @compiles(JSONB, "sqlite")
@@ -161,6 +164,50 @@ def logged_set(db, profile: Profile, item: Movement, *, source, reps=None,
     return result
 
 
+def analysis_result(valid_count: int, *, target_match: bool | None = True,
+                    partial_count: int = 0) -> dict:
+    return {
+        "outcome": "completed" if valid_count else "zero_valid_reps",
+        "valid_rep_count": valid_count,
+        "reps": [
+            {"outcome": "valid", "target_match": target_match}
+            for _ in range(valid_count)
+        ] + [
+            {"outcome": "partial", "target_match": target_match}
+            for _ in range(partial_count)
+        ],
+    }
+
+
+def analyzed_set(db, profile: Profile, item: Movement, documentation_id: uuid.UUID,
+                 *, valid_count: int, target_match: bool | None = True,
+                 partial_count: int = 0, intent: str = "normal_training") -> Analysis:
+    now = datetime.now(UTC)
+    analysis = Analysis(
+        id=uuid.uuid4(), user_id=profile.id, movement_id=item.id,
+        family_key=item.family_key, owner_kind="authenticated",
+        status="completed", stage="completed", execution_intent=intent,
+        safety_documentation_id=documentation_id,
+        safety_ack_version="test", safety_acknowledged_at=now,
+        reservation_operation_key=str(uuid.uuid4()),
+        request_fingerprint="test", reservation_expires_at=now + timedelta(days=1),
+        completed_at=now,
+        valid_rep_count=valid_count,
+        terminal_outcome="completed" if valid_count else "zero_valid_reps",
+        result=analysis_result(
+            valid_count, target_match=target_match, partial_count=partial_count
+        ),
+        progress_snapshot={}, ai_feedback_status="skipped",
+    )
+    db.add(analysis)
+    db.flush()
+    logged_set(
+        db, profile, item, source="uploaded_analysis",
+        reps=max(1, valid_count), analysis_id=analysis.id, at=now,
+    )
+    return analysis
+
+
 def result(db, profile: Profile, target: Movement, *, now=None):
     evidence = ReadinessEvidenceBuilder.build(
         db, user_id=profile.id, movement_id=target.id, now=now,
@@ -247,6 +294,8 @@ def test_uploaded_analysis_uses_analyzer_count_not_editable_set_count(db):
         reservation_expires_at=now + timedelta(days=1),
         completed_at=now,
         valid_rep_count=5,
+        terminal_outcome="completed",
+        result=analysis_result(5),
         progress_snapshot={},
         ai_feedback_status="skipped",
     )
@@ -258,6 +307,7 @@ def test_uploaded_analysis_uses_analyzer_count_not_editable_set_count(db):
     )
     assert result(db, profile, target, now=now)[1].status is ReadinessStatus.UNKNOWN
     analysis.valid_rep_count = 7
+    analysis.result = analysis_result(7)
     evidence, decision = result(db, profile, target, now=now)
     assert decision.status is ReadinessStatus.PASS
     assert evidence[0].observed_value == 7
@@ -289,6 +339,8 @@ def test_another_athletes_linked_analysis_does_not_count(db):
         reservation_expires_at=now + timedelta(days=1),
         completed_at=now,
         valid_rep_count=10,
+        terminal_outcome="completed",
+        result=analysis_result(10),
         progress_snapshot={},
         ai_feedback_status="skipped",
     )
@@ -301,12 +353,147 @@ def test_another_athletes_linked_analysis_does_not_count(db):
     assert result(db, owner, target, now=now)[1].status is ReadinessStatus.UNKNOWN
 
 
+def test_uploaded_analysis_requires_positive_canonical_target_match(db):
+    profile = athlete(db)
+    target = movement(db)
+    doc = documentation(db, target, readiness_rule=rule(target))
+    analysis = analyzed_set(db, profile, target, doc.id, valid_count=3,
+                            target_match=False)
+    assert result(db, profile, target)[1].status is ReadinessStatus.UNKNOWN
+    analysis.result = analysis_result(3, target_match=None)
+    assert result(db, profile, target)[1].status is ReadinessStatus.UNKNOWN
+    analysis.result = analysis_result(3, target_match=True)
+    evidence, decision = result(db, profile, target)
+    assert decision.status is ReadinessStatus.UNKNOWN  # threshold is five
+    assert evidence[0].satisfied is None  # ordinary training is not a failed max test
+    analysis.terminal_outcome = "insufficient_evidence"
+    analysis.result = {**analysis_result(3), "outcome": "insufficient_evidence"}
+    assert result(db, profile, target)[0][0].satisfied is None
+
+
+def test_target_matched_max_test_below_threshold_fails(db):
+    profile = athlete(db)
+    target = movement(db)
+    doc = documentation(db, target, readiness_rule=rule(target, value=1))
+    analyzed_set(db, profile, target, doc.id, valid_count=0, partial_count=1,
+                 intent="max_test")
+    evidence, decision = result(db, profile, target)
+    assert decision.status is ReadinessStatus.FAIL
+    assert evidence[0].source == "uploaded_analysis"
+    assert evidence[0].observed_value == 0
+
+
 def test_live_coach_source_is_not_yet_a_verified_measurement(db):
     profile = athlete(db)
     target = movement(db)
     documentation(db, target, readiness_rule=rule(target, sources=["live_coach"]))
     logged_set(db, profile, target, source="live_coach", reps=12)
     assert result(db, profile, target)[1].status is ReadinessStatus.UNKNOWN
+
+
+def test_curated_seed_guides_preserve_unstructured_safety_prerequisites(db):
+    for seed in MOVEMENTS:
+        seed_movement(db, seed)
+    profile = athlete(db)
+    assert set(CURATED_READINESS_RULES) == {
+        "close-grip-pull-up", "wide-grip-pull-up", "high-pull-up", "muscle-up"
+    }
+    for seed in MOVEMENTS:
+        target = db.query(Movement).filter_by(slug=seed["slug"]).one()
+        doc = db.query(MovementDocumentation).filter_by(
+            movement_id=target.id, status="published"
+        ).one()
+        safety = MovementSafetyContent.model_validate(doc.content)
+        original = seed["documentation"]["prerequisites"]
+        assert safety.prerequisites[:len(original)] == original
+        expected = CURATED_READINESS_RULES.get(seed["slug"], ())
+        assert len(safety.readiness_rules or []) == len(expected)
+        assert len(safety.prerequisites) == len(original) + len(expected)
+        for index, (code, source_slug, requirement) in enumerate(expected):
+            rule_entry = safety.readiness_rules[index]
+            source = db.query(Movement).filter_by(slug=source_slug).one()
+            assert rule_entry.code == code
+            assert rule_entry.prerequisite_index == len(original) + index
+            assert rule_entry.movement_id == source.id
+            assert rule_entry.metric == "reps"
+            assert rule_entry.value == 1
+            assert rule_entry.max_age_days == 365
+            assert rule_entry.accepted_sources == ["uploaded_analysis"]
+            assert safety.prerequisites[rule_entry.prerequisite_index] == requirement
+        evidence, decision = result(db, profile, target)
+        assert all(item.satisfied is None for item in evidence)
+        assert decision.status is ReadinessStatus.UNKNOWN
+
+
+def test_curated_content_migration_matches_seed_templates():
+    path = Path(__file__).parents[1] / "alembic" / "versions" / (
+        "c7e8f9a0b123_curated_readiness_rules.py"
+    )
+    spec = spec_from_file_location("curated_readiness_migration", path)
+    assert spec is not None and spec.loader is not None
+    migration = module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    assert set(migration.CURATED) == set(CURATED_READINESS_RULES)
+    seeds = {item["slug"]: item for item in MOVEMENTS}
+    for slug, (expected_prose, templates) in migration.CURATED.items():
+        assert expected_prose == seeds[slug]["documentation"]["prerequisites"]
+        assert tuple(templates) == CURATED_READINESS_RULES[slug]
+
+
+@pytest.mark.parametrize("target_slug", [
+    "close-grip-pull-up", "wide-grip-pull-up", "high-pull-up", "muscle-up"
+])
+def test_curated_pull_up_rule_accepts_only_target_matched_upload(db, target_slug):
+    for seed in MOVEMENTS:
+        seed_movement(db, seed)
+    profile = athlete(db)
+    target = db.query(Movement).filter_by(slug=target_slug).one()
+    pull_up = db.query(Movement).filter_by(slug="pull-up").one()
+    pull_doc = db.query(MovementDocumentation).filter_by(
+        movement_id=pull_up.id, status="published"
+    ).one()
+    manual = logged_set(db, profile, pull_up, source="manual", reps=10)
+    evidence, decision = result(db, profile, target)
+    assert evidence[-len(CURATED_READINESS_RULES[target_slug])].satisfied is None
+    assert decision.status is ReadinessStatus.UNKNOWN
+    manual.source = "self_reported"
+    assert result(db, profile, target)[1].status is ReadinessStatus.UNKNOWN
+
+    analysis = analyzed_set(db, profile, pull_up, pull_doc.id,
+                            valid_count=1, target_match=False)
+    assert result(db, profile, target)[1].status is ReadinessStatus.UNKNOWN
+    analysis.result = analysis_result(1, target_match=True)
+    evidence, decision = result(db, profile, target)
+    assert evidence[-len(CURATED_READINESS_RULES[target_slug])].satisfied is True
+    assert evidence[-len(CURATED_READINESS_RULES[target_slug])].source == "uploaded_analysis"
+    # Qualitative safety prerequisites still have no deterministic proof.
+    assert decision.status is ReadinessStatus.UNKNOWN
+
+    if target_slug == "muscle-up":
+        high = db.query(Movement).filter_by(slug="high-pull-up").one()
+        high_doc = db.query(MovementDocumentation).filter_by(
+            movement_id=high.id, status="published"
+        ).one()
+        analyzed_set(db, profile, high, high_doc.id, valid_count=1)
+        evidence, decision = result(db, profile, target)
+        assert [item.satisfied for item in evidence[-2:]] == [True, True]
+        assert decision.status is ReadinessStatus.UNKNOWN
+
+
+def test_curated_rule_fails_on_verified_zero_rep_max_test(db):
+    for seed in MOVEMENTS:
+        seed_movement(db, seed)
+    profile = athlete(db)
+    target = db.query(Movement).filter_by(slug="close-grip-pull-up").one()
+    pull_up = db.query(Movement).filter_by(slug="pull-up").one()
+    pull_doc = db.query(MovementDocumentation).filter_by(
+        movement_id=pull_up.id, status="published"
+    ).one()
+    analyzed_set(db, profile, pull_up, pull_doc.id, valid_count=0,
+                 partial_count=1, intent="max_test")
+    evidence, decision = result(db, profile, target)
+    assert evidence[-1].satisfied is False
+    assert decision.status is ReadinessStatus.FAIL
 
 
 def test_duration_rule_uses_hold_not_reps(db):

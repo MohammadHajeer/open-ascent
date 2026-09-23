@@ -40,6 +40,41 @@ def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
+def _target_matched_rep_count(analysis: Analysis) -> int | None:
+    """Count only analyzer-valid reps positively matched to the canonical target."""
+    result = analysis.result
+    if not isinstance(result, dict) or not isinstance(result.get("reps"), list):
+        return None
+    reps = result["reps"]
+    if not reps or any(not isinstance(rep, dict) for rep in reps):
+        return None
+    if (
+        type(result.get("valid_rep_count")) is not int
+        or result["valid_rep_count"] != analysis.valid_rep_count
+        or result.get("outcome") != analysis.terminal_outcome
+        or analysis.terminal_outcome not in {"completed", "zero_valid_reps"}
+        or sum(rep.get("outcome") == "valid" for rep in reps)
+        != analysis.valid_rep_count
+    ):
+        return None
+    matched = sum(
+        rep.get("outcome") == "valid" and rep.get("target_match") is True
+        for rep in reps
+    )
+    if matched and analysis.terminal_outcome == "completed":
+        return matched
+    # An explicit maximum attempt with a positively recognized target can
+    # disprove the threshold. Unknown target classification cannot.
+    if (
+        analysis.execution_intent == "max_test"
+        and analysis.terminal_outcome == "zero_valid_reps"
+        and any(rep.get("target_match") is True for rep in reps)
+        and all(type(rep.get("target_match")) is bool for rep in reps)
+    ):
+        return 0
+    return None
+
+
 class ReadinessEvidenceBuilder:
     @staticmethod
     def build(
@@ -166,8 +201,8 @@ class ReadinessEvidenceBuilder:
                     )
 
         if "uploaded_analysis" in accepted and rule.metric == "reps":
-            # WorkoutSet values are editable. Only the linked analyzer's
-            # deterministic valid_rep_count is measured evidence.
+            # WorkoutSet values are editable. The aggregate valid_rep_count
+            # also includes reps that may not match the requested variation.
             rows = db.execute(
                 select(Analysis)
                 .join(WorkoutSet, WorkoutSet.analysis_id == Analysis.id)
@@ -187,9 +222,12 @@ class ReadinessEvidenceBuilder:
                 )
             )
             for analysis in rows.scalars():
+                matched_count = _target_matched_rep_count(analysis)
+                if matched_count is None:
+                    continue
                 observations.append(
                     _Observation(
-                        value=Decimal(analysis.valid_rep_count),
+                        value=Decimal(matched_count),
                         source="uploaded_analysis",
                         observed_at=_utc(analysis.completed_at),
                         reference_id=analysis.id,
