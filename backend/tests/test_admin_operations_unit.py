@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.admin_operations import _health, _safe_failure
+from app.api.admin_operations import _health, _safe_failure, overview
 from app.api.dependencies.auth import get_current_profile, get_current_user_id
 from app.db.database import get_db
 from app.main import app
@@ -45,6 +45,48 @@ def test_failure_copy_is_allowlisted() -> None:
         _safe_failure("explanation", "private traceback")
         == "Explanation processing failed or timed out."
     )
+
+
+def test_overview_fills_missing_utc_throughput_days() -> None:
+    now = datetime(2026, 9, 23, 12, tzinfo=UTC)
+
+    class Db:
+        def __init__(self):
+            self.values = iter([now, 0, 0, 4, 1])
+            self.rows = iter(
+                [
+                    [("completed", now.date(), 4), ("failed", now.date(), 1)],
+                    [("athlete", 2)],
+                    [("completed", 4)],
+                    [("completed", 4)],
+                ]
+            )
+
+        def scalar(self, _statement):
+            return next(self.values)
+
+        def execute(self, _statement):
+            class Rows(list):
+                def all(self):
+                    return self
+
+            return Rows(next(self.rows))
+
+        def scalars(self, _statement):
+            return SimpleNamespace(all=list)
+
+    result = overview(Db(), SimpleNamespace(app_role="admin"))
+    assert len(result["throughput_daily"]) == 7
+    assert result["throughput_daily"][0] == {
+        "date": "2026-09-17",
+        "completed": 0,
+        "failed": 0,
+    }
+    assert result["throughput_daily"][-1] == {
+        "date": "2026-09-23",
+        "completed": 4,
+        "failed": 1,
+    }
 
 
 def test_exhausted_analysis_becomes_terminal(monkeypatch: pytest.MonkeyPatch) -> None:

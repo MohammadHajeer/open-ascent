@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
 
-from app.api.admin_management import _safe_error
+from app.api.admin_management import _safe_error, management_summary
 from app.api.dependencies.auth import get_current_profile, get_current_user_id
 from app.db.database import get_db
 from app.main import app
@@ -18,6 +18,7 @@ from app.services.entitlements import _effective_pro_users_query
     "method,path",
     [
         ("get", "/admin/management/users"),
+        ("get", "/admin/management/summary"),
         ("get", f"/admin/management/users/{uuid.uuid4()}"),
         ("get", "/admin/management/analyses"),
         ("get", f"/admin/management/analyses/{uuid.uuid4()}"),
@@ -77,3 +78,48 @@ def test_effective_tier_batch_query_uses_shared_provider_predicate() -> None:
     assert "user_subscriptions.provider_status" in sql
     assert "user_subscriptions.last_verified_at" in sql
     assert "user_subscriptions.user_id IN" in sql
+
+
+def test_management_summary_uses_aggregate_counts_and_current_usage() -> None:
+    class Db:
+        def __init__(self):
+            self.rows = iter(
+                [
+                    [("athlete", 8), ("admin", 2)],
+                    [
+                        ("video_analysis", "consumed", 12),
+                        ("video_analysis", "reserved", 3),
+                    ],
+                ]
+            )
+            self.values = iter([6, 3, 5, 2])
+
+        def execute(self, _statement):
+            return next(self.rows)
+
+        def scalar(self, _statement):
+            return next(self.values)
+
+    result = management_summary(Db(), SimpleNamespace(app_role="admin"))
+    assert result["users"] == {
+        "total": 10,
+        "athletes": 8,
+        "admins": 2,
+        "onboarded_athletes": 6,
+    }
+    assert result["tiers"] == {"pro_athletes": 3, "free_athletes": 5}
+    assert result["usage"]["video_analysis"] == {"consumed": 12, "reserved": 3}
+    assert result["plans"] == {"total": 5, "saved_30d": 2}
+
+
+def test_unfiltered_pro_tier_aggregate_keeps_provider_predicate() -> None:
+    from datetime import UTC, datetime
+
+    sql = str(
+        _effective_pro_users_query(None, datetime.now(UTC)).compile(
+            dialect=postgresql.dialect()
+        )
+    )
+    assert "user_subscriptions.provider_status" in sql
+    assert "user_subscriptions.last_verified_at" in sql
+    assert "user_subscriptions.user_id IN" not in sql

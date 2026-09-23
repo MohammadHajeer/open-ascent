@@ -10,6 +10,7 @@ export type UsageRow = { user_id: string; display_name: string; effective_plan: 
 export type UsagePage = Page<UsageRow> & { usage_window: { start: string; end: string } };
 export type PlanRow = { id: string; user_id: string; owner_name: string; title: string; saved_at: string };
 export type PlanDetail = PlanRow & { document_status: "valid" | "invalid"; plan_document: { title: string; summary: string | null; days: { day_index: number; label: string | null; exercises: { movement_id: string; sets: number; reps: number | null; hold_seconds: number | null; rest_seconds: number; notes: string | null }[] }[] } | null };
+export type ManagementSummary = { as_of: string; users: { total: number; athletes: number; admins: number; onboarded_athletes: number }; tiers: { free_athletes: number; pro_athletes: number }; usage_window: { start: string; end: string }; usage: UsageTotals; plans: { total: number; saved_30d: number } };
 
 const params = (values: Record<string, string | number | undefined>) => {
   const query = new URLSearchParams();
@@ -24,3 +25,4 @@ export const getAnalysis = (id: string) => authApiFetch<AnalysisDetail>(`/admin/
 export const listUsage = (page: number, q: string) => authApiFetch<UsagePage>(`/admin/management/usage?${params({ page, page_size: 20, q })}`);
 export const listPlans = (page: number) => authApiFetch<Page<PlanRow>>(`/admin/management/plans?${params({ page, page_size: 20 })}`);
 export const getPlan = (id: string) => authApiFetch<PlanDetail>(`/admin/management/plans/${encodeURIComponent(id)}`);
+export const getManagementSummary = () => authApiFetch<ManagementSummary>("/admin/management/summary");

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import timedelta
+from datetime import UTC, datetime, time, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -207,6 +207,26 @@ def _page(db, *, kind, status, failures_only, page, page_size):
 def overview(db: DbSession, _admin: AdminProfile):
     now = _now(db)
     since = now - timedelta(hours=24)
+    first_day = now.astimezone(UTC).date() - timedelta(days=6)
+    window_start = datetime.combine(first_day, time.min, UTC)
+    completed_day = func.date(func.timezone("UTC", Analysis.completed_at))
+    failed_day = func.date(func.timezone("UTC", Analysis.failed_at))
+    daily = {
+        first_day + timedelta(days=offset): {"completed": 0, "failed": 0}
+        for offset in range(7)
+    }
+    for status, day, total in db.execute(
+        union_all(
+            select(literal("completed"), completed_day, func.count())
+            .where(Analysis.completed_at >= window_start)
+            .group_by(completed_day),
+            select(literal("failed"), failed_day, func.count())
+            .where(Analysis.failed_at >= window_start)
+            .group_by(failed_day),
+        )
+    ):
+        if day in daily:
+            daily[day][status] = total
     profile_counts = dict(
         db.execute(
             select(Profile.app_role, func.count()).group_by(Profile.app_role)
@@ -300,6 +320,9 @@ def overview(db: DbSession, _admin: AdminProfile):
             )
             or 0,
         },
+        "throughput_daily": [
+            {"date": day.isoformat(), **counts} for day, counts in daily.items()
+        ],
         "thresholds": {
             "heartbeat_seconds": HEARTBEAT_SECONDS,
             "stale_after_seconds": STALE_AFTER_SECONDS,

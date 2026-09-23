@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -16,7 +16,11 @@ from app.models.profile import Profile
 from app.models.subscription import FeatureUsage, PlanEntitlement, SubscriptionPlan
 from app.models.training import TrainingPlan
 from app.schemas.training_plan import WeeklyPlanCandidate
-from app.services.entitlements import effective_pro_user_ids, resolve_effective_plan
+from app.services.entitlements import (
+    _effective_pro_users_query,
+    effective_pro_user_ids,
+    resolve_effective_plan,
+)
 from app.services.feature_usage import calendar_month_window
 
 router = APIRouter(prefix="/admin/management", tags=["admin management"])
@@ -60,6 +64,78 @@ def _usage_by_user(db, user_ids: list[uuid.UUID], start: datetime, end: datetime
             feature, {"consumed": 0, "reserved": 0}
         )[status] = int(units)
     return result
+
+
+@router.get("/summary")
+def management_summary(db: DbSession, _admin: AdminProfile):
+    now = datetime.now(UTC)
+    start, end = calendar_month_window(now)
+    roles = dict(
+        db.execute(select(Profile.app_role, func.count()).group_by(Profile.app_role))
+    )
+    onboarded = (
+        db.scalar(
+            select(func.count())
+            .select_from(Profile)
+            .where(
+                Profile.app_role == "athlete",
+                Profile.onboarding_completed_at.is_not(None),
+            )
+        )
+        or 0
+    )
+    effective_pro = _effective_pro_users_query(None, now).subquery()
+    pro_athletes = (
+        db.scalar(
+            select(func.count())
+            .select_from(Profile)
+            .where(
+                Profile.app_role == "athlete",
+                Profile.id.in_(select(effective_pro.c.user_id)),
+            )
+        )
+        or 0
+    )
+    usage = {}
+    for feature, status, units in db.execute(
+        select(
+            FeatureUsage.feature_key, FeatureUsage.status, func.sum(FeatureUsage.units)
+        )
+        .join(Profile, Profile.id == FeatureUsage.user_id)
+        .where(
+            Profile.app_role == "athlete",
+            FeatureUsage.window_start == start,
+            FeatureUsage.window_end == end,
+            FeatureUsage.status.in_(["consumed", "reserved"]),
+        )
+        .group_by(FeatureUsage.feature_key, FeatureUsage.status)
+    ):
+        usage.setdefault(feature, {"consumed": 0, "reserved": 0})[status] = int(units)
+    plans_total = db.scalar(select(func.count()).select_from(TrainingPlan)) or 0
+    plans_recent = (
+        db.scalar(
+            select(func.count())
+            .select_from(TrainingPlan)
+            .where(TrainingPlan.saved_at >= now - timedelta(days=30))
+        )
+        or 0
+    )
+    return {
+        "as_of": now,
+        "users": {
+            "total": sum(roles.values()),
+            "athletes": roles.get("athlete", 0),
+            "admins": roles.get("admin", 0),
+            "onboarded_athletes": onboarded,
+        },
+        "tiers": {
+            "pro_athletes": pro_athletes,
+            "free_athletes": roles.get("athlete", 0) - pro_athletes,
+        },
+        "usage_window": {"start": start, "end": end},
+        "usage": usage,
+        "plans": {"total": plans_total, "saved_30d": plans_recent},
+    }
 
 
 @router.get("/users")

@@ -130,14 +130,15 @@ def resolve_effective_plan(
     return PlanCode.PRO if pro == user_id else PlanCode.FREE
 
 
-def _effective_pro_users_query(user_ids: list[uuid.UUID], evaluated_at: datetime):
+def _effective_pro_users_query(
+    user_ids: list[uuid.UUID] | None, evaluated_at: datetime
+):
     """Shared provider-backed tier predicate for one or many users."""
-    return (
+    query = (
         select(UserSubscription.user_id)
         .select_from(SubscriptionPlan)
         .join(UserSubscription, UserSubscription.plan_id == SubscriptionPlan.id)
         .where(
-            UserSubscription.user_id.in_(user_ids),
             SubscriptionPlan.code == PlanCode.PRO.value,
             SubscriptionPlan.is_active.is_(True),
             SubscriptionPlan.stripe_price_id.is_not(None),
@@ -154,6 +155,11 @@ def _effective_pro_users_query(user_ids: list[uuid.UUID], evaluated_at: datetime
             UserSubscription.current_period_start <= evaluated_at,
             evaluated_at < UserSubscription.current_period_end,
         )
+    )
+    return (
+        query.where(UserSubscription.user_id.in_(user_ids))
+        if user_ids is not None
+        else query
     )
 
 
