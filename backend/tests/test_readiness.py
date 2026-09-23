@@ -75,6 +75,20 @@ def test_missing_evidence_results_in_unknown_not_pass() -> None:
     assert result.retrospective_analysis_allowed is True
 
 
+def test_failed_structured_gate_takes_precedence_over_missing_gate() -> None:
+    result = ReadinessService.evaluate(
+        evidence=[
+            ReadinessEvidence(requirement="Observed pull-up", satisfied=False),
+            ReadinessEvidence(requirement="Observed high pull-up", satisfied=None),
+        ]
+    )
+
+    assert result.status is ReadinessStatus.FAIL
+    assert result.prescription_allowed is False
+    assert result.failed_requirements == ["Observed pull-up"]
+    assert result.missing_evidence == ["Observed high pull-up"]
+
+
 def test_no_evidence_results_in_unknown() -> None:
     result = ReadinessService.evaluate(
         evidence=[],

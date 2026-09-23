@@ -38,8 +38,9 @@ export function ReadinessSection({
             </h2>
 
             <p className="mt-6 max-w-lg text-sm leading-6 text-visual-foreground/62 sm:text-base sm:leading-7">
-              These requirements help the platform avoid encouraging a movement
-              when the necessary readiness evidence is missing or unsuitable.
+              Review these movement-specific safety notes before training.
+              Measurable prerequisites can be checked against recorded evidence;
+              the remaining notes are guidance.
             </p>
 
             {content.easier_option ? (
@@ -66,7 +67,7 @@ export function ReadinessSection({
                   </span>
                   <div>
                     <span className="font-mono text-[0.54rem] tracking-widest text-primary uppercase">
-                      Requirement {String(index + 1).padStart(2, "0")}
+                      Prerequisite {String(index + 1).padStart(2, "0")}
                     </span>
                     <p className="mt-2 text-sm leading-6 text-visual-foreground/80">
                       {prerequisite}

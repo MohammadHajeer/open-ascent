@@ -215,12 +215,13 @@ def result(db, profile: Profile, target: Movement, *, now=None):
     return evidence, ReadinessService.evaluate(evidence)
 
 
-def test_free_text_and_missing_evidence_remain_unknown(db):
+def test_guidance_without_structured_rules_creates_no_readiness_evidence(db):
     profile = athlete(db)
     target = movement(db)
-    documentation(db, target)
+    guide = documentation(db, target)
     evidence, decision = result(db, profile, target)
-    assert [item.satisfied for item in evidence] == [None]
+    assert evidence == []
+    assert guide.content["prerequisites"] == ["Demonstrate required performance"]
     assert decision.status is ReadinessStatus.UNKNOWN
     assert decision.prescription_allowed is False
 
@@ -421,6 +422,7 @@ def test_curated_seed_guides_preserve_unstructured_safety_prerequisites(db):
             assert rule_entry.accepted_sources == ["uploaded_analysis"]
             assert safety.prerequisites[rule_entry.prerequisite_index] == requirement
         evidence, decision = result(db, profile, target)
+        assert len(evidence) == len(expected)
         assert all(item.satisfied is None for item in evidence)
         assert decision.status is ReadinessStatus.UNKNOWN
 
@@ -454,7 +456,8 @@ def test_curated_pull_up_rule_accepts_only_target_matched_upload(db, target_slug
     ).one()
     manual = logged_set(db, profile, pull_up, source="manual", reps=10)
     evidence, decision = result(db, profile, target)
-    assert evidence[-len(CURATED_READINESS_RULES[target_slug])].satisfied is None
+    assert len(evidence) == len(CURATED_READINESS_RULES[target_slug])
+    assert evidence[0].satisfied is None
     assert decision.status is ReadinessStatus.UNKNOWN
     manual.source = "self_reported"
     assert result(db, profile, target)[1].status is ReadinessStatus.UNKNOWN
@@ -464,10 +467,11 @@ def test_curated_pull_up_rule_accepts_only_target_matched_upload(db, target_slug
     assert result(db, profile, target)[1].status is ReadinessStatus.UNKNOWN
     analysis.result = analysis_result(1, target_match=True)
     evidence, decision = result(db, profile, target)
-    assert evidence[-len(CURATED_READINESS_RULES[target_slug])].satisfied is True
-    assert evidence[-len(CURATED_READINESS_RULES[target_slug])].source == "uploaded_analysis"
-    # Qualitative safety prerequisites still have no deterministic proof.
-    assert decision.status is ReadinessStatus.UNKNOWN
+    assert evidence[0].satisfied is True
+    assert evidence[0].source == "uploaded_analysis"
+    assert decision.status is (
+        ReadinessStatus.UNKNOWN if target_slug == "muscle-up" else ReadinessStatus.PASS
+    )
 
     if target_slug == "muscle-up":
         high = db.query(Movement).filter_by(slug="high-pull-up").one()
@@ -476,8 +480,8 @@ def test_curated_pull_up_rule_accepts_only_target_matched_upload(db, target_slug
         ).one()
         analyzed_set(db, profile, high, high_doc.id, valid_count=1)
         evidence, decision = result(db, profile, target)
-        assert [item.satisfied for item in evidence[-2:]] == [True, True]
-        assert decision.status is ReadinessStatus.UNKNOWN
+        assert [item.satisfied for item in evidence] == [True, True]
+        assert decision.status is ReadinessStatus.PASS
 
 
 def test_curated_rule_fails_on_verified_zero_rep_max_test(db):
@@ -518,7 +522,7 @@ def test_avoidance_fails_even_with_qualifying_evidence(db):
     assert decision.status is ReadinessStatus.FAIL
 
 
-def test_unmapped_prerequisite_keeps_otherwise_passing_movement_unknown(db):
+def test_unmapped_prose_does_not_block_passing_structured_rule(db):
     profile = athlete(db)
     target = movement(db)
     documentation(
@@ -527,8 +531,12 @@ def test_unmapped_prerequisite_keeps_otherwise_passing_movement_unknown(db):
     )
     logged_set(db, profile, target, source="manual", reps=8)
     evidence, decision = result(db, profile, target)
-    assert [item.satisfied for item in evidence] == [True, None]
-    assert decision.status is ReadinessStatus.UNKNOWN
+    assert [item.satisfied for item in evidence] == [True]
+    assert decision.status is ReadinessStatus.PASS
+    guide = db.query(MovementDocumentation).filter_by(movement_id=target.id).one()
+    assert guide.content["prerequisites"] == [
+        "Five reps", "Pain-free shoulder mobility"
+    ]
 
 
 def test_publishing_rejects_rule_with_wrong_source_movement_type(db):

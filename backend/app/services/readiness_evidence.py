@@ -112,15 +112,13 @@ class ReadinessEvidenceBuilder:
                 )
             )
 
-        rules_by_index = {
-            rule.prerequisite_index: rule for rule in safety.readiness_rules or []
-        }
         evaluated_at = _utc(now or datetime.now(UTC))
-        for index, requirement in enumerate(safety.prerequisites):
-            rule = rules_by_index.get(index)
-            if rule is None:
-                evidence.append(ReadinessEvidence(requirement=requirement))
-                continue
+        # Published prose remains athlete-facing guidance. Only explicit,
+        # machine-readable rules create readiness gates.
+        for rule in sorted(
+            safety.readiness_rules or [], key=lambda item: item.prerequisite_index
+        ):
+            requirement = safety.prerequisites[rule.prerequisite_index]
             evidence.append(
                 ReadinessEvidenceBuilder._evaluate_rule(
                     db, profile, rule, requirement, evaluated_at
