@@ -6,6 +6,8 @@ import {
   Activity,
   Bot,
   ChartNoAxesCombined,
+  ClipboardList,
+  CreditCard,
   Dumbbell,
   FileText,
   Library,
@@ -38,6 +40,8 @@ const iconMap = {
   movements: Dumbbell,
   documentation: FileText,
   users: Users,
+  usage: CreditCard,
+  plans: ClipboardList,
 } satisfies Record<DashboardNavIcon, React.ComponentType<{ className?: string }>>;
 
 export function DashboardMobileNav({ mode }: { mode: DashboardMode }) {
@@ -49,12 +53,7 @@ export function DashboardMobileNav({ mode }: { mode: DashboardMode }) {
       className="fixed inset-x-3 bottom-3 z-40 rounded-[1.4rem] border border-border/80 bg-card/95 p-1.5 shadow-[0_18px_50px_rgba(28,28,26,0.12)] backdrop-blur-xl lg:hidden dark:shadow-none"
       aria-label={mode === "admin" ? "Admin navigation" : "Dashboard navigation"}
     >
-      <div
-        className="grid"
-        style={{
-          gridTemplateColumns: `repeat(${navigation.length}, minmax(0, 1fr))`,
-        }}
-      >
+      <div className="flex overflow-x-auto overscroll-x-contain">
         {navigation.map((item) => {
           const Icon = iconMap[item.icon];
           const active = isNavigationItemActive(pathname, item);
@@ -65,7 +64,7 @@ export function DashboardMobileNav({ mode }: { mode: DashboardMode }) {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-[1rem] px-1 py-2 text-[0.6rem] font-medium text-foreground-faint outline-none transition-colors hover:bg-primary-light hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                "relative flex min-w-18 flex-1 flex-col items-center justify-center gap-1 rounded-[1rem] px-1 py-2 text-[0.6rem] font-medium text-foreground-faint outline-none transition-colors hover:bg-primary-light hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
                 active && "bg-primary-light text-primary",
                 item.emphasis &&
                   !active &&

@@ -126,11 +126,18 @@ def resolve_effective_plan(
     evaluated_at = as_of or datetime.now(UTC)
     if evaluated_at.tzinfo is None:
         evaluated_at = evaluated_at.replace(tzinfo=UTC)
-    pro = db.scalar(
-        select(SubscriptionPlan.code)
+    pro = db.scalar(_effective_pro_users_query([user_id], evaluated_at))
+    return PlanCode.PRO if pro == user_id else PlanCode.FREE
+
+
+def _effective_pro_users_query(user_ids: list[uuid.UUID], evaluated_at: datetime):
+    """Shared provider-backed tier predicate for one or many users."""
+    return (
+        select(UserSubscription.user_id)
+        .select_from(SubscriptionPlan)
         .join(UserSubscription, UserSubscription.plan_id == SubscriptionPlan.id)
         .where(
-            UserSubscription.user_id == user_id,
+            UserSubscription.user_id.in_(user_ids),
             SubscriptionPlan.code == PlanCode.PRO.value,
             SubscriptionPlan.is_active.is_(True),
             SubscriptionPlan.stripe_price_id.is_not(None),
@@ -148,7 +155,17 @@ def resolve_effective_plan(
             evaluated_at < UserSubscription.current_period_end,
         )
     )
-    return PlanCode.PRO if pro == PlanCode.PRO.value else PlanCode.FREE
+
+
+def effective_pro_user_ids(
+    db: Session, user_ids: list[uuid.UUID], *, as_of: datetime | None = None
+) -> set[uuid.UUID]:
+    if not user_ids:
+        return set()
+    evaluated_at = as_of or datetime.now(UTC)
+    if evaluated_at.tzinfo is None:
+        evaluated_at = evaluated_at.replace(tzinfo=UTC)
+    return set(db.scalars(_effective_pro_users_query(user_ids, evaluated_at)))
 
 
 def get_user_plan(db: Session, user_id: uuid.UUID) -> SubscriptionPlan:

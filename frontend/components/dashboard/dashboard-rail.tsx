@@ -7,6 +7,8 @@ import {
   Bot,
   BookOpenText,
   ChartNoAxesCombined,
+  ClipboardList,
+  CreditCard,
   Dumbbell,
   FileText,
   Library,
@@ -45,6 +47,8 @@ const iconMap = {
   movements: Dumbbell,
   documentation: FileText,
   users: Users,
+  usage: CreditCard,
+  plans: ClipboardList,
 } satisfies Record<DashboardNavIcon, React.ComponentType<{ className?: string }>>;
 
 export function DashboardRail({ mode }: { mode: DashboardMode }) {

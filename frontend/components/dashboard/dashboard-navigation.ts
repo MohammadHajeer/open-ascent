@@ -12,7 +12,9 @@ export type DashboardNavIcon =
   | "settings"
   | "movements"
   | "documentation"
-  | "users";
+  | "users"
+  | "usage"
+  | "plans";
 
 export type DashboardNavItem = {
   label: string;
@@ -67,6 +69,21 @@ export const adminNavigation: DashboardNavItem[] = [
     href: "/admin",
     icon: "overview",
     exact: true,
+  },
+  {
+    label: "Analyses",
+    href: "/admin/analyses",
+    icon: "analyses",
+  },
+  {
+    label: "Usage",
+    href: "/admin/usage",
+    icon: "usage",
+  },
+  {
+    label: "Plans",
+    href: "/admin/plans",
+    icon: "plans",
   },
   {
     label: "Movements",
