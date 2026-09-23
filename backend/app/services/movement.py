@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import uuid
 
 from sqlalchemy import and_, select
@@ -39,6 +40,31 @@ class MovementSlugAlreadyExistsError(Exception):
 
 
 class MovementService:
+    @staticmethod
+    def _normalized(value: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", value.lower()).removesuffix("s")
+
+    @classmethod
+    def resolve_coach_movement(cls, db: Session, value: str) -> Movement | None:
+        """Only canonical slugs/names resolve personal evidence and guides."""
+        needle = value.casefold()
+        return next(
+            (movement for movement in db.scalars(select(Movement).order_by(Movement.name))
+             if movement.slug.casefold() == needle or movement.name.casefold() == needle),
+            None,
+        )
+
+    @classmethod
+    def search_coach_movements(cls, db: Session, query: str, limit: int) -> list[Movement]:
+        needle = cls._normalized(query)
+        if not needle:
+            return []
+        matches = [
+            movement for movement in db.scalars(select(Movement).order_by(Movement.name))
+            if needle in cls._normalized(movement.name) or needle in cls._normalized(movement.slug)
+        ]
+        return matches[:limit]
+
     @staticmethod
     def list_admin_movements(
         db: Session,

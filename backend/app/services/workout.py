@@ -90,6 +90,35 @@ def list_sessions(db: Session, user_id: uuid.UUID) -> list[tuple[WorkoutSession,
     )
 
 
+def list_recent_coach_sessions(
+    db: Session, user_id: uuid.UUID, movement_id: uuid.UUID | None, limit: int
+) -> list[tuple[WorkoutSession, list[tuple[WorkoutSet, str]]]]:
+    """Owner-scoped personal sets, retaining source, performer and intent labels."""
+    statement = (
+        select(WorkoutSession)
+        .join(WorkoutSet, WorkoutSet.session_id == WorkoutSession.id)
+        .where(WorkoutSession.user_id == user_id, WorkoutSet.performer == "self")
+    )
+    if movement_id is not None:
+        statement = statement.where(WorkoutSet.movement_id == movement_id)
+    sessions = db.scalars(
+        statement.distinct().order_by(WorkoutSession.started_at.desc(), WorkoutSession.id.desc()).limit(limit)
+    ).all()
+    result = []
+    for session in sessions:
+        sets_statement = (
+            select(WorkoutSet, Movement.name)
+            .join(Movement, Movement.id == WorkoutSet.movement_id)
+            .where(WorkoutSet.session_id == session.id, WorkoutSet.performer == "self")
+            .order_by(WorkoutSet.position, WorkoutSet.id)
+            .limit(10)
+        )
+        if movement_id is not None:
+            sets_statement = sets_statement.where(WorkoutSet.movement_id == movement_id)
+        result.append((session, list(db.execute(sets_statement).tuples())))
+    return result
+
+
 def get_active_session(db: Session, user_id: uuid.UUID) -> tuple[WorkoutSession, int] | None:
     return db.execute(
         select(WorkoutSession, func.count(WorkoutSet.id))

@@ -637,7 +637,7 @@ def test_api_persists_history_and_hides_other_users_conversations(
 ):
     started = []
     monkeypatch.setattr(
-        coach, "start_generation", lambda generation_id: started.append(generation_id)
+        coach, "start_generation", lambda generation_id, _user_id: started.append(generation_id)
     )
     monkeypatch.setattr(coach_api, "SessionLocal", session_factory)
     with session_factory() as db:
@@ -756,7 +756,7 @@ def test_api_persists_history_and_hides_other_users_conversations(
 
 def test_first_send_api_and_owner_only_rename(session_factory, monkeypatch):
     started = []
-    monkeypatch.setattr(coach, "start_generation", lambda generation_id: started.append(generation_id))
+    monkeypatch.setattr(coach, "start_generation", lambda generation_id, _user_id: started.append(generation_id))
     with session_factory() as db:
         owner, stranger = _profile(db), _profile(db)
     identity = {"profile": owner}

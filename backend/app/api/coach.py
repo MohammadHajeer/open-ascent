@@ -106,7 +106,7 @@ def send_first_message(payload: SendInput, profile: AthleteProfile, db: DbSessio
             403, "AI Coach requires an available Pro entitlement."
         ) from exc
     if created and generation.status == "reserved":
-        service.start_generation(generation.id)
+        service.start_generation(generation.id, profile.id)
     return {
         "conversation": _conversation(conversation),
         "generation_id": str(generation.id),
@@ -193,7 +193,7 @@ def send_message(
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc
     if created and generation.status == "reserved":
-        service.start_generation(generation.id)
+        service.start_generation(generation.id, profile.id)
     return {"generation_id": str(generation.id), "created": created}
 
 

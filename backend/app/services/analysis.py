@@ -35,6 +35,29 @@ class IdempotencyConflictError(Exception):
     pass
 
 
+def list_recent_owned_analyses(
+    db: Session, user_id: uuid.UUID, movement_id: uuid.UUID | None, limit: int
+) -> list[Analysis]:
+    statement = select(Analysis).where(
+        Analysis.owner_kind == "authenticated", Analysis.user_id == user_id
+    )
+    if movement_id is not None:
+        statement = statement.where(Analysis.movement_id == movement_id)
+    return list(db.scalars(
+        statement.order_by(Analysis.created_at.desc(), Analysis.id.desc()).limit(limit)
+    ))
+
+
+def get_owned_authenticated_analysis(
+    db: Session, user_id: uuid.UUID, analysis_id: uuid.UUID
+) -> Analysis | None:
+    return db.scalar(select(Analysis).where(
+        Analysis.id == analysis_id,
+        Analysis.owner_kind == "authenticated",
+        Analysis.user_id == user_id,
+    ))
+
+
 class ReservationExpiredError(Exception):
     pass
 

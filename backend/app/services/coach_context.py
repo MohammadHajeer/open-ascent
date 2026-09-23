@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -11,6 +12,58 @@ from app.models.analysis import Analysis
 from app.models.movement import Movement
 from app.models.profile import Profile
 from app.models.training import WorkoutSession, WorkoutSet
+
+
+def get_athlete_profile_context(db: Session, user_id: uuid.UUID) -> dict | None:
+    """Whitelisted onboarding evidence; never promote self reports to measurements."""
+    profile = db.scalar(select(Profile).where(Profile.id == user_id, Profile.app_role == "athlete"))
+    if profile is None:
+        return None
+    context = profile.coaching_context or {}
+    assessment = profile.initial_assessment or {}
+    answers = assessment.get("answers") or {}
+    state = profile.athlete_state or {}
+    reported = {
+        key: context[key]
+        for key in ("primary_goal", "equipment", "availability")
+        if key in context
+    }
+    reported["starting_training_experience"] = answers.get("training_experience")
+    reported["starting_self_reported_clean_rep_max"] = {
+        key: value for key, value in (answers.get("max_clean_reps") or {}).items()
+        if key in ("pull_up", "push_up", "dips") and isinstance(value, int)
+    }
+    avoided = {str(item) for item in context.get("avoid_movement_ids", [])[:12]}
+    if avoided:
+        reported["movements_to_avoid"] = [
+            movement.name[:80] for movement in db.scalars(select(Movement).order_by(Movement.name))
+            if str(movement.id) in avoided
+        ][:12]
+    dimensions = state.get("dimensions") or {}
+    return {
+        "athlete_reported_profile": reported,
+        "initial_assessment": {
+            "source": "self_reported",
+            "submitted_at": assessment.get("submitted_at"),
+            "dimension_stages": {
+                key: value for key, value in (answers.get("dimension_stage") or {}).items()
+                if key in ("pulling", "pushing", "core", "balance", "statics")
+            },
+        },
+        "athlete_state": {
+            "overall_level": state.get("overall_level"),
+            "overall_source": state.get("overall_source"),
+            "dimensions": {
+                key: {
+                    field: value[field] for field in ("level", "source", "confidence", "observed_at")
+                    if field in value
+                }
+                for key, value in dimensions.items()
+                if key in ("pulling", "pushing", "core", "balance", "statics")
+                and isinstance(value, dict)
+            },
+        },
+    }
 
 
 def build_coach_context(db: Session, profile: Profile, question: str) -> str:
