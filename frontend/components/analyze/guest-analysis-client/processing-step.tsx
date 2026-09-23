@@ -2,6 +2,8 @@ import Image from "next/image";
 import { ScanLine } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ThemedAsset } from "@/components/shared/themed-asset";
+import { assets } from "@/lib/assets";
 import { classificationLabels, targetRelation } from "@/lib/rep-classification";
 import type { AnalysisStatus, RepClassification } from "@/lib/analysis";
 
@@ -78,7 +80,11 @@ export function ProcessingStep({
               />
             ) : (
               <span className="grid size-full place-items-center text-primary">
-                <ScanLine className="size-20" aria-hidden="true" />
+                {status === "failed" || status === "expired" ? (
+                  <ScanLine className="size-20" aria-hidden="true" />
+                ) : (
+                  <ThemedAsset asset={assets.analysis.processing} alt="" width={280} />
+                )}
               </span>
             )}
           </div>

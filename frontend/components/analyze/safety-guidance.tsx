@@ -1,12 +1,14 @@
 import type { Safety } from "@/lib/analysis";
+import { ThemedAsset } from "@/components/shared/themed-asset";
+import { assets } from "@/lib/assets";
 
-const sections: { key: keyof Safety; title: string }[] = [
-  { key: "setup", title: "Set up" },
-  { key: "prerequisites", title: "Before you begin" },
-  { key: "stressed_areas", title: "Areas under load" },
-  { key: "cautions", title: "Use caution" },
-  { key: "stop_conditions", title: "Stop the set if" },
-];
+const sections = [
+  { key: "setup", title: "Set up", asset: assets.safety.equipmentSetup },
+  { key: "prerequisites", title: "Before you begin", asset: assets.safety.prerequisites },
+  { key: "stressed_areas", title: "Areas under load", asset: assets.safety.stressedBodyAreas },
+  { key: "cautions", title: "Use caution", asset: assets.safety.caution },
+  { key: "stop_conditions", title: "Stop the set if", asset: assets.safety.stopCondition },
+] as const;
 
 export function SafetyGuidance({
   safety,
@@ -35,11 +37,14 @@ export function SafetyGuidance({
         </p>
       )}
       <div className="mt-7 grid gap-6 border-t border-border pt-7 sm:grid-cols-2 lg:grid-cols-5">
-        {sections.map(({ key, title }) => {
+        {sections.map(({ key, title, asset }) => {
           const items = safety[key];
           return Array.isArray(items) && items.length ? (
             <div key={key}>
-              <h4 className="text-sm font-semibold text-foreground">{title}</h4>
+              <h4 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <ThemedAsset asset={asset} alt="" width={20} />
+                {title}
+              </h4>
               <ul className="mt-3 grid gap-2 text-xs leading-5 text-foreground-soft">
                 {items.map((item) => (
                   <li key={item}>• {item}</li>

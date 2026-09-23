@@ -27,8 +27,9 @@ function Action({ href, children, primary = false }: { href: string; children: R
   </Link>;
 }
 
-function Message({ text, href, action }: { text: string; href?: string; action?: string }) {
+function Message({ text, href, action, visual }: { text: string; href?: string; action?: string; visual?: React.ReactNode }) {
   return <div className="flex min-h-40 flex-col items-start justify-center gap-4 px-5 py-7 sm:px-7">
+    {visual}
     <p className="max-w-md text-sm leading-6 text-foreground-soft">{text}</p>{href && action && <Action href={href}>{action}</Action>}
   </div>;
 }
@@ -111,7 +112,7 @@ export function AthleteOverview() {
               <div><p className="text-sm font-medium">Workout · {date(session.started_at)}</p><p className="mt-1 text-xs text-foreground-soft">{session.set_count} {session.set_count === 1 ? "set" : "sets"} logged</p></div>
               <Activity className="size-4 text-primary" aria-hidden="true" />
             </div>)}<div className="px-5 py-4 sm:px-7"><Action href="/dashboard/train">Open training log</Action></div></div>
-              : <Message text="No completed workouts yet. Log a session to start your training record." href="/dashboard/train" action="Log a workout" />}
+              : <Message text="No completed workouts yet. Log a session to start your training record." href="/dashboard/train" action="Log a workout" visual={<ThemedAsset asset={assets.emptyStates.noWorkouts} alt="" width={120} />} />}
       </DashboardSection>
     </div>
 

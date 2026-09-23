@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { AlertCircle, LoaderCircle, ScanLine } from "lucide-react";
+import { AlertCircle, LoaderCircle } from "lucide-react";
 
 import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
+import { ThemedAsset } from "@/components/shared/themed-asset";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
+import { assets } from "@/lib/assets";
 
 import { useAnalysisHistory } from "./hooks";
 
@@ -47,7 +49,7 @@ export function AnalysisHistoryList({ action }: { action: React.ReactNode }) {
     return (
       <DashboardSection eyebrow="Saved sessions" title="Analysis history">
         <DashboardEmptyState
-          icon={<ScanLine className="size-5" aria-hidden="true" />}
+          visual={<ThemedAsset asset={assets.emptyStates.noAnalyses} alt="" width={176} />}
           title="No saved analyses yet."
           description="Complete a movement analysis and its result will appear here. Raw videos are not retained."
           action={action}

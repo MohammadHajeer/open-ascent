@@ -1,4 +1,5 @@
-import { CircleDot, Wrench } from "lucide-react";
+import { ThemedAsset } from "@/components/shared/themed-asset";
+import { assets } from "@/lib/assets";
 
 import type { MovementSafetyContent } from "../_lib/types";
 
@@ -29,7 +30,7 @@ export function SafetyOverview({
           <div className="grid gap-8 sm:grid-cols-2">
             <div>
               <div className="flex items-center gap-3">
-                <CircleDot className="size-4 text-primary" aria-hidden="true" />
+                <ThemedAsset asset={assets.safety.stressedBodyAreas} alt="" width={20} />
                 <h3 className="text-sm font-semibold text-foreground">
                   Stressed areas
                 </h3>
@@ -48,7 +49,7 @@ export function SafetyOverview({
 
             <div>
               <div className="flex items-center gap-3">
-                <Wrench className="size-4 text-primary" aria-hidden="true" />
+                <ThemedAsset asset={assets.safety.equipmentSetup} alt="" width={20} />
                 <h3 className="text-sm font-semibold text-foreground">
                   Setup
                 </h3>

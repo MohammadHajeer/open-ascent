@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Menu } from "lucide-react";
+import { ThemedAsset } from "@/components/shared/themed-asset";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -11,6 +12,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { assets } from "@/lib/assets";
 import {
   getConversation,
   listConversations,
@@ -457,6 +459,7 @@ export function CoachWorkspace() {
           />
         ) : (
           <div className="coach-scroll flex min-h-0 flex-1 flex-col items-center justify-center gap-7 overflow-y-auto px-5 py-10 text-center">
+            <ThemedAsset asset={assets.emptyStates.noCoachConversations} alt="" width={160} />
             <div className="max-w-lg">
               <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-primary">
                 Train with intention
