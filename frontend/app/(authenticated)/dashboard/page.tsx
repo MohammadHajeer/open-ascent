@@ -14,7 +14,7 @@ export default function DashboardPage() {
         description="This workspace will become the home for your saved analyses, movement history, and training context."
       />
 
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.65fr)]">
+      <section data-tour="dashboard-overview" className="grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(280px,0.65fr)]">
         <div className="relative overflow-hidden rounded-[1.6rem] border border-border bg-card/80 p-6 sm:p-8 lg:p-10">
           <div
             className="cv-grid cv-grid-radial pointer-events-none absolute inset-0 opacity-[0.18]"

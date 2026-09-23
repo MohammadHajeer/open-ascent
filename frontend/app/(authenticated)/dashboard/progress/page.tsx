@@ -9,7 +9,7 @@ export default function ProgressPage() {
         title="Progress, without guesswork."
         description="See your weekly consistency and compare real logged performance for one movement at a time."
       />
-      <ProgressView />
+      <div data-tour="progress-view"><ProgressView /></div>
     </div>
   );
 }

@@ -44,7 +44,7 @@ function MovementSelector({ groups }: { groups: MovementGroup<Movement>[] }) {
             {groups.map(({ familyKey, movements }, index) => (
               <section key={familyKey} aria-labelledby={`movement-family-${index}`}>
                 <h3 id={`movement-family-${index}`} className="text-xl font-medium tracking-tight text-foreground">{movementFamilyLabel(familyKey)} family</h3>
-                <div className="mt-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+                <div data-tour={index === 0 ? "guest-movement" : undefined} className="mt-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
                   {familyKey === "vertical_pull" && (
                     <Link href="/analyze?movement=any-vertical-pull" prefetch={false} className="group col-span-2 flex min-h-36 flex-col justify-center rounded-[3px_3px_24px_3px] border border-primary/40 bg-primary-light p-6 transition hover:border-primary focus-visible:ring-2 focus-visible:ring-ring lg:col-span-1">
                       <strong className="text-lg text-foreground">Any Vertical Pull</strong>

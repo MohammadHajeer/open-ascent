@@ -29,13 +29,13 @@ export default function TrainPage() {
         description="Choose a focused training tool: live local coaching for pull-ups, or a deeper uploaded movement analysis."
       />
 
-      <DashboardSection
+      <div data-tour="workout-log"><DashboardSection
         eyebrow="Workout log"
         title="Record reliable training evidence."
         description="Track repetitions or timed holds without turning a single analyzed rep into an ability claim."
       >
         <WorkoutLogger />
-      </DashboardSection>
+      </DashboardSection></div>
 
       <section className="relative overflow-hidden rounded-[1.6rem] border border-primary/20 bg-card/80 p-6 sm:p-8">
         <div

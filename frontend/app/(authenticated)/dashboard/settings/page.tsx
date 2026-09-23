@@ -1,10 +1,11 @@
-import { MonitorCog, ShieldCheck, SlidersHorizontal, UserRound } from "lucide-react";
+import { Compass, MonitorCog, ShieldCheck, SlidersHorizontal, UserRound } from "lucide-react";
 
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { PlanBilling } from "@/features/subscription/plan-billing";
 import type { CheckoutReturnState } from "@/features/subscription/presentation";
+import { SettingsTourAction } from "@/components/tour/settings-tour-action";
 
 export default async function SettingsPage({
   searchParams,
@@ -26,6 +27,13 @@ export default async function SettingsPage({
       <PlanBilling checkoutReturn={checkoutReturn} />
 
       <div className="grid gap-5 xl:grid-cols-2">
+        <DashboardSection eyebrow="Guided tour" title="Explore your workspace">
+          <div className="flex flex-wrap items-center gap-4 px-5 py-6 sm:px-7">
+            <Compass className="size-5 shrink-0 text-primary" aria-hidden="true" />
+            <p className="min-w-0 flex-1 text-sm text-foreground-soft">Take another walkthrough of Open Ascent.</p>
+            <SettingsTourAction />
+          </div>
+        </DashboardSection>
         <DashboardSection eyebrow="Appearance" title="Display preference">
           <div className="flex items-center gap-4 px-5 py-6 sm:px-7">
             <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary-light text-primary">

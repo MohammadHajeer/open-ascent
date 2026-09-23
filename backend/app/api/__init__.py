@@ -5,6 +5,7 @@ from app.api.admin_operations import router as admin_operations_router
 from app.api.analysis import router as analysis_router
 from app.api.analysis_stream import router as analysis_stream_router
 from app.api.coach import router as coach_router
+from app.api.dashboard_tour import router as dashboard_tour_router
 from app.api.movement_documentation import router as movement_documentation_router
 from app.api.movements import router as movements_router
 from app.api.onboarding import router as onboarding_router
@@ -22,6 +23,7 @@ api_router.include_router(movements_router)
 api_router.include_router(admin_operations_router)
 api_router.include_router(admin_management_router)
 api_router.include_router(onboarding_router)
+api_router.include_router(dashboard_tour_router)
 api_router.include_router(progress_router)
 api_router.include_router(movement_documentation_router)
 api_router.include_router(sse_smoke_router)

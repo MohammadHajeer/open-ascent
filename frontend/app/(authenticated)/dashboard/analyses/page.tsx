@@ -26,7 +26,7 @@ export default function AnalysesPage() {
         action={analyzeAction}
       />
 
-      <AnalysisHistoryList action={analyzeAction} />
+      <div data-tour="analysis-history"><AnalysisHistoryList action={analyzeAction} /></div>
     </div>
   );
 }

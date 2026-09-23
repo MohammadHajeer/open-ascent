@@ -31,6 +31,7 @@ export function ProcessingStep({
 }) {
   return (
     <section
+      data-tour="guest-processing"
       className="overflow-hidden rounded-[3px_3px_34px_3px] border border-border bg-card"
       role="status"
       aria-live="polite"

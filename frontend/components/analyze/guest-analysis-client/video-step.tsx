@@ -194,6 +194,7 @@ function VideoSourceChoice({
 }) {
   return (
     <div
+      data-tour="guest-upload"
       className="relative z-10 mt-8 grid min-h-90 place-items-center rounded-[3px_3px_34px_3px] px-6 py-12 text-center sm:min-h-107.5"
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {

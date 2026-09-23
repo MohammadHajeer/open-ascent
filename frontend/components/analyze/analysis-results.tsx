@@ -43,7 +43,7 @@ const INTENT_LABELS: Record<string, string> = {
 
 function RepAnalysis({ reps, familyMode, targetSlug }: { reps: Rep[]; familyMode: boolean; targetSlug: string }) {
   return (
-    <section className="mt-16 sm:mt-20" aria-labelledby="rep-analysis-title">
+    <section data-tour="guest-result-reps" className="mt-16 sm:mt-20" aria-labelledby="rep-analysis-title">
       <span className="font-mono text-[0.58rem] font-semibold tracking-widest text-primary uppercase">
         Rep by rep
       </span>
@@ -237,7 +237,7 @@ export function AnalysisResults({
               : "Counts reflect confirmed analyzer outcomes."}
           </p>
           <div className="mt-5 border-t border-border pt-4 text-xs text-foreground-soft"><strong className="text-foreground">Variation distribution</strong><ul className="mt-2 space-y-1">{variationDistribution(result.reps).map((line) => <li key={line}>{line}</li>)}</ul></div>
-          <dl className="mt-8 grid border-t border-border">
+          <dl data-tour="guest-result-summary" className="mt-8 grid border-t border-border">
             {metrics.map(([label, value], index) => (
               <div
                 key={label}
@@ -271,6 +271,7 @@ export function AnalysisResults({
       <RepAnalysis reps={result.reps} familyMode={!analysis.movement.id} targetSlug={analysis.movement.slug} />
 
       <section
+        data-tour="guest-result-findings"
         className="mt-8 rounded-[3px_3px_34px_3px] border border-border bg-card p-6 sm:p-9"
         aria-labelledby="findings-title"
       >
@@ -329,10 +330,10 @@ export function AnalysisResults({
         </p>
       </section>
 
-      <SafetyGuidance
+      <div data-tour="guest-result-safety"><SafetyGuidance
         safety={analysis.movement.safety}
         movementName={analysis.movement.name}
-      />
+      /></div>
       <div className="mt-8 flex justify-end">
         <Button variant="outline" size="lg" onClick={onRestart}>
           <RotateCcw className="size-4" /> Analyze another video

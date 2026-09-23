@@ -10,7 +10,7 @@ export default function CoachPage() {
         </div>
         <p className="hidden max-w-md pb-1 text-right text-xs leading-5 text-foreground-soft sm:block">A focused place for technique, skills, and your next training decision.</p>
       </header>
-      <CoachWorkspace />
+      <div data-tour="ai-coach" className="min-h-0 flex-1"><CoachWorkspace /></div>
     </div>
   );
 }

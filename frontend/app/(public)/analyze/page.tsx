@@ -6,6 +6,7 @@ import { AnalyzeSectionSkeleton } from "@/components/analyze/analyze-section-ske
 import { Badge } from "@/components/ui/badge";
 import { ActiveWorkoutIndicator } from "@/features/workouts/active-workout-indicator";
 import { createClient } from "@/lib/supabase/server";
+import { GuestAnalysisTour } from "@/components/tour/guest-analysis-tour";
 
 type AnalyzePageProps = {
   searchParams: Promise<{ movement?: string | string[]; analysis?: string | string[] }>;
@@ -38,6 +39,7 @@ export default async function AnalyzePage({ searchParams }: AnalyzePageProps) {
         >
           <AnalyzeMovementSection selectedSlug={selectedSlug} invalidSelection={invalidSelection} analysisId={analysisId} authenticated={authenticated} />
         </Suspense>
+        {!authenticated ? <GuestAnalysisTour /> : null}
       </div>
     </>
   );

@@ -1,5 +1,6 @@
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ActiveWorkoutIndicator } from "@/features/workouts/active-workout-indicator";
+import { DashboardTour } from "@/components/tour/dashboard-tour";
 
 import type { DashboardMode } from "./dashboard-navigation";
 import { DashboardMobileNav } from "./dashboard-mobile-nav";
@@ -44,6 +45,7 @@ export function DashboardShell({
         </div>
 
         <DashboardMobileNav mode={mode} />
+        {mode === "user" ? <DashboardTour /> : null}
       </div>
     </TooltipProvider>
   );

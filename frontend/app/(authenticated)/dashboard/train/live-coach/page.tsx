@@ -23,8 +23,7 @@ export default function LiveCoachPage() {
           </Link>
         }
       />
-      <LiveCoachWorkspace />
+      <div data-tour="live-coach"><LiveCoachWorkspace /></div>
     </div>
   );
 }
-

@@ -20,6 +20,10 @@ class Profile(TimestampMixin, Base):
             name="ck_profiles_app_role",
         ),
         CheckConstraint(
+            "dashboard_tour_status IN ('not_started', 'completed', 'dismissed')",
+            name="ck_profiles_dashboard_tour_status",
+        ),
+        CheckConstraint(
             """
             (safety_ack_version IS NULL AND safety_acknowledged_at IS NULL)
             OR
@@ -43,6 +47,9 @@ class Profile(TimestampMixin, Base):
     onboarding_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+    dashboard_tour_status: Mapped[str] = mapped_column(
+        Text, nullable=False, server_default=text("'not_started'")
     )
     coaching_context: Mapped[dict] = mapped_column(
         JSONB,
