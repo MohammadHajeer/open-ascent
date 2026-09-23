@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.analysis import router as analysis_router
 from app.api.analysis_stream import router as analysis_stream_router
+from app.api.coach import router as coach_router
 from app.api.movement_documentation import router as movement_documentation_router
 from app.api.movements import router as movements_router
 from app.api.onboarding import router as onboarding_router
@@ -24,4 +25,5 @@ api_router.include_router(stripe_webhook_router)
 api_router.include_router(subscriptions_router)
 api_router.include_router(analysis_router)
 api_router.include_router(analysis_stream_router)
+api_router.include_router(coach_router)
 api_router.include_router(workouts_router)

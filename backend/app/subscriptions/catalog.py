@@ -68,10 +68,7 @@ PLAN_CATALOG = (
                 FeatureKey.VIDEO_ANALYSIS,
                 allowance_units=None,
             ),
-            EntitlementDefinition.metered(
-                FeatureKey.AI_COACH_REPLY,
-                allowance_units=None,
-            ),
+            EntitlementDefinition.boolean(FeatureKey.AI_COACH_REPLY, enabled=False),
             EntitlementDefinition.metered(
                 FeatureKey.TRAINING_PLAN_GENERATION,
                 allowance_units=None,
@@ -95,10 +92,7 @@ PLAN_CATALOG = (
                 FeatureKey.VIDEO_ANALYSIS,
                 allowance_units=None,
             ),
-            EntitlementDefinition.metered(
-                FeatureKey.AI_COACH_REPLY,
-                allowance_units=None,
-            ),
+            EntitlementDefinition.unlimited(FeatureKey.AI_COACH_REPLY),
             EntitlementDefinition.metered(
                 FeatureKey.TRAINING_PLAN_GENERATION,
                 allowance_units=None,

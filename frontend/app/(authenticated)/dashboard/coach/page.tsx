@@ -1,35 +1,16 @@
-import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
-import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
-import { DashboardSection } from "@/components/dashboard/dashboard-section";
-import { ThemedAsset } from "@/components/shared/themed-asset";
-import { assets } from "@/lib/assets";
+import { CoachWorkspace } from "@/features/coach/coach-workspace";
 
 export default function CoachPage() {
   return (
-    <div className="space-y-8">
-      <DashboardPageHeader
-        eyebrow="Athlete guidance"
-        title="AI Coach"
-        description="A future coaching space for grounded, personalized guidance built from your athlete context and movement analysis."
-      />
-
-      <DashboardSection
-        eyebrow="Coming next"
-        title="Personalized coaching will live here."
-        description="The coach will use your context and grounded analysis to help turn observations into useful next steps."
-      >
-        <DashboardEmptyState
-          title="Your coaching space is not active yet."
-          description="There are no conversations to display. Coaching will appear here when the experience is ready."
-          visual={
-            <ThemedAsset
-              asset={assets.emptyStates.noCoachConversations}
-              alt=""
-              width={176}
-            />
-          }
-        />
-      </DashboardSection>
+    <div className="flex h-[calc(100dvh-12.5rem)] min-h-[25rem] flex-col gap-4 lg:h-[calc(100dvh-10rem)]">
+      <header className="flex shrink-0 items-end justify-between gap-5">
+        <div>
+          <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-primary">Athlete guidance</p>
+          <h1 className="mt-1 text-[clamp(2rem,4vw,3.1rem)] font-medium leading-none tracking-[-0.055em] text-foreground">AI Coach</h1>
+        </div>
+        <p className="hidden max-w-md pb-1 text-right text-xs leading-5 text-foreground-soft sm:block">A focused place for technique, skills, and your next training decision.</p>
+      </header>
+      <CoachWorkspace />
     </div>
   );
 }
