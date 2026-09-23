@@ -601,6 +601,7 @@ def test_published_rule_survives_json_round_trip_and_prose_edit_invalidates_mapp
         db,
         next_draft.id,
         MovementDocumentationUpdate(
+            edit_revision=next_draft.edit_revision,
             content={"prerequisites": ["Controlled pull-ups"]}
         ),
     )

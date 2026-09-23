@@ -1,7 +1,4 @@
-import type {
-  Difficulty,
-  MovementListItem,
-} from "@/features/admin/movements/types";
+import type { Difficulty } from "@/features/admin/movements/types";
 
 export type { Difficulty } from "@/features/admin/movements/types";
 
@@ -47,6 +44,7 @@ export type MovementDocumentation = {
   updated_at: string;
 };
 
-export type AdminDocumentationRecord = MovementDocumentation & {
-  movement: MovementListItem;
-};
+export type DocumentationMovement = { id: string; name: string; slug: string; family_key: string };
+export type AdminDocumentationRecord = MovementDocumentation & { movement: DocumentationMovement };
+export type AdminDocumentationSummary = Pick<MovementDocumentation, "id" | "movement_id" | "version" | "status" | "edit_revision" | "updated_at" | "published_at"> & { movement: DocumentationMovement };
+export type DocumentationPage = { page: number; page_size: number; total: number; items: AdminDocumentationSummary[] };

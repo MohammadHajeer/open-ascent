@@ -38,6 +38,10 @@ class InvalidSafetyContentError(Exception):
     pass
 
 
+class DocumentationRevisionConflictError(Exception):
+    pass
+
+
 class MovementDocumentationService:
     @staticmethod
     def _lock_movement(
@@ -136,12 +140,17 @@ class MovementDocumentationService:
         if documentation.status != "draft":
             raise ImmutableDocumentationError
 
+        if documentation.edit_revision != payload.edit_revision:
+            raise DocumentationRevisionConflictError
+
         updates = payload.content.model_dump(mode="json", exclude_unset=True)
 
         if (
             "prerequisites" in updates
             and updates["prerequisites"] != documentation.content.get("prerequisites")
-            and updates.get("readiness_rules", documentation.content.get("readiness_rules"))
+            and updates.get(
+                "readiness_rules", documentation.content.get("readiness_rules")
+            )
             == documentation.content.get("readiness_rules")
         ):
             # A prose edit may change what an index means. Require rules to be
@@ -198,6 +207,7 @@ class MovementDocumentationService:
         db: Session,
         documentation_id: uuid.UUID,
         actor_id: uuid.UUID,
+        expected_revision: int | None = None,
     ) -> MovementDocumentation:
         draft = db.scalar(
             select(MovementDocumentation)
@@ -210,6 +220,9 @@ class MovementDocumentationService:
 
         if draft.status != "draft":
             raise ImmutableDocumentationError
+
+        if expected_revision is not None and draft.edit_revision != expected_revision:
+            raise DocumentationRevisionConflictError
 
         try:
             validated_content = MovementSafetyContent.model_validate(draft.content)

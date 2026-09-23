@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LogOut, Settings, UserRound } from "lucide-react";
+import { ChartNoAxesCombined, LogOut, Settings, UserRound, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -17,8 +17,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { createClient } from "@/lib/supabase/client";
 import { clearPrivateAuthState } from "@/lib/private-state";
+import type { DashboardMode } from "./dashboard-navigation";
 
-export function DashboardAccountMenu() {
+export function DashboardAccountMenu({ mode }: { mode: DashboardMode }) {
   const router = useRouter();
   const [signingOut, setSigningOut] = useState(false);
 
@@ -62,7 +63,7 @@ export function DashboardAccountMenu() {
           <DropdownMenuLabel>
             <span className="block text-sm font-medium">Account</span>
             <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-              Profile data connects next.
+              {mode === "admin" ? "Administration workspace" : "Your training workspace"}
             </span>
           </DropdownMenuLabel>
         </DropdownMenuGroup>
@@ -70,15 +71,7 @@ export function DashboardAccountMenu() {
         <DropdownMenuSeparator />
 
         <DropdownMenuGroup>
-          <DropdownMenuItem onClick={() => router.push("/dashboard/profile")}>
-            <UserRound className="size-4" aria-hidden="true" />
-            Profile
-          </DropdownMenuItem>
-
-          <DropdownMenuItem onClick={() => router.push("/dashboard/settings")}>
-            <Settings className="size-4" aria-hidden="true" />
-            Settings
-          </DropdownMenuItem>
+          {mode === "admin" ? <><DropdownMenuItem onClick={() => router.push("/admin")}><ChartNoAxesCombined className="size-4" aria-hidden="true" />Operations</DropdownMenuItem><DropdownMenuItem onClick={() => router.push("/admin/users")}><Users className="size-4" aria-hidden="true" />Users</DropdownMenuItem></> : <><DropdownMenuItem onClick={() => router.push("/dashboard/profile")}><UserRound className="size-4" aria-hidden="true" />Profile</DropdownMenuItem><DropdownMenuItem onClick={() => router.push("/dashboard/settings")}><Settings className="size-4" aria-hidden="true" />Settings</DropdownMenuItem></>}
         </DropdownMenuGroup>
 
         <DropdownMenuSeparator />

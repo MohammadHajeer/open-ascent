@@ -2,17 +2,23 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import ValidationError
+from sqlalchemy import func, select
 
 from app.api.dependencies.auth import AdminProfile
 from app.db.database import DbSession
+from app.models.movement import Movement
+from app.models.movement_documentation import MovementDocumentation
 from app.schemas.movement_documentation import (
     MovementDocumentationCreate,
+    MovementDocumentationPublish,
     MovementDocumentationRead,
     MovementDocumentationUpdate,
 )
 from app.services.movement_documentation import (
     DocumentationNotFoundError,
+    DocumentationRevisionConflictError,
     DraftAlreadyExistsError,
     ImmutableDocumentationError,
     InvalidSafetyContentError,
@@ -97,6 +103,12 @@ def update_draft(
             detail="Published or archived documentation cannot be edited.",
         ) from exc
 
+    except DocumentationRevisionConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This draft changed in another session. Reload it before saving.",
+        ) from exc
+
 
 # ------------------------------------------------------------------
 # Admin — create new draft from published version
@@ -150,6 +162,7 @@ def create_draft_from_published(
 )
 def publish_draft(
     documentation_id: uuid.UUID,
+    payload: MovementDocumentationPublish,
     db: DbSession,
     admin: AdminProfile,
 ) -> MovementDocumentationRead:
@@ -158,6 +171,7 @@ def publish_draft(
             db=db,
             documentation_id=documentation_id,
             actor_id=admin.id,
+            expected_revision=payload.edit_revision,
         )
 
     except DocumentationNotFoundError as exc:
@@ -177,6 +191,124 @@ def publish_draft(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Safety documentation is incomplete or invalid.",
         ) from exc
+
+    except DocumentationRevisionConflictError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This draft changed in another session. Reload it before publishing.",
+        ) from exc
+
+
+@router.get("/documentation/admin")
+def list_admin_documentation(
+    db: DbSession,
+    _admin: AdminProfile,
+    page: int = Query(1, ge=1, le=1000),
+    page_size: int = Query(20, ge=1, le=100),
+    status_filter: str | None = Query(
+        None, alias="status", pattern="^(draft|published|archived)$"
+    ),
+    movement_id: uuid.UUID | None = None,
+    q: str | None = Query(None, max_length=80),
+):
+    conditions = []
+    if status_filter:
+        conditions.append(MovementDocumentation.status == status_filter)
+    if movement_id:
+        conditions.append(MovementDocumentation.movement_id == movement_id)
+    if q and q.strip():
+        escaped = (
+            q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        conditions.append(Movement.name.ilike(f"%{escaped}%", escape="\\"))
+    total = (
+        db.scalar(
+            select(func.count())
+            .select_from(MovementDocumentation)
+            .join(Movement, Movement.id == MovementDocumentation.movement_id)
+            .where(*conditions)
+        )
+        or 0
+    )
+    rows = db.execute(
+        select(
+            MovementDocumentation.id,
+            MovementDocumentation.movement_id,
+            MovementDocumentation.version,
+            MovementDocumentation.status,
+            MovementDocumentation.edit_revision,
+            MovementDocumentation.updated_at,
+            MovementDocumentation.published_at,
+            Movement.id,
+            Movement.name,
+            Movement.slug,
+            Movement.family_key,
+        )
+        .join(Movement, Movement.id == MovementDocumentation.movement_id)
+        .where(*conditions)
+        .order_by(
+            MovementDocumentation.updated_at.desc(), MovementDocumentation.id.desc()
+        )
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    return {
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "items": [
+            {
+                "id": doc_id,
+                "movement_id": doc_movement_id,
+                "version": version,
+                "status": doc_status,
+                "edit_revision": revision,
+                "updated_at": updated,
+                "published_at": published,
+                "movement": {
+                    "id": mid,
+                    "name": name,
+                    "slug": slug,
+                    "family_key": family,
+                },
+            }
+            for doc_id, doc_movement_id, version, doc_status, revision, updated, published, mid, name, slug, family in rows
+        ],
+    }
+
+
+@router.get("/documentation/admin/{documentation_id}")
+def get_admin_documentation(
+    documentation_id: uuid.UUID,
+    db: DbSession,
+    _admin: AdminProfile,
+):
+    row = db.execute(
+        select(MovementDocumentation, Movement)
+        .join(Movement, Movement.id == MovementDocumentation.movement_id)
+        .where(MovementDocumentation.id == documentation_id)
+    ).one_or_none()
+    if row is None:
+        raise HTTPException(404, "Documentation not found.")
+    documentation, movement = row
+    try:
+        record = MovementDocumentationRead.model_validate(documentation).model_dump(
+            mode="json"
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            422, "This documentation version has invalid content."
+        ) from exc
+    return {
+        **record,
+        "movement": {
+            "id": movement.id,
+            "name": movement.name,
+            "slug": movement.slug,
+            "family_key": movement.family_key,
+        },
+    }
+
 
 # ------------------------------------------------------------------
 # Admin — published documentation by movement UUID

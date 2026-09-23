@@ -11,6 +11,7 @@ const cacheHeaders = ["cache-control", "expires", "pragma"] as const;
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
+  const pathname = request.nextUrl.pathname;
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -50,9 +51,8 @@ export async function updateSession(request: NextRequest) {
   try {
     const { data } = await supabase.auth.getClaims();
     claims = data?.claims ?? null;
-    console.log("Supabase claims:", claims);
   } catch {
-    if (routeDestination(request.nextUrl.pathname, null) !== "/login") {
+    if (request.method !== "GET" || !isSessionRoutedPath(pathname)) {
       return supabaseResponse;
     }
 
@@ -63,7 +63,6 @@ export async function updateSession(request: NextRequest) {
     response.headers.set("Cache-Control", "private, no-store");
     return response;
   }
-  const pathname = request.nextUrl.pathname;
 
   function finish(response: NextResponse) {
     if (response !== supabaseResponse) {

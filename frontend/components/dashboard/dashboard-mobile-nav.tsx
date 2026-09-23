@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   Activity,
   Bot,
@@ -11,6 +12,7 @@ import {
   Dumbbell,
   FileText,
   Library,
+  MoreHorizontal,
   ScanLine,
   Settings,
   TrendingUp,
@@ -19,6 +21,8 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 import {
   getNavigation,
@@ -46,7 +50,11 @@ const iconMap = {
 
 export function DashboardMobileNav({ mode }: { mode: DashboardMode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const navigation = getNavigation(mode);
+  const primary = mode === "admin" ? navigation.filter(item => ["/admin", "/admin/users", "/admin/analyses", "/admin/documentation"].includes(item.href)) : navigation;
+  const more = mode === "admin" ? navigation.filter(item => !primary.includes(item)) : [];
+  const moreActive = more.some(item => isNavigationItemActive(pathname, item));
 
   return (
     <nav
@@ -54,7 +62,7 @@ export function DashboardMobileNav({ mode }: { mode: DashboardMode }) {
       aria-label={mode === "admin" ? "Admin navigation" : "Dashboard navigation"}
     >
       <div className="flex overflow-x-auto overscroll-x-contain">
-        {navigation.map((item) => {
+        {primary.map((item) => {
           const Icon = iconMap[item.icon];
           const active = isNavigationItemActive(pathname, item);
 
@@ -82,6 +90,7 @@ export function DashboardMobileNav({ mode }: { mode: DashboardMode }) {
             </Link>
           );
         })}
+        {mode === "admin" ? <DropdownMenu><DropdownMenuTrigger render={<Button type="button" variant="ghost" aria-label="More admin sections" className={cn("relative flex h-auto min-w-18 flex-1 flex-col gap-1 rounded-[1rem] px-1 py-2 text-[0.6rem]", moreActive && "bg-primary-light text-primary")} />}><MoreHorizontal className="size-[1.05rem]" aria-hidden="true" /><span>More</span></DropdownMenuTrigger><DropdownMenuContent align="end" side="top" className="min-w-44">{more.map(item => <DropdownMenuItem key={item.href} onClick={() => router.push(item.href)}>{item.label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu> : null}
       </div>
     </nav>
   );

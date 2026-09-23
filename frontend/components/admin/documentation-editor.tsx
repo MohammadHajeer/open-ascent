@@ -4,11 +4,13 @@ import { Plus, Save, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { Difficulty, MovementSafetyContent } from "@/features/admin/documentation/types";
+import type { Difficulty, MovementSafetyContent, ReadinessPerformanceRule } from "@/features/admin/documentation/types";
+import { useAdminMovements } from "@/features/admin/movements/hooks";
 
 type ListField = "stressed_areas" | "prerequisites" | "cautions" | "stop_conditions" | "setup";
 
@@ -19,6 +21,7 @@ const listFields: Array<{ key: ListField; label: string; description: string }> 
   { key: "cautions", label: "Cautions", description: "Warnings the athlete should understand." },
   { key: "stop_conditions", label: "Stop conditions", description: "Concrete reasons to stop the movement." },
 ];
+const evidenceSources = ["uploaded_analysis", "live_coach", "manual", "self_reported", "initial_assessment"] as const;
 
 export function DocumentationEditor({
   initialContent,
@@ -34,6 +37,7 @@ export function DocumentationEditor({
   onPublish?: (content: MovementSafetyContent) => void;
 }) {
   const [content, setContent] = useState<MovementSafetyContent>(initialContent);
+  const movements = useAdminMovements();
 
   function setField<K extends keyof MovementSafetyContent>(key: K, value: MovementSafetyContent[K]) {
     setContent((current) => ({ ...current, [key]: value }));
@@ -53,6 +57,30 @@ export function DocumentationEditor({
     const values = [...(content[key] ?? [])];
     values.splice(index, 1);
     setField(key, values.length ? values : null);
+  }
+
+  function setRule(index: number, patch: Partial<ReadinessPerformanceRule>) {
+    const rules = [...(content.readiness_rules ?? [])];
+    rules[index] = { ...rules[index], ...patch };
+    setField("readiness_rules", rules);
+  }
+
+  function addRule() {
+    const prerequisiteIndex = (content.prerequisites ?? []).findIndex((_, index) =>
+      !(content.readiness_rules ?? []).some((rule) => rule.prerequisite_index === index));
+    const movement = movements.data?.find((item) => item.prescription_type === "repetitions" || item.prescription_type === "duration");
+    if (prerequisiteIndex < 0 || !movement) return;
+    setField("readiness_rules", [...(content.readiness_rules ?? []), {
+      code: `rule_${Date.now().toString(36)}`,
+      type: "movement_performance",
+      prerequisite_index: prerequisiteIndex,
+      movement_id: movement.id,
+      metric: movement.prescription_type === "duration" ? "hold_seconds" : "reps",
+      operator: ">=",
+      value: 1,
+      max_age_days: 30,
+      accepted_sources: ["manual"],
+    }]);
   }
 
   return (
@@ -76,6 +104,26 @@ export function DocumentationEditor({
       {listFields.map(({ key, label, description }) => (
         <ListEditor key={key} label={label} description={description} values={content[key] ?? []} disabled={readOnly} onAdd={() => addListField(key)} onChange={(index, value) => setListField(key, index, value)} onRemove={(index) => removeListField(key, index)} />
       ))}
+
+      <div className="space-y-4 border-t border-border pt-6">
+        <div className="flex flex-wrap items-end justify-between gap-3"><div><Label>Structured readiness rules</Label><p className="mt-2 text-xs text-foreground-faint">Tie evidence thresholds to the documented prerequisites.</p></div>{!readOnly ? <Button type="button" variant="outline" size="sm" onClick={addRule} disabled={!movements.data?.length || (content.readiness_rules?.length ?? 0) >= (content.prerequisites?.length ?? 0)}><Plus className="size-4" /> Add rule</Button> : null}</div>
+        {movements.isError ? <p className="text-sm text-destructive">Movement choices could not be loaded. Existing rules remain visible.</p> : null}
+        {(content.readiness_rules ?? []).length ? (content.readiness_rules ?? []).map((rule, index) => {
+          const options = (movements.data ?? []).filter(item => item.prescription_type === (rule.metric === "reps" ? "repetitions" : "duration"));
+          return <div key={index} className="space-y-4 rounded-xl border border-border p-4">
+            <div className="flex items-center justify-between"><span className="text-sm font-medium">Rule {index + 1}</span>{!readOnly ? <Button type="button" variant="ghost" size="icon" aria-label={`Remove rule ${index + 1}`} onClick={() => setField("readiness_rules", (content.readiness_rules ?? []).filter((_, ruleIndex) => ruleIndex !== index))}><Trash2 className="size-4" /></Button> : null}</div>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Rule code" description="Stable identifier, lowercase letters and underscores."><Input disabled={readOnly} value={rule.code} onChange={event => setRule(index, { code: event.target.value })} /></Field>
+              <Field label="Prerequisite" description="The prose statement this rule proves."><Select disabled={readOnly} value={String(rule.prerequisite_index)} onValueChange={value => setRule(index, { prerequisite_index: Number(value) })}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent>{(content.prerequisites ?? []).map((item, prerequisiteIndex) => <SelectItem key={prerequisiteIndex} value={String(prerequisiteIndex)}>{prerequisiteIndex + 1}. {item || "Untitled"}</SelectItem>)}</SelectContent></Select></Field>
+              <Field label="Metric" description="Repetitions or hold duration."><Select disabled={readOnly} value={rule.metric} onValueChange={value => { const metric = (value ?? "reps") as "reps" | "hold_seconds"; const first = movements.data?.find(item => item.prescription_type === (metric === "reps" ? "repetitions" : "duration")); setRule(index, { metric, movement_id: first?.id ?? rule.movement_id }); }}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="reps">Repetitions</SelectItem><SelectItem value="hold_seconds">Hold seconds</SelectItem></SelectContent></Select></Field>
+              <Field label="Source movement" description="Movement used to establish readiness."><Select disabled={readOnly || !options.length} value={rule.movement_id} onValueChange={value => setRule(index, { movement_id: value ?? rule.movement_id })}><SelectTrigger className="w-full"><SelectValue placeholder="Choose movement" /></SelectTrigger><SelectContent>{!options.some(item => item.id === rule.movement_id) ? <SelectItem value={rule.movement_id}>Unavailable movement</SelectItem> : null}{options.map(item => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></Field>
+              <Field label="Minimum value" description="Evidence must be at least this amount."><Input disabled={readOnly} type="number" min="0.001" step={rule.metric === "reps" ? "1" : "0.001"} value={rule.value} onChange={event => setRule(index, { value: event.target.value })} /></Field>
+              <Field label="Maximum age, days" description="How recent the evidence must be."><Input disabled={readOnly} type="number" min="1" max="365" step="1" value={rule.max_age_days} onChange={event => setRule(index, { max_age_days: Number(event.target.value) })} /></Field>
+            </div>
+            <div><Label>Accepted evidence sources</Label><div className="mt-3 flex flex-wrap gap-4">{evidenceSources.map(source => <label key={source} className="flex items-center gap-2 text-xs capitalize"><Checkbox disabled={readOnly} checked={rule.accepted_sources.includes(source)} onCheckedChange={checked => setRule(index, { accepted_sources: checked ? [...rule.accepted_sources, source] : rule.accepted_sources.filter(item => item !== source) })} />{source.replaceAll("_", " ")}</label>)}</div></div>
+          </div>;
+        }) : <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-foreground-faint">No structured readiness rules.</p>}
+      </div>
 
       <Field label="Easier option" description="An optional regression or alternative movement.">
         <Textarea disabled={readOnly} value={content.easier_option ?? ""} onChange={(event) => setField("easier_option", event.target.value || null)} placeholder="Describe an easier option…" />

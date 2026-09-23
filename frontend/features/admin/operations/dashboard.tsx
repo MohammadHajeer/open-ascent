@@ -100,6 +100,6 @@ export function AdminOperationsDashboard() {
       {jobs.data ? <PageControls page={jobPage} total={jobs.data.total} size={jobs.data.page_size} onPage={setJobPage} /> : null}
     </CardContent></Card>
 
-    <div className="flex flex-wrap gap-4 text-sm"><Link href="/admin/movements" className="text-primary hover:underline">Movement catalog ↗</Link><Link href="/admin/documentation" className="text-primary hover:underline">Documentation ↗</Link></div>
+    <div className="flex flex-wrap gap-4 text-sm">{[["Users", "/admin/users"], ["Analyses", "/admin/analyses"], ["Usage", "/admin/usage"], ["Plans", "/admin/plans"], ["Movements", "/admin/movements"], ["Documentation", "/admin/documentation"]].map(([label, href]) => <Link key={href} href={href} className="text-primary hover:underline">{label} ↗</Link>)}</div>
   </div>;
 }

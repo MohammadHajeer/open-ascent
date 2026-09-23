@@ -15,7 +15,12 @@ class MovementDocumentationCreate(BaseModel):
 
 
 class MovementDocumentationUpdate(BaseModel):
+    edit_revision: int = Field(ge=1)
     content: MovementSafetyContentDraft
+
+
+class MovementDocumentationPublish(BaseModel):
+    edit_revision: int = Field(ge=1)
 
 
 class MovementDocumentationRead(BaseModel):

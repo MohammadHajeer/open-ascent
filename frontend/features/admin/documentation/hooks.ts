@@ -4,43 +4,22 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { getAdminErrorMessage } from "@/features/admin/errors";
-import { fetchAdminMovements } from "@/features/admin/movements/api";
 import { adminMovementKeys } from "@/features/admin/movements/keys";
 
 import {
   createDocumentationDraft,
   createDocumentationDraftFromPublished,
+  fetchAdminDocumentation,
+  fetchAdminDocumentationDetail,
   fetchDocumentationVersions,
   publishDocumentation,
   updateDocumentationDraft,
 } from "./api";
 import { adminDocumentationKeys } from "./keys";
 import type {
-  AdminDocumentationRecord,
   MovementSafetyContent,
 } from "./types";
-
-async function fetchDocumentationWorkspace(): Promise<AdminDocumentationRecord[]> {
-  const movements = await fetchAdminMovements();
-  const versions = await Promise.all(
-    movements.map(async (movement) => ({
-      movement,
-      versions: await fetchDocumentationVersions(movement.id),
-    })),
-  );
-
-  return versions.flatMap(({ movement, versions: movementVersions }) =>
-    movementVersions.map((documentation) => ({
-      ...documentation,
-      movement,
-    })),
-  );
-}
-
-async function fetchDocumentationRecord(id: string) {
-  const records = await fetchDocumentationWorkspace();
-  return records.find((record) => record.id === id) ?? null;
-}
+import type { DocumentationFilters } from "./api";
 
 function invalidateDocumentationQueries(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -59,10 +38,10 @@ function invalidateDocumentationQueries(
   }
 }
 
-export function useAdminDocumentation() {
+export function useAdminDocumentation(filters: DocumentationFilters) {
   return useQuery({
-    queryKey: adminDocumentationKeys.lists(),
-    queryFn: fetchDocumentationWorkspace,
+    queryKey: [...adminDocumentationKeys.lists(), filters],
+    queryFn: () => fetchAdminDocumentation(filters),
   });
 }
 
@@ -77,7 +56,7 @@ export function useAdminDocumentationByMovement(movementId: string) {
 export function useAdminDocumentationDetail(id: string) {
   return useQuery({
     queryKey: adminDocumentationKeys.detail(id),
-    queryFn: () => fetchDocumentationRecord(id),
+    queryFn: () => fetchAdminDocumentationDetail(id),
     enabled: Boolean(id),
   });
 }
@@ -122,10 +101,12 @@ export function useUpdateDocumentationDraft() {
     mutationFn: async ({
       documentationId,
       content,
+      editRevision,
     }: {
       documentationId: string;
       content: MovementSafetyContent;
-    }) => updateDocumentationDraft(documentationId, content),
+      editRevision: number;
+    }) => updateDocumentationDraft(documentationId, content, editRevision),
     onSuccess: (documentation) => {
       invalidateDocumentationQueries(
         queryClient,
@@ -142,8 +123,8 @@ export function usePublishDocumentation() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (documentationId: string) =>
-      publishDocumentation(documentationId),
+    mutationFn: ({ documentationId, editRevision }: { documentationId: string; editRevision: number }) =>
+      publishDocumentation(documentationId, editRevision),
     onSuccess: (documentation) => {
       invalidateDocumentationQueries(
         queryClient,

@@ -28,7 +28,8 @@ export function AdminDocumentationDetailClient({ id }: { id: string }) {
 
   async function handleSave(content: Parameters<NonNullable<React.ComponentProps<typeof DocumentationEditor>["onSave"]>>[0]) {
     try {
-      await updateDraft.mutateAsync({ documentationId: id, content });
+      if (!documentation.data) return;
+      await updateDraft.mutateAsync({ documentationId: id, content, editRevision: documentation.data.edit_revision });
     } catch {
       // The mutation error is rendered below the editor.
     }
@@ -38,8 +39,8 @@ export function AdminDocumentationDetailClient({ id }: { id: string }) {
     if (!documentation.data || !window.confirm("Publish this documentation version? The existing published version may be archived and replaced.")) return;
 
     try {
-      await updateDraft.mutateAsync({ documentationId: id, content });
-      await publish.mutateAsync(id);
+      const saved = await updateDraft.mutateAsync({ documentationId: id, content, editRevision: documentation.data.edit_revision });
+      await publish.mutateAsync({ documentationId: id, editRevision: saved.edit_revision });
     } catch {
       // The mutation error is rendered below the editor.
     }
@@ -102,7 +103,7 @@ export function AdminDocumentationDetailClient({ id }: { id: string }) {
             onSave={readOnly ? undefined : handleSave}
             onPublish={readOnly ? undefined : handlePublish}
           />
-          {mutationError ? <p className="border-t border-destructive/20 bg-destructive/5 px-5 py-3 text-sm text-destructive sm:px-7">{getAdminErrorMessage(mutationError)}</p> : null}
+          {mutationError ? <div className="flex flex-wrap items-center gap-3 border-t border-destructive/20 bg-destructive/5 px-5 py-3 text-sm text-destructive sm:px-7"><span>{getAdminErrorMessage(mutationError)}</span><Button type="button" variant="outline" size="sm" onClick={() => { updateDraft.reset(); publish.reset(); void documentation.refetch(); }}>Reload version</Button></div> : null}
         </DashboardSection>
 
         <div className="space-y-5">

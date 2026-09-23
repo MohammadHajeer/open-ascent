@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { FilePlus2, FileText, Filter, Search } from "lucide-react";
-import { useMemo, useState } from "react";
+import { FilePlus2, Filter, Search } from "lucide-react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
@@ -24,7 +24,7 @@ import {
   useCreateDocumentationDraft,
 } from "@/features/admin/documentation/hooks";
 import type {
-  AdminDocumentationRecord,
+  AdminDocumentationSummary,
   DocumentationStatus,
 } from "@/features/admin/documentation/types";
 import { getAdminErrorMessage } from "@/features/admin/errors";
@@ -35,31 +35,17 @@ const statusOptions: Array<"all" | DocumentationStatus> = ["all", "draft", "publ
 
 export function AdminDocumentationClient() {
   const router = useRouter();
-  const documentation = useAdminDocumentation();
+  const [status, setStatus] = useState<"all" | DocumentationStatus>("all");
+  const [filterMovementId, setFilterMovementId] = useState("all");
+  const [createMovementId, setCreateMovementId] = useState("all");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const documentation = useAdminDocumentation({ page, status, movementId: filterMovementId, search });
   const movements = useAdminMovements();
   const createDraft = useCreateDocumentationDraft();
-  const [status, setStatus] = useState<"all" | DocumentationStatus>("all");
-  const [movementId, setMovementId] = useState("all");
-  const [search, setSearch] = useState("");
-
-  const records = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return (documentation.data ?? []).filter((record) => {
-      const matchesStatus = status === "all" || record.status === status;
-      const matchesMovement = movementId === "all" || record.movement_id === movementId;
-      const matchesSearch =
-        !query ||
-        [record.movement.name, record.movement.slug, record.movement.family_key]
-          .join(" ")
-          .toLowerCase()
-          .includes(query);
-
-      return matchesStatus && matchesMovement && matchesSearch;
-    });
-  }, [documentation.data, movementId, search, status]);
 
   async function handleCreateDraft() {
-    const target = movements.data?.find((movement) => movement.id === movementId);
+    const target = movements.data?.find((movement) => movement.id === createMovementId);
     if (!target) return;
 
     try {
@@ -70,7 +56,7 @@ export function AdminDocumentationClient() {
     }
   }
 
-  if (documentation.isPending || movements.isPending) {
+  if (documentation.isPending) {
     return <DocumentationListSkeleton />;
   }
 
@@ -78,34 +64,30 @@ export function AdminDocumentationClient() {
     return <AdminDataError title="Documentation workspace unavailable" message={getAdminErrorMessage(documentation.error)} onRetry={() => void documentation.refetch()} />;
   }
 
-  if (movements.isError) {
-    return <AdminDataError title="Movement targets unavailable" message={getAdminErrorMessage(movements.error)} onRetry={() => void movements.refetch()} />;
-  }
-
   return (
     <div className="space-y-5">
       <DashboardSection
         eyebrow="Draft workflow"
         title="Create a documentation draft"
-        description="Manual drafts enter the same structured editor and publish action that a future source-agnostic generator can populate."
+        description="Choose a movement to start a safety guide draft."
         aside={<FilePlus2 className="size-5 text-primary" aria-hidden="true" />}
       >
         <div className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-end sm:px-7">
           <label className="block min-w-0 flex-1">
             <span className="mb-2 block text-xs font-medium text-foreground-soft">Target movement</span>
-            <Select value={movementId} onValueChange={(value) => setMovementId(value ?? "all")}>
+            <Select value={createMovementId} onValueChange={(value) => setCreateMovementId(value ?? "all")} disabled={movements.isPending || movements.isError}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Choose a movement" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all" disabled>Choose a movement</SelectItem>
-                {movements.data.map((movement) => (
+                {(movements.data ?? []).map((movement) => (
                   <SelectItem key={movement.id} value={movement.id}>{movement.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </label>
-          <Button type="button" variant="brand" disabled={movementId === "all" || createDraft.isPending} onClick={() => void handleCreateDraft()}>
+          <Button type="button" variant="brand" disabled={createMovementId === "all" || createDraft.isPending} onClick={() => void handleCreateDraft()}>
             <FilePlus2 className="size-4" aria-hidden="true" />
             {createDraft.isPending ? "Creating…" : "Create draft"}
           </Button>
@@ -115,48 +97,47 @@ export function AdminDocumentationClient() {
             {getAdminErrorMessage(createDraft.error)}
           </p>
         ) : null}
+        {movements.isError ? <p className="px-5 pb-4 text-sm text-destructive sm:px-7">Movement choices are unavailable. <Button variant="outline" size="sm" onClick={() => void movements.refetch()}>Retry</Button></p> : null}
       </DashboardSection>
 
       <DashboardSection
         eyebrow="Guide library"
         title="Documentation records"
-        description="Versions are loaded from each movement's real documentation history endpoint."
+        description="Paginated versions across the movement library."
         aside={<Filter className="size-5 text-primary" aria-hidden="true" />}
       >
         <div className="grid gap-3 border-b border-border/70 bg-background-alt/25 px-5 py-4 sm:grid-cols-[minmax(180px,1fr)_180px_220px] sm:px-7">
           <label className="relative block">
             <span className="sr-only">Search documentation</span>
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-foreground-faint" aria-hidden="true" />
-            <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search movement" className="h-9 pl-9" />
+            <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search movement" className="h-9 pl-9" maxLength={80} />
           </label>
-          <Select value={status} onValueChange={(value) => setStatus((value ?? "all") as "all" | DocumentationStatus)}>
+          <Select value={status} onValueChange={(value) => { setStatus((value ?? "all") as "all" | DocumentationStatus); setPage(1); }}>
             <SelectTrigger className="w-full"><SelectValue placeholder="All statuses" /></SelectTrigger>
             <SelectContent>
               {statusOptions.map((option) => <SelectItem key={option} value={option}>{option === "all" ? "All statuses" : option}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Select value={movementId === "all" ? "all" : movementId} onValueChange={(value) => setMovementId(value ?? "all")}>
+          <Select value={filterMovementId} onValueChange={(value) => { setFilterMovementId(value ?? "all"); setPage(1); }} disabled={movements.isError}>
             <SelectTrigger className="w-full"><SelectValue placeholder="All movements" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All movements</SelectItem>
-              {movements.data.map((movement) => <SelectItem key={movement.id} value={movement.id}>{movement.name}</SelectItem>)}
+              {(movements.data ?? []).map((movement) => <SelectItem key={movement.id} value={movement.id}>{movement.name}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>
 
-        {!documentation.data.length ? (
-          <DashboardEmptyState icon={<FileText className="size-5" aria-hidden="true" />} title="No documentation records" description="The current movement catalog did not return any documentation versions." />
-        ) : !records.length ? (
+        {!documentation.data?.total ? (
           <DashboardEmptyState icon={<Search className="size-5" aria-hidden="true" />} title="No matching records" description="Adjust the filters to see another documentation version." />
         ) : (
-          <DocumentationTable records={records} />
+          <><DocumentationTable records={documentation.data.items} /><div className="flex items-center justify-between gap-3 border-t border-border px-5 py-4 text-xs text-foreground-soft sm:px-7"><span>Page {page} of {Math.max(1, Math.ceil(documentation.data.total / documentation.data.page_size))} · {documentation.data.total} records</span><div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button><Button variant="outline" size="sm" disabled={page * documentation.data.page_size >= documentation.data.total} onClick={() => setPage(page + 1)}>Next</Button></div></div></>
         )}
       </DashboardSection>
     </div>
   );
 }
 
-function DocumentationTable({ records }: { records: AdminDocumentationRecord[] }) {
+function DocumentationTable({ records }: { records: AdminDocumentationSummary[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-190 text-left text-sm">

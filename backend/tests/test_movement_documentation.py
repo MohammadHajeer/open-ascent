@@ -146,6 +146,7 @@ def test_movement_documentation_lifecycle(
         db=db,
         documentation_id=v1.id,
         payload=MovementDocumentationUpdate(
+            edit_revision=v1.edit_revision,
             content=updated_v1_content,
         ),
     )
@@ -182,6 +183,7 @@ def test_movement_documentation_lifecycle(
             db=db,
             documentation_id=v1.id,
             payload=MovementDocumentationUpdate(
+                edit_revision=v1.edit_revision,
                 content={
                     "notice": "This must not be allowed.",
                 },
@@ -221,6 +223,7 @@ def test_movement_documentation_lifecycle(
         db=db,
         documentation_id=v2.id,
         payload=MovementDocumentationUpdate(
+            edit_revision=v2.edit_revision,
             content=v2_updates,
         ),
     )
@@ -261,6 +264,7 @@ def test_movement_documentation_lifecycle(
             db=db,
             documentation_id=v1.id,
             payload=MovementDocumentationUpdate(
+                edit_revision=v1.edit_revision,
                 content={
                     "notice": "Archived content modification.",
                 },

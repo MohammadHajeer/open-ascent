@@ -73,7 +73,7 @@ export function DashboardTopbar({ mode }: { mode: DashboardMode }) {
           )}
 
           <ThemeToggle />
-          <DashboardAccountMenu />
+          <DashboardAccountMenu mode={mode} />
         </div>
       </div>
     </header>

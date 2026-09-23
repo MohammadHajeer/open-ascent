@@ -65,10 +65,15 @@ export const userNavigation: DashboardNavItem[] = [
 
 export const adminNavigation: DashboardNavItem[] = [
   {
-    label: "Overview",
+    label: "Operations",
     href: "/admin",
     icon: "overview",
     exact: true,
+  },
+  {
+    label: "Users",
+    href: "/admin/users",
+    icon: "users",
   },
   {
     label: "Analyses",
@@ -94,11 +99,6 @@ export const adminNavigation: DashboardNavItem[] = [
     label: "Documentation",
     href: "/admin/documentation",
     icon: "documentation",
-  },
-  {
-    label: "Users",
-    href: "/admin/users",
-    icon: "users",
   },
 ];
 
