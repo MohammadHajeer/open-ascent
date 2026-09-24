@@ -1,8 +1,15 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { Spotlight } from "./spotlight";
 
-afterEach(() => { cleanup(); vi.useRealTimers(); document.querySelectorAll("[data-tour]").forEach((node) => node.remove()); });
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", class {
+    observe() {}
+    disconnect() {}
+  });
+});
+
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); document.querySelectorAll("[data-tour]").forEach((node) => node.remove()); });
 
 it("releases a missing target instead of trapping the athlete", () => {
   vi.useFakeTimers();

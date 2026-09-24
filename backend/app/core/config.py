@@ -28,7 +28,7 @@ class Settings(BaseSettings):
     openai_model: str
     openai_coach_model: str = "gpt-6-luna"
     openai_visual_classifier_enabled: bool = True
-    openai_visual_classifier_model: str = "gpt-5.6-luna"
+    openai_visual_classifier_model: str = "gpt-6-luna"
     openai_visual_classifier_timeout_seconds: float = 30.0
 
     # Stripe

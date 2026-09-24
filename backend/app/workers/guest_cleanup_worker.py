@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.db.database import SessionLocal
 from app.services.authenticated_media_cleanup import (
     cleanup_authenticated_analysis_media,
+    expire_authenticated_analysis_reservations,
 )
 from app.services.guest_cleanup import cleanup_expired_guest_analyses
 from app.services.worker_monitor import WorkerMonitor
@@ -24,12 +25,18 @@ def run_guest_cleanup_worker() -> None:
                 monitor.set_busy(True)
                 with SessionLocal() as db:
                     cleaned = cleanup_expired_guest_analyses(db)
+                    reservations_expired = expire_authenticated_analysis_reservations(db)
                     media_cleaned = cleanup_authenticated_analysis_media(db)
                 if cleaned:
                     logger.info("Cleaned %s expired guest analyses", cleaned)
                 if media_cleaned:
                     logger.info(
                         "Deleted media for %s authenticated analyses", media_cleaned
+                    )
+                if reservations_expired:
+                    logger.info(
+                        "Expired %s authenticated analysis reservations",
+                        reservations_expired,
                     )
             except Exception:
                 logger.exception("Guest cleanup pass failed")

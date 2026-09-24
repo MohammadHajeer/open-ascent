@@ -63,7 +63,6 @@ class GuestAnalysisUploadAuthorizationResponse(BaseModel):
 
 class GuestAnalysisFinalizeResponse(BaseModel):
     analysis_id: uuid.UUID
-    video_path: str
     status: Literal["queued"] = "queued"
     stage: Literal["queued"] = "queued"
 

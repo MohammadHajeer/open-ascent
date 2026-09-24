@@ -213,7 +213,7 @@ def test_openai_request_is_neutral_strict_and_uses_transient_images(
         image_data_urls=["data:image/jpeg;base64,AA"] * 3,
     )
     assert call.result.classifications["grip_width"].value == "standard"
-    assert captured["model"] == "gpt-5.6-luna"
+    assert captured["model"] == visual_classifier.settings.openai_visual_classifier_model
     assert captured["store"] is False
     assert captured["reasoning"] == {"effort": "none"}
     user_content = captured["input"][1]["content"]

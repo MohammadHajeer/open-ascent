@@ -416,7 +416,6 @@ def finalize_guest_analysis(
 
     return GuestAnalysisFinalizeResponse(
         analysis_id=finalized.id,
-        video_path=finalized.video_path,
         status="queued",
         stage="queued",
     )

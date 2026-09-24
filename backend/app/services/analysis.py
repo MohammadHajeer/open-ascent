@@ -524,9 +524,12 @@ def _validate_existing_authenticated_reservation(
     # Once work has progressed, an HTTP retry still returns the original
     # operation instead of attempting another admission. Only an abandoned
     # pre-upload reservation expires.
-    if analysis.status == "reserved" and (
-        analysis.reservation_expires_at is None
-        or analysis.reservation_expires_at <= now
+    if analysis.status == "expired" or (
+        analysis.status == "reserved"
+        and (
+            analysis.reservation_expires_at is None
+            or analysis.reservation_expires_at <= now
+        )
     ):
         raise ReservationExpiredError
 

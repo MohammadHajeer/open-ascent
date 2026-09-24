@@ -385,7 +385,7 @@ def test_valid_video_finalization_queues_analysis(
 
     assert response_body["status"] == "queued"
     assert response_body["stage"] == "queued"
-    assert response_body["video_path"] == expected_path
+    assert "video_path" not in response_body
 
     analysis = db.get(
         Analysis,

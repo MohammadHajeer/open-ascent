@@ -237,7 +237,11 @@ def test_idempotent_retry_of_accepted_analysis_does_not_double_charge(
 
     assert first.status_code == retry.status_code == 201
     assert first.json()["analysis_id"] == retry.json()["analysis_id"]
-    assert db.scalar(select(func.count(GuestAnalysisUsage.id))) == 1
+    assert db.scalar(
+        select(func.count(GuestAnalysisUsage.id)).where(
+            GuestAnalysisUsage.guest_identity_key == accepted.guest_token_hash
+        )
+    ) == 1
     rejected = create_reservation(client, movement, documentation)
     assert rejected.status_code == 429
 

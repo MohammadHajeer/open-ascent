@@ -36,6 +36,7 @@ from app.services.analysis_jobs import (
 )
 from app.services.authenticated_media_cleanup import (
     cleanup_authenticated_analysis_media,
+    expire_authenticated_analysis_reservations,
 )
 from app.services.guest_cleanup import cleanup_expired_guest_analyses
 
@@ -564,3 +565,42 @@ def test_authenticated_media_cleanup_preserves_result_history_and_explanation(
     )
     assert result.status_code == 200
     assert result.json()["explanation"] is not None
+
+
+def test_expired_authenticated_reservation_releases_quota_and_removes_late_media(
+    client: TestClient,
+    db: Session,
+    auth_analysis_data,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user_a, _, movement, guide = auth_analysis_data
+    operation_key = uuid.uuid4()
+    created = _reserve(client, user_a, movement, guide, "token-a", operation_key)
+    assert created.status_code == 201
+    analysis = db.get(Analysis, uuid.UUID(created.json()["analysis_id"]))
+    usage = db.get(FeatureUsage, analysis.feature_usage_id)
+    analysis.reservation_expires_at = datetime.now(UTC) - timedelta(minutes=1)
+    db.commit()
+
+    bucket = FakeBucket()
+    monkeypatch.setattr(
+        authenticated_media_cleanup,
+        "supabase",
+        SimpleNamespace(storage=FakeStorage(bucket)),
+    )
+    expire_authenticated_analysis_reservations(db)
+    db.refresh(analysis)
+    db.refresh(usage)
+    assert analysis.status == "expired"
+    assert usage.status == FeatureUsageStatus.RELEASED.value
+    cleanup_authenticated_analysis_media(db)
+    path = f"analyses/{analysis.id}/source.mp4"
+    assert [path] not in bucket.removed
+    assert _reserve(client, user_a, movement, guide, "token-a", operation_key).status_code == 410
+
+    analysis.video_delete_after = datetime.now(UTC) - timedelta(days=1)
+    db.commit()
+    cleanup_authenticated_analysis_media(db)
+    assert [path] in bucket.removed
+    db.refresh(analysis)
+    assert analysis.video_delete_after is None

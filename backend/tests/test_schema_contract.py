@@ -23,6 +23,7 @@ EXPECTED_APPLICATION_TABLES = {
     "user_subscriptions",
     "feature_usage",
     "guest_analysis_usage",
+    "worker_instances",
 }
 
 

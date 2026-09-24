@@ -77,6 +77,7 @@ def subscription_db() -> Session:
             "CREATE TABLE profiles ("
             "id UUID PRIMARY KEY, display_name TEXT NOT NULL, "
             "app_role TEXT NOT NULL DEFAULT 'athlete', onboarding_completed_at TIMESTAMP, "
+            "dashboard_tour_status TEXT NOT NULL DEFAULT 'not_started', "
             "coaching_context JSON NOT NULL DEFAULT '{}', "
             "initial_assessment JSON NOT NULL DEFAULT '{}', "
             "athlete_state JSON NOT NULL DEFAULT '{}', safety_ack_version TEXT, "
