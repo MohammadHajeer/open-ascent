@@ -95,6 +95,9 @@ export class LiveCoachCameraSession {
       this.stream = stream;
       video.srcObject = stream;
       await video.play();
+      if (generation !== this.generation) {
+        return null;
+      }
       callbacks.onCameraReady?.();
 
       let runtime: PoseRuntime;

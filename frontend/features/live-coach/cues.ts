@@ -8,6 +8,13 @@ const cues = {
     title: "Frame your full body and bar",
     detail: "Keep both wrists, shoulders, and hips visible before you begin.",
   },
+  unusable: {
+    id: "tracking-unusable",
+    priority: 98,
+    tone: "attention",
+    title: "Tracking needs a clearer view",
+    detail: "Keep both wrists, elbows, shoulders, and hips visible with good light.",
+  },
   setup: {
     id: "set-position",
     priority: 90,
@@ -15,12 +22,26 @@ const cues = {
     title: "Set a stable hanging position",
     detail: "Keep both hands above the shoulders and your body under the bar.",
   },
+  starting: {
+    id: "hold-start",
+    priority: 60,
+    tone: "neutral",
+    title: "Hold the start position",
+    detail: "Extend your arms in a steady hang before the first rep.",
+  },
   partial: {
     id: "finish-top",
     priority: 70,
     tone: "attention",
     title: "Finish higher before lowering",
     detail: "Bring your face to bar height, then return under control.",
+  },
+  complete: {
+    id: "rep-complete",
+    priority: 65,
+    tone: "positive",
+    title: "Rep complete",
+    detail: "Return to a steady hang for the next pull.",
   },
   top: {
     id: "top-confirmed",
@@ -54,12 +75,20 @@ const cues = {
 
 export function selectPrioritizedCue(
   snapshot: PullUpSnapshot,
+  timestampMs = snapshot.observation?.timestampMs ?? snapshot.latestRep?.endMs ?? 0,
 ): LiveCoachCue {
   const candidates: LiveCoachCue[] = [];
 
-  if (!snapshot.poseReady) candidates.push(cues.noPose);
+  if (!snapshot.personDetected && !snapshot.poseReady) candidates.push(cues.noPose);
+  if (snapshot.personDetected && !snapshot.poseReady) candidates.push(cues.unusable);
   if (snapshot.poseReady && !snapshot.setupReady) candidates.push(cues.setup);
-  if (snapshot.latestRep?.outcome === "partial") candidates.push(cues.partial);
+  if (snapshot.poseReady && snapshot.setupReady && !snapshot.startingPositionReady) {
+    candidates.push(cues.starting);
+  }
+  const recentRep = snapshot.phase === "bottom" && snapshot.latestRep &&
+    timestampMs - snapshot.latestRep.endMs <= 2500;
+  if (recentRep && snapshot.latestRep?.outcome === "partial") candidates.push(cues.partial);
+  if (recentRep && snapshot.latestRep?.outcome === "valid") candidates.push(cues.complete);
   if (snapshot.phase === "top") candidates.push(cues.top);
   if (snapshot.phase === "lowering") candidates.push(cues.lowering);
   if (snapshot.phase === "rising") candidates.push(cues.rising);
@@ -67,4 +96,3 @@ export function selectPrioritizedCue(
 
   return candidates.sort((left, right) => right.priority - left.priority)[0] ?? cues.noPose;
 }
-

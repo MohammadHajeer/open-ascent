@@ -120,6 +120,102 @@ test("bottom-threshold jitter cannot double-count a completed rep", () => {
   assert.equal(snapshot.partialRepCount, 0);
 });
 
+test("a fast valid rep counts when the top is visible in only one frame", () => {
+  const analyzer = new LivePullUpAnalyzer();
+  const snapshot = feed(analyzer, [
+    ...confirmedBottom,
+    [480, 110],
+    [560, 45],
+    [640, 95],
+    [720, 150],
+  ]);
+  assert.equal(snapshot.validRepCount, 1);
+  assert.equal(snapshot.latestRep.topMs, 560);
+  assert.deepEqual(snapshot.latestRep.phases, ["bottom", "rising", "top", "lowering", "bottom"]);
+});
+
+test("multiple fast reps count once each", () => {
+  const analyzer = new LivePullUpAnalyzer();
+  const snapshot = feed(analyzer, [
+    ...confirmedBottom,
+    [480, 110], [560, 45], [640, 150],
+    [720, 110], [800, 45], [880, 150],
+    [960, 110], [1040, 45], [1120, 150],
+    [1200, 150], [1280, 146],
+  ]);
+  assert.equal(snapshot.validRepCount, 3);
+  assert.equal(snapshot.latestRep.index, 3);
+});
+
+test("low FPS can count a bottom-top-bottom sequence without intermediate phases", () => {
+  const analyzer = new LivePullUpAnalyzer();
+  const snapshot = feed(analyzer, [
+    ...confirmedBottom,
+    [620, 45],
+    [840, 150],
+  ]);
+  assert.equal(snapshot.validRepCount, 1);
+  assert.deepEqual(snapshot.latestRep.phases, ["bottom", "rising", "top", "lowering", "bottom"]);
+});
+
+test("an incomplete fast attempt and a flexion without body rise do not count", () => {
+  const analyzer = new LivePullUpAnalyzer();
+  const snapshot = feed(analyzer, [
+    ...confirmedBottom,
+    [480, 80], [560, 150],
+    [640, 45, { bodyRelativeY: 0.3 }],
+    [720, 150],
+  ]);
+  assert.equal(snapshot.validRepCount, 0);
+  assert.equal(snapshot.partialRepCount, 1);
+});
+
+test("a brief tracking gap preserves a rep; a longer gap requires a new hang", () => {
+  const brief = new LivePullUpAnalyzer();
+  feed(brief, [...confirmedBottom, [480, 110]]);
+  brief.update(null, 530);
+  brief.update(null, 610);
+  assert.equal(feed(brief, [[630, 45], [710, 150]]).validRepCount, 1);
+
+  const long = new LivePullUpAnalyzer();
+  feed(long, [...confirmedBottom, [480, 110]]);
+  long.update(null, 530);
+  long.update(null, 700);
+  const snapshot = feed(long, [[780, 45], [860, 150]]);
+  assert.equal(snapshot.validRepCount, 0);
+  assert.equal(snapshot.phase, "unknown");
+});
+
+test("a top without return to the starting height does not count", () => {
+  const analyzer = new LivePullUpAnalyzer();
+  const snapshot = feed(analyzer, [
+    ...confirmedBottom,
+    [480, 45],
+    [560, 150, { bodyRelativeY: 0.15 }],
+  ]);
+  assert.equal(snapshot.validRepCount, 0);
+});
+
+test("a lone top-angle spike without enough upward travel does not count", () => {
+  const analyzer = new LivePullUpAnalyzer();
+  const snapshot = feed(analyzer, [
+    ...confirmedBottom,
+    [480, 45, { bodyRelativeY: 0.28 }],
+    [560, 150],
+  ]);
+  assert.equal(snapshot.validRepCount, 0);
+});
+
+test("setup, tracking, and rep-result cues reflect evidence and expire", () => {
+  const analyzer = new LivePullUpAnalyzer();
+  assert.equal(selectPrioritizedCue(analyzer.update(null, 0, false)).id, "frame-body");
+  assert.equal(selectPrioritizedCue(analyzer.update(null, 100, true)).id, "tracking-unusable");
+  assert.equal(selectPrioritizedCue(analyzer.update(observation(200, 120), 200)).id, "hold-start");
+  const snapshot = feed(analyzer, fullRep.map(([time, angle, overrides]) => [time + 300, angle, overrides]));
+  assert.equal(selectPrioritizedCue(snapshot, 1700).id, "rep-complete");
+  assert.equal(selectPrioritizedCue(snapshot, 5000).id, "ready");
+});
+
 test("the prioritized selector emits only the highest-value cue", () => {
   const partialSnapshot = {
     phase: "bottom",
@@ -147,4 +243,3 @@ test("the prioritized selector emits only the highest-value cue", () => {
       selectPrioritizedCue(partialSnapshot).priority,
   );
 });
-

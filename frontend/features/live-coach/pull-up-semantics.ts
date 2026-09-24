@@ -11,15 +11,13 @@ export const PULL_UP_SEMANTICS = {
   faceAssistedTopMinBodyRiseRatio: 0.35,
   motionAngleDeltaDeg: 4,
   repStartBodyRiseThreshold: 0.008,
-  angleSmoothingMs: 170,
   hangConfirmationMs: 350,
   invalidPositionToleranceMs: 120,
+  // The shoulders must return near their anchored wrist-relative start height
+  // before a full rep completes; allow modest pose jitter in normalized units.
+  repReturnBodyTolerance: 0.06,
   bodyAlignmentTolerance: 0.15,
   minLandmarkVisibility: 0.5,
-  // Live-only temporal guard: two consecutive sampled observations must agree
-  // before a phase transition. The Python batch analyzer gets equivalent
-  // stability primarily from its median window and complete-video context.
-  liveTransitionFrames: 2,
 } as const;
 
 export const POSE_INDEX = {

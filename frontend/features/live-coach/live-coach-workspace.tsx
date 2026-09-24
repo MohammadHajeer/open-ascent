@@ -12,6 +12,8 @@ import {
   RefreshCw,
   ShieldCheck,
   Square,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -26,16 +28,19 @@ import { selectPrioritizedCue } from "@/features/live-coach/cues";
 import { createMediaPipePoseRuntime } from "@/features/live-coach/mediapipe-pose";
 import { LivePullUpAnalyzer } from "@/features/live-coach/pull-up-analyzer";
 import { measurePullUpPose } from "@/features/live-coach/pull-up-semantics";
+import { LiveCoachVoice } from "@/features/live-coach/voice";
 import type {
   LiveCoachCue,
   PoseLandmark,
   PullUpSnapshot,
 } from "@/features/live-coach/types";
 import { cn } from "@/lib/utils";
-import { useSubscriptionStatus } from "@/features/subscription/hooks";
+import { fetchLiveCoachAccess } from "@/features/subscription/api";
+import { useLiveCoachAccess } from "@/features/subscription/hooks";
 
 type SessionStatus =
   | "idle"
+  | "verifying-access"
   | "requesting-camera"
   | "loading-pose"
   | "running"
@@ -48,13 +53,22 @@ const INITIAL_SNAPSHOT: PullUpSnapshot = {
   phase: "unknown",
   validRepCount: 0,
   partialRepCount: 0,
+  personDetected: false,
   poseReady: false,
   setupReady: false,
+  startingPositionReady: false,
   latestRep: null,
   observation: null,
 };
 
-const INITIAL_CUE = selectPrioritizedCue(INITIAL_SNAPSHOT);
+const CAMERA_OFF_CUE: LiveCoachCue = {
+  id: "camera-off",
+  priority: 0,
+  tone: "neutral",
+  title: "Camera is off",
+  detail: "Review safety, then start Live Coach when your bar and camera are ready.",
+};
+const INITIAL_CUE = CAMERA_OFF_CUE;
 
 const poseConnections = [
   [11, 12],
@@ -68,11 +82,13 @@ const poseConnections = [
 ] as const;
 
 export function LiveCoachWorkspace() {
-  const subscription = useSubscriptionStatus();
+  const access = useLiveCoachAccess();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<LiveCoachCameraSession | null>(null);
   const analyzerRef = useRef(new LivePullUpAnalyzer());
+  const voiceRef = useRef<LiveCoachVoice | null>(null);
+  const startGenerationRef = useRef(0);
 
   const [status, setStatus] = useState<SessionStatus>("idle");
   const [safetyAcknowledged, setSafetyAcknowledged] = useState(false);
@@ -82,21 +98,45 @@ export function LiveCoachWorkspace() {
   const [devices, setDevices] = useState<DeviceOption[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
   const [mirrorPreview, setMirrorPreview] = useState(true);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [fps, setFps] = useState(0);
   const [inferenceMs, setInferenceMs] = useState(0);
   const [initializationMs, setInitializationMs] = useState<number | null>(null);
   const [delegate, setDelegate] = useState<"GPU" | "CPU" | null>(null);
 
   const isActive =
+    status === "verifying-access" ||
     status === "requesting-camera" ||
     status === "loading-pose" ||
     status === "running";
-  const hasLiveCoachAccess = subscription.data?.effective_plan === "pro";
+  const hasLiveCoachAccess = access.data?.allowed === true;
 
-  useEffect(() => () => sessionRef.current?.stop(), []);
+  useEffect(() => () => {
+    startGenerationRef.current += 1;
+    sessionRef.current?.stop();
+    voiceRef.current?.stop();
+  }, []);
 
   async function startSession() {
-    if (!videoRef.current || !safetyAcknowledged || !hasLiveCoachAccess) return;
+    if (!videoRef.current || !safetyAcknowledged || !hasLiveCoachAccess || isActive) return;
+    const generation = ++startGenerationRef.current;
+    setStatus("verifying-access");
+    setErrorMessage(null);
+    try {
+      const freshAccess = await fetchLiveCoachAccess();
+      if (generation !== startGenerationRef.current) return;
+      if (!freshAccess.allowed) {
+        setStatus("idle");
+        setErrorMessage("Live Coach requires an active Pro entitlement. Check your plan and try again.");
+        void access.refetch();
+        return;
+      }
+    } catch {
+      if (generation !== startGenerationRef.current) return;
+      setStatus("error");
+      setErrorMessage("Live Coach access could not be verified. Try again when your connection is available.");
+      return;
+    }
     if (!navigator.mediaDevices?.getUserMedia) {
       setStatus("error");
       setErrorMessage(
@@ -106,10 +146,22 @@ export function LiveCoachWorkspace() {
     }
 
     sessionRef.current?.stop();
+    voiceRef.current?.stop();
+    const voice = new LiveCoachVoice((path) => new Audio(path));
+    voice.setEnabled(voiceEnabled);
+    voice.preload();
+    voice.start();
+    voiceRef.current = voice;
     analyzerRef.current.reset();
     clearCanvas(canvasRef.current);
     setSnapshot(INITIAL_SNAPSHOT);
-    setCue(INITIAL_CUE);
+    setCue({
+      id: "camera-starting",
+      priority: 0,
+      tone: "neutral",
+      title: "Starting camera and pose tracking",
+      detail: "Stand where your wrists, shoulders, and hips can stay in view.",
+    });
     setFps(0);
     setInferenceMs(0);
     setDelegate(null);
@@ -137,6 +189,10 @@ export function LiveCoachWorkspace() {
         selectedDeviceId || undefined,
       );
       if (!result) return;
+      if (generation !== startGenerationRef.current) {
+        session.stop();
+        return;
+      }
       setStatus("running");
       setDelegate(result.delegate);
       const rearFacingLabel = /\b(back|rear|environment)\b/i.test(
@@ -148,14 +204,19 @@ export function LiveCoachWorkspace() {
       setInitializationMs(result.initializationMs);
       await refreshCameraList(result.deviceId);
     } catch (error) {
+      if (generation !== startGenerationRef.current) return;
       handleSessionError(normalizeSessionError(error));
     }
   }
 
   function stopSession() {
+    startGenerationRef.current += 1;
     sessionRef.current?.stop();
     sessionRef.current = null;
+    if (status === "running" && snapshot.validRepCount > 0) voiceRef.current?.finish();
+    else voiceRef.current?.stop();
     setStatus("stopped");
+    setCue(CAMERA_OFF_CUE);
     setDelegate(null);
     clearCanvas(canvasRef.current);
   }
@@ -168,9 +229,12 @@ export function LiveCoachWorkspace() {
     const nextSnapshot = analyzerRef.current.update(
       observation,
       frame.timestampMs,
+      frame.landmarks !== null,
     );
+    const nextCue = selectPrioritizedCue(nextSnapshot, frame.timestampMs);
     setSnapshot(nextSnapshot);
-    setCue(selectPrioritizedCue(nextSnapshot));
+    setCue(nextCue);
+    voiceRef.current?.onFrame(nextSnapshot, nextCue, frame.timestampMs);
     setFps(frame.inferenceFps);
     setInferenceMs(frame.inferenceMs);
   }
@@ -178,7 +242,9 @@ export function LiveCoachWorkspace() {
   function handleSessionError(error: LiveCoachSessionError) {
     sessionRef.current?.stop();
     sessionRef.current = null;
+    voiceRef.current?.stop();
     setStatus("error");
+    setCue(CAMERA_OFF_CUE);
     setDelegate(null);
     setErrorMessage(sessionErrorMessage(error));
     clearCanvas(canvasRef.current);
@@ -204,10 +270,10 @@ export function LiveCoachWorkspace() {
   const phaseLabel = snapshot.phase === "unknown" ? "Finding start" : snapshot.phase;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
       <section className="overflow-hidden rounded-[1.6rem] border border-border bg-card/70">
         <div className="grid lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.7fr)]">
-          <div className="relative min-h-[24rem] overflow-hidden bg-visual-surface lg:min-h-[36rem]">
+          <div className="relative h-[min(58dvh,34rem)] min-h-72 overflow-hidden bg-visual-surface lg:h-auto lg:min-h-144">
             <div className="cv-grid pointer-events-none absolute inset-0 opacity-15" />
             <video
               ref={videoRef}
@@ -251,24 +317,53 @@ export function LiveCoachWorkspace() {
               </div>
             ) : null}
 
-            {status === "requesting-camera" || status === "loading-pose" ? (
+            {status === "verifying-access" || status === "requesting-camera" || status === "loading-pose" ? (
               <div className="absolute inset-x-5 bottom-5 flex items-center gap-3 rounded-2xl border border-white/10 bg-black/55 px-4 py-3 text-sm text-white backdrop-blur">
                 <RefreshCw className="size-4 animate-spin text-primary" />
-                {status === "requesting-camera"
-                  ? "Waiting for camera permission…"
-                  : "Camera ready. Loading local pose model…"}
+                {status === "verifying-access"
+                  ? "Checking Pro access…"
+                  : status === "requesting-camera"
+                    ? "Waiting for camera permission…"
+                    : "Camera ready. Loading local pose model…"}
               </div>
             ) : null}
 
             <div className="absolute top-4 left-4 flex flex-wrap gap-2">
               <StatusPill
-                ready={status === "running"}
-                label={status === "running" ? "Pose live" : "Pose offline"}
+                ready={status === "loading-pose" || status === "running"}
+                label={status === "loading-pose" || status === "running" ? "Camera ready" : "Camera off"}
               />
+              {status === "running" ? (
+                <StatusPill
+                  ready={snapshot.poseReady}
+                  label={!snapshot.personDetected
+                    ? "Find athlete"
+                    : !snapshot.poseReady
+                      ? "Improve tracking"
+                      : !snapshot.setupReady
+                        ? "Set up hang"
+                        : !snapshot.startingPositionReady
+                          ? "Hold start"
+                          : snapshot.phase === "bottom"
+                            ? "Ready"
+                            : "Active set"}
+                />
+              ) : null}
               <span className="rounded-full border border-white/10 bg-black/45 px-3 py-1.5 font-mono text-[0.58rem] tracking-[0.12em] text-white/70 uppercase backdrop-blur">
                 Local inference
               </span>
             </div>
+            {status === "running" ? (
+              <div className="absolute inset-x-3 bottom-3 flex items-end justify-between gap-3 rounded-xl bg-black/70 p-3 text-white backdrop-blur lg:hidden">
+                <div className="min-w-0">
+                  <p className="text-2xl font-semibold leading-none">{snapshot.validRepCount} <span className="text-xs font-normal">reps</span></p>
+                  <p className="mt-1 truncate text-xs">{cue.title}</p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={stopSession} className="shrink-0 border-white/30 bg-black/45 text-white">
+                  <Square className="size-3 fill-current" /> Stop
+                </Button>
+              </div>
+            ) : null}
           </div>
 
           <aside className="flex flex-col border-t border-border lg:border-t-0 lg:border-l">
@@ -330,9 +425,9 @@ export function LiveCoachWorkspace() {
 
               {!hasLiveCoachAccess ? (
                 <div className="mt-4 rounded-xl border border-border bg-background-alt/65 p-4 text-sm leading-5 text-foreground-soft">
-                  {subscription.isPending ? (
+                  {access.isPending ? (
                     "Checking Live Coach access…"
-                  ) : subscription.isError ? (
+                  ) : access.isError ? (
                     "Live Coach access could not be verified. Refresh before starting a session."
                   ) : (
                     <>
@@ -351,6 +446,35 @@ export function LiveCoachWorkspace() {
             </div>
 
             <div className="space-y-4 border-t border-border p-5 sm:p-6">
+              <div className="flex items-start gap-3 rounded-xl border border-border bg-background-alt/60 p-3">
+                <Checkbox
+                  id="live-coach-safety"
+                  checked={safetyAcknowledged}
+                  onCheckedChange={(checked) => setSafetyAcknowledged(checked === true)}
+                  disabled={isActive}
+                />
+                <div>
+                  <Label htmlFor="live-coach-safety" className="cursor-pointer text-sm leading-5 font-normal">
+                    I checked the bar and space, can hang comfortably, and will stop if grip or body control breaks down.
+                  </Label>
+                  <a href="#live-coach-safety-guidance" className="mt-1 inline-block text-xs font-medium text-primary underline underline-offset-4">Read safety guidance</a>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="gap-2"
+                aria-pressed={voiceEnabled}
+                onClick={() => {
+                  const enabled = !voiceEnabled;
+                  setVoiceEnabled(enabled);
+                  voiceRef.current?.setEnabled(enabled);
+                }}
+              >
+                {voiceEnabled ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
+                Voice coach {voiceEnabled ? "on" : "off"}
+              </Button>
               {devices.length > 1 ? (
                 <div className="space-y-2">
                   <Label htmlFor="live-coach-camera">Camera</Label>
@@ -368,10 +492,14 @@ export function LiveCoachWorkspace() {
                     ))}
                   </select>
                   <p className="text-xs leading-5 text-foreground-faint">
-                    Stop the session before switching between front and rear cameras.
+                    Active camera: {devices.find((device) => device.deviceId === selectedDeviceId)?.label ?? "Default"}. Stop the session to switch cameras.
                   </p>
                 </div>
-              ) : null}
+              ) : (
+                <p className="text-xs leading-5 text-foreground-faint">
+                  Camera choices appear after first permission. Place the selected camera in front of the bar.
+                </p>
+              )}
 
               {status === "running" || isActive ? (
                 <Button
@@ -390,7 +518,7 @@ export function LiveCoachWorkspace() {
                   variant="brand"
                   size="lg"
                   className="w-full gap-2"
-                  disabled={!safetyAcknowledged || !hasLiveCoachAccess}
+                  disabled={!safetyAcknowledged || !hasLiveCoachAccess || isActive}
                   onClick={startSession}
                 >
                   {status === "stopped" || status === "error" ? (
@@ -409,7 +537,7 @@ export function LiveCoachWorkspace() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
-        <div className="rounded-[1.6rem] border border-border bg-card/65 p-5 sm:p-7">
+        <div id="live-coach-safety-guidance" className="scroll-mt-6 rounded-[1.6rem] border border-border bg-card/65 p-5 sm:p-7">
           <div className="flex items-start gap-4">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary-light text-primary">
               <ShieldCheck className="size-5" />
@@ -434,21 +562,6 @@ export function LiveCoachWorkspace() {
             </div>
           </div>
 
-          <div className="mt-5 flex items-start gap-3 rounded-2xl border border-border bg-background-alt/60 p-4">
-            <Checkbox
-              id="live-coach-safety"
-              checked={safetyAcknowledged}
-              onCheckedChange={(checked) => setSafetyAcknowledged(checked === true)}
-              disabled={isActive}
-            />
-            <Label
-              htmlFor="live-coach-safety"
-              className="cursor-pointer text-sm leading-5 font-normal"
-            >
-              I have checked the bar and surrounding space, can hang comfortably,
-              and will stop if grip or body control breaks down.
-            </Label>
-          </div>
         </div>
 
         <div className="rounded-[1.6rem] border border-border bg-background-alt/65 p-5 sm:p-7">
@@ -524,7 +637,7 @@ function Metric({
 function SmallMetric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="font-mono text-[0.52rem] tracking-[0.1em] text-foreground-faint uppercase">
+      <p className="font-mono text-[0.52rem] tracking-widest text-foreground-faint uppercase">
         {label}
       </p>
       <p className="mt-1 text-sm font-medium">{value}</p>

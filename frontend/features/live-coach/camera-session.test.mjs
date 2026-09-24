@@ -124,3 +124,18 @@ test("inference failure closes MediaPipe and stops the camera", async () => {
   assert.equal(testHarness.metrics().stopped, 1);
   assert.equal(testHarness.video.srcObject, null);
 });
+
+test("stopping while preview play is pending cannot initialize pose afterward", async () => {
+  const testHarness = harness();
+  let allowPlay;
+  testHarness.video.play = () => new Promise((resolve) => { allowPlay = resolve; });
+  const starting = testHarness.session.start(testHarness.video, {
+    onFrame: () => assert.fail("a stopped session must not emit frames"),
+  });
+  await Promise.resolve();
+  testHarness.session.stop();
+  allowPlay();
+  assert.equal(await starting, null);
+  assert.equal(testHarness.metrics().stopped, 1);
+  assert.equal(testHarness.metrics().closed, 0);
+});

@@ -6,8 +6,6 @@ import type {
   PullUpSnapshot,
 } from "./types.ts";
 
-type PendingTransition = { phase: PullUpPhase; frames: number } | null;
-
 export class LivePullUpAnalyzer {
   private phase: PullUpPhase = "unknown";
   private validRepCount = 0;
@@ -20,10 +18,9 @@ export class LivePullUpAnalyzer {
   private minimumAngleDeg: number | null = null;
   private bottomBodyRelativeY: number | null = null;
   private phaseHistory: PullUpPhase[] = [];
-  private angleWindow: { timestampMs: number; angleDeg: number }[] = [];
   private readySinceMs: number | null = null;
   private invalidSinceMs: number | null = null;
-  private pendingTransition: PendingTransition = null;
+  private personDetected = false;
 
   reset() {
     this.phase = "unknown";
@@ -32,36 +29,33 @@ export class LivePullUpAnalyzer {
     this.repIndex = 0;
     this.latestRep = null;
     this.resetCandidate();
-    this.angleWindow = [];
     this.readySinceMs = null;
     this.invalidSinceMs = null;
+    this.personDetected = false;
   }
 
-  update(observation: PullUpObservation | null, timestampMs: number) {
+  update(
+    observation: PullUpObservation | null,
+    timestampMs: number,
+    personDetected = observation !== null,
+  ): PullUpSnapshot {
+    this.personDetected = personDetected;
     if (!observation) return this.handleInvalid(timestampMs);
 
     this.invalidSinceMs = null;
-    this.angleWindow.push({ timestampMs, angleDeg: observation.angleDeg });
-    this.angleWindow = this.angleWindow.filter(
-      (sample) =>
-        timestampMs - sample.timestampMs <= PULL_UP_SEMANTICS.angleSmoothingMs,
-    );
-    const angleDeg = median(this.angleWindow.map((sample) => sample.angleDeg));
+    // A 170 ms median at the 12 fps live target can erase a genuine top that
+    // appears in one sampled frame. Use observed extrema and body motion.
+    const angleDeg = observation.angleDeg;
     const setupReady = observation.handsAboveShoulders && observation.bodyUnderHands;
 
     if (this.phase === "unknown") {
-      const bottomReady =
-        setupReady && angleDeg >= PULL_UP_SEMANTICS.bottomAngleDeg;
+      const bottomReady = setupReady && angleDeg >= PULL_UP_SEMANTICS.bottomAngleDeg;
       if (!bottomReady) {
         this.readySinceMs = null;
-        return this.snapshot(observation, false);
+        return this.snapshot(observation, setupReady);
       }
-
       this.readySinceMs ??= timestampMs;
-      if (
-        timestampMs - this.readySinceMs >=
-        PULL_UP_SEMANTICS.hangConfirmationMs
-      ) {
+      if (timestampMs - this.readySinceMs >= PULL_UP_SEMANTICS.hangConfirmationMs) {
         this.startCandidate(timestampMs, observation.bodyRelativeY);
       }
       return this.snapshot(observation, setupReady);
@@ -74,90 +68,67 @@ export class LivePullUpAnalyzer {
         this.refreshBottom(timestampMs, observation.bodyRelativeY);
         return this.snapshot(observation, true);
       }
-
-      const leftBottom =
-        angleDeg <=
-        PULL_UP_SEMANTICS.bottomAngleDeg -
-          PULL_UP_SEMANTICS.motionAngleDeltaDeg;
-      const bodyRise =
-        this.bottomBodyRelativeY === null ||
+      const leftBottom = angleDeg <=
+        PULL_UP_SEMANTICS.bottomAngleDeg - PULL_UP_SEMANTICS.motionAngleDeltaDeg;
+      const bodyRise = this.bottomBodyRelativeY !== null &&
         this.bottomBodyRelativeY - observation.bodyRelativeY >=
           PULL_UP_SEMANTICS.repStartBodyRiseThreshold;
-
-      if (leftBottom && bodyRise && this.confirm("rising")) {
+      if (leftBottom && bodyRise) {
         this.setPhase("rising");
         this.minimumAngleDeg = angleDeg;
-      } else if (!leftBottom || !bodyRise) {
-        this.pendingTransition = null;
+        // A low-FPS stream may sample bottom and top without an intermediate
+        // rising frame. Require meaningful shoulder travel for that shortcut.
+        if (this.isTop(angleDeg, observation) && this.hasStrongBodyRise(observation)) {
+          this.enterTop(timestampMs, angleDeg);
+        }
       }
       return this.snapshot(observation, true);
     }
 
     if (this.phase === "rising") {
-      this.minimumAngleDeg = Math.min(
-        this.minimumAngleDeg ?? angleDeg,
-        angleDeg,
-      );
-
-      const topConfirmed = this.isTop(angleDeg, observation);
-      if (topConfirmed && this.confirm("top")) {
-        this.setPhase("top");
-        this.topMs = timestampMs;
-        this.topEntryAngleDeg = angleDeg;
+      this.minimumAngleDeg = Math.min(this.minimumAngleDeg ?? angleDeg, angleDeg);
+      if (this.isTop(angleDeg, observation)) {
+        this.enterTop(timestampMs, angleDeg);
         return this.snapshot(observation, true);
       }
-
-      const returnedToBottom = angleDeg >= PULL_UP_SEMANTICS.bottomAngleDeg;
-      if (returnedToBottom && this.confirm("bottom")) {
-        if (
-          this.minimumAngleDeg !== null &&
-          this.minimumAngleDeg <= PULL_UP_SEMANTICS.partialTopAngleDeg
-        ) {
+      if (
+        angleDeg >= PULL_UP_SEMANTICS.bottomAngleDeg &&
+        this.returnedToStart(observation)
+      ) {
+        if (this.minimumAngleDeg <= PULL_UP_SEMANTICS.partialTopAngleDeg) {
           this.setPhase("bottom");
-          this.finishRep(
-            "partial",
-            timestampMs,
-            observation.bodyRelativeY,
-            ["did_not_reach_top"],
-          );
+          this.finishRep("partial", timestampMs, observation.bodyRelativeY, ["did_not_reach_top"]);
         } else {
           this.startCandidate(timestampMs, observation.bodyRelativeY);
         }
-      } else if (!topConfirmed && !returnedToBottom) this.pendingTransition = null;
+      }
       return this.snapshot(observation, true);
     }
 
     if (this.phase === "top") {
-      const returnedToBottom = angleDeg >= PULL_UP_SEMANTICS.bottomAngleDeg;
-      const loweringStarted =
+      if (
+        angleDeg >= PULL_UP_SEMANTICS.bottomAngleDeg &&
+        this.returnedToStart(observation)
+      ) {
+        this.setPhase("lowering");
+        this.setPhase("bottom");
+        this.finishRep("valid", timestampMs, observation.bodyRelativeY);
+      } else if (
         this.topEntryAngleDeg !== null &&
-        angleDeg >=
-          this.topEntryAngleDeg + PULL_UP_SEMANTICS.motionAngleDeltaDeg;
-      if (returnedToBottom) {
-        if (this.confirm("bottom")) {
-          this.setPhase("lowering");
-          this.setPhase("bottom");
-          this.finishRep("valid", timestampMs, observation.bodyRelativeY);
-        }
-      } else if (loweringStarted) {
-        if (this.confirm("lowering")) this.setPhase("lowering");
-      } else {
-        this.pendingTransition = null;
+        angleDeg >= this.topEntryAngleDeg + PULL_UP_SEMANTICS.motionAngleDeltaDeg
+      ) {
+        this.setPhase("lowering");
       }
       return this.snapshot(observation, true);
     }
 
-    if (this.phase === "lowering") {
-      if (angleDeg >= PULL_UP_SEMANTICS.bottomAngleDeg) {
-        if (this.confirm("bottom")) {
-          this.setPhase("bottom");
-          this.finishRep("valid", timestampMs, observation.bodyRelativeY);
-        }
-      } else {
-        this.pendingTransition = null;
-      }
+    if (
+      angleDeg >= PULL_UP_SEMANTICS.bottomAngleDeg &&
+      this.returnedToStart(observation)
+    ) {
+      this.setPhase("bottom");
+      this.finishRep("valid", timestampMs, observation.bodyRelativeY);
     }
-
     return this.snapshot(observation, true);
   }
 
@@ -165,35 +136,20 @@ export class LivePullUpAnalyzer {
     return this.snapshot(null, false);
   }
 
-  private handleInvalid(
-    timestampMs: number,
-    observation: PullUpObservation | null = null,
-  ) {
-    this.pendingTransition = null;
+  private handleInvalid(timestampMs: number, observation: PullUpObservation | null = null) {
     this.readySinceMs = null;
     this.invalidSinceMs ??= timestampMs;
-
-    if (
-      timestampMs - this.invalidSinceMs >
-      PULL_UP_SEMANTICS.invalidPositionToleranceMs
-    ) {
+    if (timestampMs - this.invalidSinceMs > PULL_UP_SEMANTICS.invalidPositionToleranceMs) {
       if (
         this.phase === "rising" &&
         this.minimumAngleDeg !== null &&
         this.minimumAngleDeg <= PULL_UP_SEMANTICS.partialTopAngleDeg
       ) {
-        this.finishRep(
-          "uncertain",
-          timestampMs,
-          this.bottomBodyRelativeY ?? 0,
-          ["tracking_lost"],
-        );
+        this.finishRep("uncertain", timestampMs, this.bottomBodyRelativeY ?? 0, ["tracking_lost"]);
       }
       this.phase = "unknown";
       this.resetCandidate();
-      this.angleWindow = [];
     }
-
     return this.snapshot(observation, false);
   }
 
@@ -201,40 +157,41 @@ export class LivePullUpAnalyzer {
     if (angleDeg <= PULL_UP_SEMANTICS.topAngleDeg) return true;
     if (
       observation.faceToWristY === null ||
-      observation.faceToWristY >
-        PULL_UP_SEMANTICS.faceToWristTopTolerance ||
+      observation.faceToWristY > PULL_UP_SEMANTICS.faceToWristTopTolerance ||
       angleDeg > PULL_UP_SEMANTICS.faceAssistedTopMaxAngleDeg ||
       this.bottomBodyRelativeY === null
-    ) {
-      return false;
-    }
+    ) return false;
 
     const bottomDistance = Math.abs(this.bottomBodyRelativeY);
     if (bottomDistance <= 1e-6) return false;
     const bodyRiseRatio =
       (this.bottomBodyRelativeY - observation.bodyRelativeY) / bottomDistance;
-    return (
-      bodyRiseRatio >=
-      PULL_UP_SEMANTICS.faceAssistedTopMinBodyRiseRatio
-    );
+    return bodyRiseRatio >= PULL_UP_SEMANTICS.faceAssistedTopMinBodyRiseRatio;
   }
 
-  private confirm(phase: PullUpPhase) {
-    if (this.pendingTransition?.phase === phase) {
-      this.pendingTransition.frames += 1;
-    } else {
-      this.pendingTransition = { phase, frames: 1 };
-    }
-    return (
-      this.pendingTransition.frames >= PULL_UP_SEMANTICS.liveTransitionFrames
-    );
+  private enterTop(timestampMs: number, angleDeg: number) {
+    this.setPhase("top");
+    this.topMs = timestampMs;
+    this.topEntryAngleDeg = angleDeg;
+  }
+
+  private returnedToStart(observation: PullUpObservation) {
+    return this.bottomBodyRelativeY !== null && observation.bodyRelativeY >=
+      this.bottomBodyRelativeY - PULL_UP_SEMANTICS.repReturnBodyTolerance;
+  }
+
+  private hasStrongBodyRise(observation: PullUpObservation) {
+    if (this.bottomBodyRelativeY === null) return false;
+    const baseline = Math.abs(this.bottomBodyRelativeY);
+    return baseline > 1e-6 &&
+      (this.bottomBodyRelativeY - observation.bodyRelativeY) / baseline >=
+        PULL_UP_SEMANTICS.faceAssistedTopMinBodyRiseRatio;
   }
 
   private setPhase(phase: PullUpPhase) {
     if (phase === this.phase) return;
     this.phase = phase;
     this.phaseHistory.push(phase);
-    this.pendingTransition = null;
   }
 
   private startCandidate(timestampMs: number, bodyRelativeY: number) {
@@ -245,7 +202,6 @@ export class LivePullUpAnalyzer {
     this.minimumAngleDeg = null;
     this.bottomBodyRelativeY = bodyRelativeY;
     this.phaseHistory = ["bottom"];
-    this.pendingTransition = null;
   }
 
   private refreshBottom(timestampMs: number, bodyRelativeY: number) {
@@ -255,7 +211,6 @@ export class LivePullUpAnalyzer {
     this.topEntryAngleDeg = null;
     this.minimumAngleDeg = null;
     this.phaseHistory = ["bottom"];
-    this.pendingTransition = null;
   }
 
   private finishRep(
@@ -287,29 +242,19 @@ export class LivePullUpAnalyzer {
     this.minimumAngleDeg = null;
     this.bottomBodyRelativeY = null;
     this.phaseHistory = [];
-    this.pendingTransition = null;
   }
 
-  private snapshot(
-    observation: PullUpObservation | null,
-    setupReady: boolean,
-  ): PullUpSnapshot {
+  private snapshot(observation: PullUpObservation | null, setupReady: boolean): PullUpSnapshot {
     return {
       phase: this.phase,
       validRepCount: this.validRepCount,
       partialRepCount: this.partialRepCount,
+      personDetected: this.personDetected,
       poseReady: observation !== null,
       setupReady,
+      startingPositionReady: observation !== null && this.phase !== "unknown",
       latestRep: this.latestRep,
       observation,
     };
   }
-}
-
-function median(values: number[]) {
-  const sorted = [...values].sort((left, right) => left - right);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2
-    ? sorted[middle]
-    : (sorted[middle - 1] + sorted[middle]) / 2;
 }

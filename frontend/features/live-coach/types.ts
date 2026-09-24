@@ -39,8 +39,10 @@ export type PullUpSnapshot = {
   phase: PullUpPhase;
   validRepCount: number;
   partialRepCount: number;
+  personDetected: boolean;
   poseReady: boolean;
   setupReady: boolean;
+  startingPositionReady: boolean;
   latestRep: PullUpRep | null;
   observation: PullUpObservation | null;
 };
@@ -54,4 +56,3 @@ export type LiveCoachCue = {
   title: string;
   detail: string;
 };
-

@@ -1,12 +1,17 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from app.api.dependencies.auth import CurrentUserId
+from app.api.dependencies.auth import AthleteProfile, CurrentUserId
 from app.core.config import settings
 from app.db.database import DbSession
-from app.schemas.subscription import CheckoutSessionResponse, SubscriptionStatusResponse
-from app.services.entitlements import resolve_effective_plan
+from app.models.enums import FeatureKey
+from app.schemas.subscription import (
+    CheckoutSessionResponse,
+    LiveCoachAccessResponse,
+    SubscriptionStatusResponse,
+)
+from app.services.entitlements import is_feature_enabled, resolve_effective_plan
 from app.services.stripe_checkout import (
     CheckoutConfigurationError,
     CheckoutNotEligibleError,
@@ -30,6 +35,18 @@ def get_subscription_status(
 ) -> SubscriptionStatusResponse:
     return SubscriptionStatusResponse(
         effective_plan=resolve_effective_plan(db, user_id).value
+    )
+
+
+@router.get("/live-coach-access", response_model=LiveCoachAccessResponse)
+def get_live_coach_access(
+    profile: AthleteProfile,
+    db: DbSession,
+    response: Response,
+) -> LiveCoachAccessResponse:
+    response.headers["Cache-Control"] = "no-store"
+    return LiveCoachAccessResponse(
+        allowed=is_feature_enabled(db, profile.id, FeatureKey.LIVE_COACH)
     )
 
 

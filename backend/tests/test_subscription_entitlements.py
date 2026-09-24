@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.api.dependencies.auth import require_athlete
 from app.core.safety import GLOBAL_SAFETY_GUIDANCE
+from app.db.database import get_db
+from app.main import app
 from app.models.enums import EntitlementType, FeatureKey, PlanCode, ResetPolicy
 from app.models.subscription import FeatureUsage, PlanEntitlement, SubscriptionPlan
 from app.services import feature_usage as usage_service
@@ -36,7 +41,9 @@ EXPECTED_FEATURES = {
 
 @pytest.fixture
 def subscription_db() -> Session:
-    engine = create_engine("sqlite+pysqlite:///:memory:")
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:", connect_args={"check_same_thread": False}
+    )
 
     @event.listens_for(engine, "connect")
     def register_postgres_uuid_default(connection, _record) -> None:
@@ -307,6 +314,41 @@ def test_effective_plan_resolves_verified_current_pro(seeded_catalog: Session) -
         as_of=datetime(2026, 9, 21, tzinfo=UTC),
     ) is PlanCode.PRO
     assert is_feature_enabled(seeded_catalog, user_id, FeatureKey.LIVE_COACH)
+
+
+def test_live_coach_access_requires_authentication(seeded_catalog: Session) -> None:
+    app.dependency_overrides[get_db] = lambda: seeded_catalog
+    try:
+        with TestClient(app) as client:
+            response = client.get("/subscriptions/live-coach-access")
+        assert response.status_code == 401
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_live_coach_access_uses_server_entitlement_for_free_and_pro(
+    seeded_catalog: Session,
+) -> None:
+    free_id = uuid.uuid4()
+    pro_id = uuid.uuid4()
+    attach_subscription(seeded_catalog, user_id=pro_id, plan_code=PlanCode.PRO)
+    current_user = {"id": free_id}
+    app.dependency_overrides[get_db] = lambda: seeded_catalog
+    app.dependency_overrides[require_athlete] = lambda: SimpleNamespace(
+        id=current_user["id"]
+    )
+    try:
+        with TestClient(app) as client:
+            free = client.get("/subscriptions/live-coach-access")
+            current_user["id"] = pro_id
+            pro = client.get("/subscriptions/live-coach-access")
+        assert free.status_code == 200
+        assert free.json() == {"allowed": False}
+        assert pro.status_code == 200
+        assert pro.json() == {"allowed": True}
+    finally:
+        app.dependency_overrides.pop(require_athlete, None)
+        app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.mark.parametrize(
