@@ -248,6 +248,7 @@ describe("Coach workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save Plan" }));
     await waitFor(() => expect(api.savePlanPreview).toHaveBeenCalledWith("preview-1"));
     expect(await screen.findByText("Saved plan")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View saved plan in Library" }).getAttribute("href")).toBe("/dashboard/library/saved-1");
     expect(screen.getByRole("button", { name: "Saved" }).hasAttribute("disabled")).toBe(true);
     expect(api.savePlanPreview).toHaveBeenCalledTimes(1);
   });

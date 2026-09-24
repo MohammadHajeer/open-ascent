@@ -243,3 +243,67 @@ def get_owned_plan(
     if plan is None:
         raise PlanNotFoundError
     return plan
+
+
+def list_owned_plans(db: Session, user_id: uuid.UUID) -> list[TrainingPlan]:
+    return list(
+        db.scalars(
+            select(TrainingPlan)
+            .where(TrainingPlan.user_id == user_id)
+            .order_by(TrainingPlan.saved_at.desc(), TrainingPlan.id.desc())
+        )
+    )
+
+
+def saved_plan_summary(plan: TrainingPlan) -> dict:
+    try:
+        candidate = WeeklyPlanCandidate.model_validate(plan.plan_document)
+    except ValidationError as exc:
+        raise PlanValidationError("invalid_plan", "Saved plan is invalid.") from exc
+    return {
+        "id": str(plan.id),
+        "title": plan.title,
+        "summary": candidate.summary,
+        "saved_at": plan.saved_at.isoformat(),
+        "training_day_count": len(candidate.days),
+        "movement_count": len({
+            exercise.movement_id
+            for day in candidate.days
+            for exercise in day.exercises
+        }),
+    }
+
+
+def saved_plan_read(db: Session, plan: TrainingPlan) -> dict:
+    try:
+        candidate = WeeklyPlanCandidate.model_validate(plan.plan_document)
+    except ValidationError as exc:
+        raise PlanValidationError("invalid_plan", "Saved plan is invalid.") from exc
+    movement_ids = {
+        exercise.movement_id for day in candidate.days for exercise in day.exercises
+    }
+    movements = {
+        movement.id: movement
+        for movement in db.scalars(select(Movement).where(Movement.id.in_(movement_ids)))
+    }
+    return {
+        **saved_plan_summary(plan),
+        "plan_document": plan.plan_document,
+        "days": [
+            {
+                "day_index": day.day_index,
+                "label": day.label,
+                "exercises": [
+                    {
+                        **exercise.model_dump(mode="json"),
+                        "movement_name": movements[exercise.movement_id].name[:80]
+                        if exercise.movement_id in movements else "Unavailable movement",
+                        "movement_slug": movements[exercise.movement_id].slug
+                        if exercise.movement_id in movements else None,
+                    }
+                    for exercise in day.exercises
+                ],
+            }
+            for day in candidate.days
+        ],
+    }

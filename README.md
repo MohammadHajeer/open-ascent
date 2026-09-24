@@ -11,7 +11,7 @@ Open Ascent helps athletes record training, review movement evidence, and make i
 - Log workouts and view progress from self-performed sets.
 - Upload supported Vertical Pull videos for deterministic rep and form analysis; signed-in athletes can revisit their results.
 - Use Live Coach for local pose-based rep counting, variant classification, form cues, and voice clips with Pro access.
-- Ask AI Coach about your own training record and published movement guides; generate a structured weekly plan, preview it, then explicitly save it.
+- Ask AI Coach about your own training record and published movement guides; generate a structured weekly plan, preview it, explicitly save it, then browse it in Library.
 - Review movement safety and readiness guidance, with measured capability updates only from qualifying analysis evidence.
 - Manage movement content, users, subscriptions, and job health through the admin workspace.
 

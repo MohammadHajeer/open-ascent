@@ -8,7 +8,6 @@
 - **Measured hold capability:** The current uploaded-analysis recalibration path accepts repetition movements only. Logged holds can appear in training/progress and may contribute to rules that accept them, but they are not an uploaded-video measured hold recalibration.
 - **Readiness evidence:** A movement remains `UNKNOWN` when a published rule lacks acceptable, current, structured evidence. A self-reported baseline or standalone upload is not automatically enough to establish measured capability.
 - **External services:** Coach responses, plan generation, analysis explanations, Stripe state, and hosted Supabase operations depend on provider availability and configuration. The demo should have completed results ready.
-- **Library:** `/dashboard/library` is a placeholder; current saved plan access is on the dashboard and in the Coach conversation, while uploaded results are on Analyses.
 - **Deployment:** The repository documents local development and test-mode checkout; it does not include a verified production deployment procedure or claim production validation.
 
 ## Intentional scope boundaries
@@ -19,4 +18,4 @@
 
 ## Future enhancements
 
-Expand movement/video coverage, validate Live Coach across a wider set of real devices and camera setups, add measured hold-duration analysis, and connect the Library to saved artifacts. These are directions, not current capabilities.
+Expand movement/video coverage, validate Live Coach across a wider set of real devices and camera setups, and add measured hold-duration analysis. These are directions, not current capabilities.

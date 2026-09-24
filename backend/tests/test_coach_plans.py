@@ -357,6 +357,63 @@ def test_api_rejects_client_plan_payload_and_cross_user_access(plan_db, monkeypa
         app.dependency_overrides.clear()
 
 
+def test_library_lists_only_owned_saved_plans_and_reads_prescriptions(plan_db, monkeypatch):
+    factory, owner, stranger, movement = plan_db
+    evidence(monkeypatch, True)
+    with factory() as db:
+        item = generation(db, owner)
+        preview = training_plan.complete_preview(
+            db, generation_id=item.id, user_id=owner.id,
+            candidate=candidate(movement.id), provider_response_id="resp_library",
+        )
+        preview_id = preview.id
+
+    identity = {"profile": owner}
+
+    def database():
+        with factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = database
+    app.dependency_overrides[require_athlete] = lambda: identity["profile"]
+    try:
+        with TestClient(app) as client:
+            assert client.get("/coach/plans").json() == []
+            saved = client.post(f"/coach/plans/previews/{preview_id}/save", json={})
+            assert saved.status_code == 200
+            plan_id = saved.json()["id"]
+            listing = client.get("/coach/plans")
+            assert listing.status_code == 200
+            assert len(listing.json()) == 1
+            assert listing.json()[0]["id"] == plan_id
+            assert listing.json()[0]["training_day_count"] == 1
+            assert listing.json()[0]["movement_count"] == 1
+            detail = client.get(f"/coach/plans/{plan_id}")
+            assert detail.status_code == 200
+            exercise = detail.json()["days"][0]["exercises"][0]
+            assert exercise["movement_name"] == "Pull-Up"
+            assert (exercise["reps"], exercise["hold_seconds"]) == (5, None)
+            assert client.get(f"/coach/plans/{uuid.uuid4()}").status_code == 404
+            assert client.get("/coach/plans/not-a-uuid").status_code == 422
+            identity["profile"] = stranger
+            assert client.get("/coach/plans").json() == []
+            assert client.get(f"/coach/plans/{plan_id}").status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_library_reads_saved_hold_prescription(plan_db):
+    factory, owner, _stranger, movement = plan_db
+    document = candidate(movement.id, reps=None, hold_seconds=30).model_dump(mode="json")
+    with factory() as db:
+        plan = TrainingPlan(user_id=owner.id, title="Hold week", plan_document=document)
+        db.add(plan)
+        db.commit()
+        read = training_plan.saved_plan_read(db, plan)
+        exercise = read["days"][0]["exercises"][0]
+        assert (exercise["reps"], exercise["hold_seconds"]) == (None, 30)
+
+
 def test_plan_admission_uses_one_plan_unit_and_safe_idempotency(plan_db, monkeypatch):
     factory, owner, _stranger, _movement = plan_db
     calls = []

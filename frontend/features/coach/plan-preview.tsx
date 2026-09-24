@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { getPlanPreview, savePlanPreview } from "./api";
 import type { PlanPreview } from "./types";
@@ -58,6 +59,7 @@ export function PlanPreviewCard({ previewId }: { previewId: string }) {
           </div>)}
         </div>
         <p className="mt-3 text-xs leading-5 text-foreground-faint">Review each movement’s published safety guidance before training. Readiness was checked against accepted evidence when this preview was generated and is checked again when you save.</p>
+        {preview.saved_plan_id && <Link href={`/dashboard/library/${preview.saved_plan_id}`} className="mt-4 inline-block text-sm font-medium text-primary underline underline-offset-4">View saved plan in Library</Link>}
       </>}
     </section>
   );

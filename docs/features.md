@@ -8,6 +8,7 @@
 - **Uploaded analysis:** Guest reservation/upload/result flow with limited access; signed-in uploads, private analysis history, progress events, deterministic rep/form findings, and optional grounded AI explanation. Supported uploads are in the Vertical Pull family; the selected target is checked separately from family classification.
 - **Readiness and recalibration:** Published safety rules use structured evidence and can return `PASS`, `FAIL`, or `UNKNOWN`. Only qualifying, target-matched max-test analyses update measured rep capability. Self-reports remain marked as provisional.
 - **AI Coach:** Persistent conversations, streamed responses, owner-scoped read tools for profile, workouts, progress, analyses, and published guides. A separate action generates a structured weekly plan proposal; the athlete reviews a preview and clicks **Save Plan**. Readiness is checked again at save time.
+- **Library:** Authenticated athletes can browse their own saved plans and open a plan to review its days, exercises, and repetition or hold-duration prescriptions. The dashboard retains a current-plan summary.
 - **Subscriptions and usage:** Free/Pro entitlement and usage checks, Stripe test checkout and webhook reconciliation, plus account plan information.
 - **Guided tour:** Dashboard tour state and guided entry points for key athlete tools.
 
@@ -21,4 +22,4 @@ The admin workspace provides management screens for users, movements, published 
 
 ## Navigation note
 
-`/dashboard/library` currently shows a placeholder empty state. Saved plans are visible in the Coach conversation where they were generated and in the dashboard's **Your saved plan** section; analysis history has its own **Analyses** page. See [Known limitations](known-limitations.md).
+Library is the saved-plan destination. Uploaded results remain in the separate **Analyses** page.

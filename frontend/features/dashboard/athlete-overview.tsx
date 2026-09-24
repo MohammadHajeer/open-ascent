@@ -70,7 +70,7 @@ export function AthleteOverview() {
               : workouts.isPending || context.isPending ? "Your recent sessions and saved plan are loading."
                 : workouts.isError || context.isError ? "You can still log a workout, analyze a movement, or open AI Coach."
               : "Log a workout to build a record you can use to track progress and guide coaching."}</p>
-          <div className="mt-6 flex flex-wrap gap-2"><Action href={plan && !active ? "#weekly-plan" : "/dashboard/train"} primary>{active ? "Resume workout" : plan ? "View plan" : "Log workout"}</Action><Action href="/analyze">Analyze movement</Action></div>
+          <div className="mt-6 flex flex-wrap gap-2"><Action href={plan && !active ? `/dashboard/library/${plan.id}` : "/dashboard/train"} primary>{active ? "Resume workout" : plan ? "View plan" : "Log workout"}</Action><Action href="/analyze">Analyze movement</Action></div>
         </div>
       </div>
       <div className="rounded-[1.6rem] border border-border bg-background-alt/65 p-6 sm:p-7">
@@ -98,6 +98,7 @@ export function AthleteOverview() {
                 <p className="mt-1 text-xs leading-5 text-foreground-soft">{day.exercises.map((exercise) => `${exercise.movement_name} (${exercise.sets} × ${exercise.reps === null ? `${exercise.hold_seconds}s` : `${exercise.reps} reps`})`).join(" · ")}</p>
               </div>)}</div>
               <p className="mt-4 text-xs text-foreground-faint">Plan days are a sequence, not scheduled dates. Check current movement guidance before training.</p>
+              <div className="mt-4"><Action href={`/dashboard/library/${plan.id}`}>Open in Library</Action></div>
             </div> : <div className="px-5 py-7 sm:px-7">
               <ThemedAsset asset={assets.emptyStates.noTrainingPlan} alt="" width={120} />
               <p className="mt-3 text-sm font-medium">No weekly plan saved yet.</p>

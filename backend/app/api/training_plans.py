@@ -45,15 +45,20 @@ def save_preview(
     return {"id": str(plan.id), "title": plan.title, "saved_at": plan.saved_at.isoformat()}
 
 
+@router.get("")
+def list_saved_plans(profile: AthleteProfile, db: DbSession) -> list[dict]:
+    try:
+        return [plans.saved_plan_summary(plan) for plan in plans.list_owned_plans(db, profile.id)]
+    except plans.PlanValidationError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
 @router.get("/{plan_id}")
 def get_saved_plan(plan_id: uuid.UUID, profile: AthleteProfile, db: DbSession) -> dict:
     try:
         plan = plans.get_owned_plan(db, profile.id, plan_id)
+        return plans.saved_plan_read(db, plan)
     except plans.PlanNotFoundError as exc:
         raise HTTPException(404, "Training plan not found.") from exc
-    return {
-        "id": str(plan.id),
-        "title": plan.title,
-        "saved_at": plan.saved_at.isoformat(),
-        "plan_document": plan.plan_document,
-    }
+    except plans.PlanValidationError as exc:
+        raise HTTPException(409, str(exc)) from exc

@@ -35,10 +35,10 @@ For measured recalibration, first upload a real supported movement video as a **
 uv run python -m scripts.seed_demo rich --stripe-subscription-id <STRIPE_TEST_SUBSCRIPTION_ID> --analysis-id <ANALYSIS_UUID>
 ```
 
-The backend accepts only target-matched valid rep evidence. A curated saved plan appears only if a movement actually passes readiness and the existing validator accepts it. For the full demo, generate a separate new proposal in AI Coach and show preview plus explicit save.
+The backend accepts only target-matched valid rep evidence. A curated saved plan appears only if a movement actually passes readiness and the existing validator accepts it. For the full demo, generate a separate new proposal in AI Coach, show preview plus explicit save, then open the saved plan in Library.
 
 ## Reruns and preflight
 
 The account seed reuses only users marked by this demo tool and refuses an unmarked account with the same email. Rich history uses deterministic IDs and skips entries already present. It rechecks the Stripe subscription and reuses linked uploads. A rerun does not reset passwords or erase real uploaded evidence.
 
-Before recording, confirm both logins, Yazan's Pro status, history and progress, a completed analysis result, the saved dashboard plan if one passed readiness, and admin access. Preload the browser routes listed in [Demo flow](demo-flow.md); check camera and audio on the actual presentation device.
+Before recording, confirm both logins, Yazan's Pro status, history and progress, a completed analysis result, any readiness-approved saved plan in Library, and admin access. Preload the browser routes listed in [Demo flow](demo-flow.md); check camera and audio on the actual presentation device.
