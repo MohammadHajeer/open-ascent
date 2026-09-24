@@ -51,6 +51,33 @@ test("count and correction paths match the shipped MP3 pack", () => {
     assert.ok(existsSync(join(voiceRoot, countClip(count))));
   }
   assert.ok(existsSync(join(voiceRoot, correctionClip("finish-top"))));
+  for (const [id, expected] of Object.entries({
+    "extend-at-bottom": "corrections/extend-at-bottom.mp3",
+    "excessive-knee-bend": "corrections/keep-legs-straight.mp3",
+    "body-swing": "corrections/reduce-the-swing.mp3",
+  })) {
+    assert.equal(correctionClip(id), expected);
+    assert.ok(existsSync(join(voiceRoot, expected)));
+  }
+  assert.equal(correctionClip("control-lowering"), null);
+});
+
+test("new form corrections speak once per cooldown and never suppress a rep count", () => {
+  for (const id of ["extend-at-bottom", "excessive-knee-bend", "body-swing"]) {
+    const h = harness();
+    h.voice.start();
+    h.voice.onFrame(frame(), cue(id), 100);
+    assert.ok(h.played.at(-1).endsWith(correctionClip(id)));
+    h.voice.onFrame(frame(), cue("ready"), 200);
+    h.voice.onFrame(frame(), cue(id), 300);
+    assert.equal(h.played.filter((path) => path.endsWith(correctionClip(id))).length, 1);
+    h.voice.onFrame(frame({ index: 1, count: 1 }), cue(id), 400);
+    assert.ok(h.played.at(-1).endsWith("counts/01.mp3"));
+    h.clips.get("/live-coach/voice/counts/01.mp3").onended?.({});
+    h.voice.onFrame(frame(), cue("ready"), 6200);
+    h.voice.onFrame(frame(), cue(id), 6300);
+    assert.equal(h.played.filter((path) => path.endsWith(correctionClip(id))).length, 2);
+  }
 });
 
 test("only completed valid reps speak, and count interrupts lower-priority speech", () => {

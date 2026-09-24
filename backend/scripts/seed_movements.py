@@ -580,7 +580,10 @@ def seed_movement(
             prescription_type=seed["prescription_type"],
             illustration_path=seed["illustration_path"],
             upload_analysis_supported=seed["family_key"] == "vertical_pull",
-            live_coach_supported=seed["slug"] == "pull-up",
+            live_coach_supported=seed["slug"] in {
+                "pull-up", "chin-up", "close-grip-pull-up",
+                "wide-grip-pull-up", "high-pull-up",
+            },
         )
 
         db.add(movement)

@@ -17,7 +17,9 @@ const cueClips: Record<string, string> = {
   "set-position": "setup/hold-start-position.mp3",
   "hold-start": "setup/hold-start-position.mp3",
   "finish-top": "corrections/chin-over-bar.mp3",
-  "control-lowering": "corrections/control-the-descent.mp3",
+  "extend-at-bottom": "corrections/extend-at-bottom.mp3",
+  "excessive-knee-bend": "corrections/keep-legs-straight.mp3",
+  "body-swing": "corrections/reduce-the-swing.mp3",
 };
 
 export function countClip(repCount: number): string | null {

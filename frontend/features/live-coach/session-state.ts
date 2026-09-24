@@ -1,4 +1,5 @@
 import type { LiveCoachCue, PullUpSnapshot } from "./types.ts";
+import { emptyVariantBreakdown } from "./vertical-pull-config.ts";
 
 export type SessionStatus =
   | "idle"
@@ -20,6 +21,7 @@ export const INITIAL_SNAPSHOT: PullUpSnapshot = {
   setupReady: false,
   startingPositionReady: false,
   latestRep: null,
+  variantBreakdown: emptyVariantBreakdown(),
   observation: null,
 };
 

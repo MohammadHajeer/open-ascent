@@ -1,3 +1,5 @@
+import type { VerticalPullVariant } from "./vertical-pull-config.ts";
+
 export type PoseLandmark = {
   x: number;
   y: number;
@@ -23,6 +25,13 @@ export type PullUpObservation = {
   minimumVisibility: number;
   handsAboveShoulders: boolean;
   bodyUnderHands: boolean;
+  motionReady?: boolean;
+  grip?: "pronated" | "supinated" | "unknown";
+  width?: "close" | "standard" | "wide" | "unknown";
+  upperTorsoToWristRatio?: number | null;
+  kneeAngleDeg?: number | null;
+  hipHorizontalRatio?: number | null;
+  ankleHorizontalRatio?: number | null;
 };
 
 export type PullUpRep = {
@@ -33,6 +42,12 @@ export type PullUpRep = {
   endMs: number;
   phases: PullUpPhase[];
   reasonCodes: string[];
+  classification?: {
+    grip: "pronated" | "supinated" | "unknown";
+    width: "close" | "standard" | "wide" | "unknown";
+    height: "standard" | "high" | "unknown";
+    variant: VerticalPullVariant;
+  };
 };
 
 export type PullUpSnapshot = {
@@ -44,7 +59,9 @@ export type PullUpSnapshot = {
   setupReady: boolean;
   startingPositionReady: boolean;
   latestRep: PullUpRep | null;
+  variantBreakdown: Record<VerticalPullVariant, number>;
   observation: PullUpObservation | null;
+  formFault?: "extend-at-bottom" | "excessive-knee-bend" | "body-swing" | null;
 };
 
 export type CueTone = "neutral" | "positive" | "attention";

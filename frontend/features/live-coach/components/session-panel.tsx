@@ -4,8 +4,10 @@ import { Camera, Check, CircleAlert, RefreshCw, Square, Volume2, VolumeX } from 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { useLiveCoachSession } from "../hooks/use-live-coach-session.ts";
+import { LIVE_VERTICAL_PULL_MOVEMENTS } from "../vertical-pull-config.ts";
 
 type Props = { session: ReturnType<typeof useLiveCoachSession> };
 
@@ -21,24 +23,44 @@ export function SessionPanel({ session }: Props) {
   return (
     <aside className="flex flex-col border-t border-border lg:border-t-0 lg:border-l">
       <div className="border-b border-border p-5 sm:p-6">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="font-mono text-[0.56rem] font-semibold tracking-[0.14em] text-primary uppercase">
-              Selected movement
-            </p>
-            <h2 className="mt-1 text-2xl font-medium tracking-[-0.04em]">
-              Pull-Up
-            </h2>
-          </div>
-          <span className="rounded-full border border-primary/20 bg-primary-light px-3 py-1 font-mono text-[0.56rem] font-semibold tracking-[0.11em] text-primary uppercase">
-            One movement
-          </span>
-        </div>
+        <Label htmlFor="live-coach-movement" className="font-mono text-[0.56rem] font-semibold tracking-[0.14em] text-primary uppercase">
+          Movement family
+        </Label>
+        <Select defaultValue="vertical-pull">
+          <SelectTrigger id="live-coach-movement" className="mt-2 h-11 w-full rounded-xl bg-background/70">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent><SelectItem value="vertical-pull">Vertical Pull</SelectItem></SelectContent>
+        </Select>
+        <p className="mt-2 text-xs leading-5 text-foreground-faint">
+          Pull-Up, Chin-Up, Close-Grip, Wide-Grip, and High Pull-Up reps are classified after each rep. Other families are not yet available.
+        </p>
       </div>
 
       <div className="grid grid-cols-2 border-b border-border">
         <Metric label="Completed reps" value={String(snapshot.validRepCount)} />
         <Metric label="Current phase" value={phaseLabel} capitalize />
+      </div>
+
+      <div className="border-b border-border px-5 py-4 sm:px-6">
+        <p className="font-mono text-[0.56rem] font-semibold tracking-[0.14em] text-primary uppercase">
+          Rep breakdown
+        </p>
+        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:text-sm">
+          {LIVE_VERTICAL_PULL_MOVEMENTS.map((movement) => (
+            <div key={movement.slug} className="flex justify-between gap-2 text-foreground-soft">
+              <span>{movement.label}</span><span className="font-mono">{snapshot.variantBreakdown[movement.slug]}</span>
+            </div>
+          ))}
+          <div className="flex justify-between gap-2 text-foreground-soft">
+            <span>Unknown variant</span><span className="font-mono">{snapshot.variantBreakdown.unknown}</span>
+          </div>
+        </div>
+        {snapshot.latestRep?.outcome === "valid" ? (
+          <p className="mt-2 text-xs text-foreground-faint">
+            Last rep: {LIVE_VERTICAL_PULL_MOVEMENTS.find((movement) => movement.slug === snapshot.latestRep?.classification?.variant)?.label ?? "Unknown variant"}
+          </p>
+        ) : null}
       </div>
 
       <div className="flex-1 p-5 sm:p-6">

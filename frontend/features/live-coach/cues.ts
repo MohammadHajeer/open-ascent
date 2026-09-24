@@ -29,6 +29,27 @@ const cues = {
     title: "Hold the start position",
     detail: "Extend your arms in a steady hang before the first rep.",
   },
+  extension: {
+    id: "extend-at-bottom",
+    priority: 75,
+    tone: "attention",
+    title: "Extend at the bottom",
+    detail: "Reach a steady hang with straighter elbows before pulling.",
+  },
+  kneeBend: {
+    id: "excessive-knee-bend",
+    priority: 72,
+    tone: "attention",
+    title: "Keep your legs straighter",
+    detail: "Avoid a sustained deep knee bend while pulling.",
+  },
+  swing: {
+    id: "body-swing",
+    priority: 72,
+    tone: "attention",
+    title: "Reduce the swing",
+    detail: "Let your lower body settle before the next pull.",
+  },
   partial: {
     id: "finish-top",
     priority: 70,
@@ -85,6 +106,9 @@ export function selectPrioritizedCue(
   if (snapshot.poseReady && snapshot.setupReady && !snapshot.startingPositionReady) {
     candidates.push(cues.starting);
   }
+  if (snapshot.formFault === "extend-at-bottom") candidates.push(cues.extension);
+  if (snapshot.formFault === "excessive-knee-bend") candidates.push(cues.kneeBend);
+  if (snapshot.formFault === "body-swing") candidates.push(cues.swing);
   const recentRep = snapshot.phase === "bottom" && snapshot.latestRep &&
     timestampMs - snapshot.latestRep.endMs <= 2500;
   if (recentRep && snapshot.latestRep?.outcome === "partial") candidates.push(cues.partial);

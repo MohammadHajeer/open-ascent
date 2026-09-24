@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { LiveCoachCameraSession, LiveCoachSessionError, type LiveFrame } from "../camera-session.ts";
 import { selectPrioritizedCue } from "../cues.ts";
 import { createMediaPipePoseRuntime } from "../mediapipe-pose.ts";
-import { LivePullUpAnalyzer } from "../pull-up-analyzer.ts";
+import { LiveVerticalPullAnalyzer } from "../vertical-pull-analyzer.ts";
 import { measurePullUpPose } from "../pull-up-semantics.ts";
 import { CAMERA_OFF_CUE, INITIAL_SNAPSHOT, type DeviceOption, type SessionStatus } from "../session-state.ts";
 import { drawPose, clearCanvas } from "../utils/pose-canvas.ts";
@@ -20,7 +20,7 @@ export function useLiveCoachSession() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<LiveCoachCameraSession | null>(null);
-  const analyzerRef = useRef(new LivePullUpAnalyzer());
+  const analyzerRef = useRef(new LiveVerticalPullAnalyzer());
   const voiceRef = useRef<LiveCoachVoice | null>(null);
   const startGenerationRef = useRef(0);
 
