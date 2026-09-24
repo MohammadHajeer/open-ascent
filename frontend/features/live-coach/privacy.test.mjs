@@ -58,11 +58,15 @@ test("Live Coach stays inside authenticated Train and does not replace AI Coach"
 
   assert.match(route, /LiveCoachWorkspace/);
   const workspace = readFileSync(join(featureRoot, "live-coach-workspace.tsx"), "utf8");
-  assert.match(workspace, /useLiveCoachAccess/);
-  assert.match(workspace, /fetchLiveCoachAccess/);
-  assert.match(workspace, /measurePullUpPose\(frame\.landmarks/);
-  assert.match(workspace, /mirrorPreview && "-scale-x-100"/);
-  assert.match(workspace, /Safety guidance remains/);
+  const session = readFileSync(join(featureRoot, "hooks", "use-live-coach-session.ts"), "utf8");
+  const preview = readFileSync(join(featureRoot, "components", "camera-preview.tsx"), "utf8");
+  const panel = readFileSync(join(featureRoot, "components", "session-panel.tsx"), "utf8");
+  assert.match(workspace, /useLiveCoachSession/);
+  assert.match(session, /useLiveCoachAccess/);
+  assert.match(session, /fetchLiveCoachAccess/);
+  assert.match(session, /measurePullUpPose\(frame\.landmarks/);
+  assert.match(preview, /mirrorPreview && "-scale-x-100"/);
+  assert.match(panel, /Safety guidance remains/);
   assert.match(navigation, /label: "Train"/);
   assert.match(navigation, /label: "AI Coach"/);
   assert.match(navigation, /href: "\/dashboard\/coach"/);
