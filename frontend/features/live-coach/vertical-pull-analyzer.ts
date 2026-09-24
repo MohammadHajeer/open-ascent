@@ -9,15 +9,23 @@ import type {
 
 type Grip = NonNullable<PullUpObservation["grip"]>;
 type Width = NonNullable<PullUpObservation["width"]>;
-type Evidence = { grip: Grip; width: Width };
+type Evidence = { grip: Grip; width: Width; widthRatio?: number | null };
+
+type ClassificationDiagnostics = {
+  gripVotes: Record<Grip, number>;
+  widthVotes: Record<Width, number>;
+  widthRatios: number[];
+  topRatios: number[];
+  decision: NonNullable<PullUpRep["classification"]>;
+};
 
 function stableVote<T extends string>(values: T[], unknown: T): T {
   const usable = values.filter((value) => value !== unknown);
-  if (usable.length < 3 || usable.length / values.length < 0.6) return unknown;
+  if (usable.length < 2 || usable.length / values.length < 0.5) return unknown;
   const counts = new Map<T, number>();
   for (const value of usable) counts.set(value, (counts.get(value) ?? 0) + 1);
   const [winner, count] = [...counts].sort((left, right) => right[1] - left[1])[0];
-  return count / usable.length >= 0.7 && count / values.length >= 0.6 ? winner : unknown;
+  return count / usable.length >= 0.7 && count / values.length >= 0.5 ? winner : unknown;
 }
 
 export function classifyCompletedVerticalPullRep(
@@ -30,16 +38,18 @@ export function classifyCompletedVerticalPullRep(
   // high evidence needs two top frames. The gap remains unknown.
   const height = topRatios.some((ratio) => ratio <= 0.05) ||
     topRatios.filter((ratio) => ratio <= VARIANT_EVIDENCE.highUpperTorsoToWristRatioMax).length >= 2
-    ? "high" : topRatios.some((ratio) => ratio >= 0.25) ? "standard" : "unknown";
+    ? "high" : topRatios.some((ratio) => ratio >= VARIANT_EVIDENCE.standardUpperTorsoToWristRatioMin)
+      ? "standard" : "unknown";
   let variant: VerticalPullVariant = "unknown";
-  if (grip !== "unknown" && width !== "unknown" && height !== "unknown") {
-    if (grip === "supinated" && width === "standard") variant = "chin-up";
-    else if (grip === "pronated" && width === "close") variant = "close-grip-pull-up";
-    else if (grip === "pronated" && width === "wide") variant = "wide-grip-pull-up";
-    else if (grip === "pronated" && width === "standard") {
-      variant = height === "high" ? "high-pull-up" : "pull-up";
-    }
-  }
+  if (height === "high") variant = grip === "pronated" ? "high-pull-up" : "high-vertical-pull";
+  else if (width === "close") variant = grip === "pronated"
+    ? "close-grip-pull-up" : "close-vertical-pull";
+  else if (width === "wide") variant = grip === "pronated"
+    ? "wide-grip-pull-up" : "wide-vertical-pull";
+  else if (grip === "supinated") variant = "chin-up";
+  else if (grip === "pronated") variant = "pull-up";
+  else if (width === "standard") variant = "standard-width-vertical-pull";
+  else if (height === "standard") variant = "standard-height-vertical-pull";
   return { grip, width, height, variant };
 }
 
@@ -48,6 +58,7 @@ export class LiveVerticalPullAnalyzer {
   private bottomEvidence: Evidence[] = [];
   private repEvidence: Evidence[] = [];
   private topRatios: number[] = [];
+  private lastClassificationDiagnostics: ClassificationDiagnostics | null = null;
   private extensionSamples = 0;
   private extensionSinceMs: number | null = null;
   private kneeSamples = 0;
@@ -83,6 +94,7 @@ export class LiveVerticalPullAnalyzer {
     this.bottomEvidence = [];
     this.repEvidence = [];
     this.topRatios = [];
+    this.lastClassificationDiagnostics = null;
     this.extensionSamples = 0;
     this.extensionSinceMs = null;
     this.kneeSamples = 0;
@@ -105,7 +117,8 @@ export class LiveVerticalPullAnalyzer {
     const angleDeg = observation.angleDeg;
     const setupReady = observation.handsAboveShoulders && observation.bodyUnderHands;
     const evidence = { grip: observation.grip ?? "unknown" as Grip,
-      width: observation.width ?? "unknown" as Width };
+      width: observation.width ?? "unknown" as Width,
+      widthRatio: observation.widthRatio };
     if ((this.phase === "unknown" || this.phase === "bottom") &&
       setupReady && angleDeg >= PULL_UP_SEMANTICS.bottomAngleDeg) {
       this.bottomEvidence.push(evidence);
@@ -205,6 +218,10 @@ export class LiveVerticalPullAnalyzer {
 
   getSnapshot(): PullUpSnapshot {
     return this.snapshot(null, false);
+  }
+
+  getClassificationDiagnostics(): ClassificationDiagnostics | null {
+    return this.lastClassificationDiagnostics;
   }
 
   private handleInvalid(timestampMs: number, observation: PullUpObservation | null = null) {
@@ -307,6 +324,20 @@ export class LiveVerticalPullAnalyzer {
     if (this.repStartMs === null) return;
     const classification = outcome === "valid"
       ? classifyCompletedVerticalPullRep(this.repEvidence, this.topRatios) : undefined;
+    if (classification) {
+      const gripVotes = { pronated: 0, supinated: 0, unknown: 0 };
+      const widthVotes = { close: 0, standard: 0, wide: 0, unknown: 0 };
+      for (const item of this.repEvidence) {
+        gripVotes[item.grip] += 1;
+        widthVotes[item.width] += 1;
+      }
+      this.lastClassificationDiagnostics = {
+        gripVotes, widthVotes,
+        widthRatios: this.repEvidence.map((item) => item.widthRatio)
+          .filter((ratio): ratio is number => ratio != null && Number.isFinite(ratio)),
+        topRatios: [...this.topRatios], decision: classification,
+      };
+    }
     if (outcome === "valid") this.validRepCount += 1;
     if (classification) this.variantBreakdown[classification.variant] += 1;
     if (outcome === "partial") this.partialRepCount += 1;

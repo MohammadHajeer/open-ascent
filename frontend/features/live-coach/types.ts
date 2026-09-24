@@ -28,6 +28,7 @@ export type PullUpObservation = {
   motionReady?: boolean;
   grip?: "pronated" | "supinated" | "unknown";
   width?: "close" | "standard" | "wide" | "unknown";
+  widthRatio?: number | null;
   upperTorsoToWristRatio?: number | null;
   kneeAngleDeg?: number | null;
   hipHorizontalRatio?: number | null;

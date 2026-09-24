@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { useLiveCoachSession } from "../hooks/use-live-coach-session.ts";
-import { LIVE_VERTICAL_PULL_MOVEMENTS } from "../vertical-pull-config.ts";
+import { LIVE_VERTICAL_PULL_MOVEMENTS, PARTIAL_VERTICAL_PULL_VARIANTS, verticalPullVariantLabel } from "../vertical-pull-config.ts";
 
 type Props = { session: ReturnType<typeof useLiveCoachSession> };
 
@@ -33,7 +33,7 @@ export function SessionPanel({ session }: Props) {
           <SelectContent><SelectItem value="vertical-pull">Vertical Pull</SelectItem></SelectContent>
         </Select>
         <p className="mt-2 text-xs leading-5 text-foreground-faint">
-          Pull-Up, Chin-Up, Close-Grip, Wide-Grip, and High Pull-Up reps are classified after each rep. Other families are not yet available.
+          Reps use visible width and upper-torso height evidence. Grip stays uncertain when the camera cannot establish palm direction. Other families are not yet available.
         </p>
       </div>
 
@@ -52,14 +52,25 @@ export function SessionPanel({ session }: Props) {
               <span>{movement.label}</span><span className="font-mono">{snapshot.variantBreakdown[movement.slug]}</span>
             </div>
           ))}
+          {PARTIAL_VERTICAL_PULL_VARIANTS.filter((variant) => snapshot.variantBreakdown[variant.slug] > 0)
+            .map((variant) => (
+              <div key={variant.slug} className="flex justify-between gap-2 text-foreground-soft">
+                <span>{variant.label}</span><span className="font-mono">{snapshot.variantBreakdown[variant.slug]}</span>
+              </div>
+            ))}
           <div className="flex justify-between gap-2 text-foreground-soft">
             <span>Unknown variant</span><span className="font-mono">{snapshot.variantBreakdown.unknown}</span>
           </div>
         </div>
         {snapshot.latestRep?.outcome === "valid" ? (
-          <p className="mt-2 text-xs text-foreground-faint">
-            Last rep: {LIVE_VERTICAL_PULL_MOVEMENTS.find((movement) => movement.slug === snapshot.latestRep?.classification?.variant)?.label ?? "Unknown variant"}
-          </p>
+          <div className="mt-2 text-xs text-foreground-faint">
+            <p>Last rep: {verticalPullVariantLabel(snapshot.latestRep.classification?.variant ?? "unknown")}</p>
+            {snapshot.latestRep.classification ? (
+              <p className="mt-1">
+                Grip: {snapshot.latestRep.classification.grip} · Width: {snapshot.latestRep.classification.width} · Height: {snapshot.latestRep.classification.height}
+              </p>
+            ) : null}
+          </div>
         ) : null}
       </div>
 

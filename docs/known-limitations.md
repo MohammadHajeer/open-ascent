@@ -13,7 +13,7 @@
 
 ## Intentional scope boundaries
 
-- Live Coach focuses on the five supported Vertical Pull variants and does not classify Muscle-Up or other families.
+- Live Coach focuses on Vertical Pull and does not classify Muscle-Up or other families. MediaPipe Pose's coarse, often occluded hand points do not reliably distinguish overhand from underhand grip, so the current pose-only camera path reports grip as unknown. It still reports supported width and height evidence with partial Vertical Pull labels. High means the upper-torso proxy reaches the wrist line; the bar itself is not detected.
 - Live camera sessions are not recorded, uploaded, or automatically added to the workout log.
 - Plan proposals are previews until the athlete explicitly saves them.
 

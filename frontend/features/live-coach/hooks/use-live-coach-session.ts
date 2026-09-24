@@ -21,6 +21,7 @@ export function useLiveCoachSession() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<LiveCoachCameraSession | null>(null);
   const analyzerRef = useRef(new LiveVerticalPullAnalyzer());
+  const lastLoggedRepRef = useRef(0);
   const voiceRef = useRef<LiveCoachVoice | null>(null);
   const startGenerationRef = useRef(0);
 
@@ -87,6 +88,7 @@ export function useLiveCoachSession() {
     voice.start();
     voiceRef.current = voice;
     analyzerRef.current.reset();
+    lastLoggedRepRef.current = 0;
     clearCanvas(canvasRef.current);
     setSnapshot(INITIAL_SNAPSHOT);
     setCue({
@@ -166,6 +168,16 @@ export function useLiveCoachSession() {
       frame.landmarks !== null,
     );
     const nextCue = selectPrioritizedCue(nextSnapshot, frame.timestampMs);
+    if (process.env.NODE_ENV === "development" &&
+      nextSnapshot.latestRep?.outcome === "valid" &&
+      nextSnapshot.latestRep.index !== lastLoggedRepRef.current) {
+      lastLoggedRepRef.current = nextSnapshot.latestRep.index;
+      console.debug("[Live Coach variant]", {
+        rep: nextSnapshot.latestRep.index,
+        gripSource: "Pose only",
+        ...analyzerRef.current.getClassificationDiagnostics(),
+      });
+    }
     setSnapshot(nextSnapshot);
     setCue(nextCue);
     voiceRef.current?.onFrame(nextSnapshot, nextCue, frame.timestampMs);

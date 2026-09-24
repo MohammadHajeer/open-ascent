@@ -11,7 +11,7 @@ Final repository snapshot for the capstone presentation.
 - Evidence-aware readiness; target-matched, self-performed max-test analysis can recalibrate measured **rep** capability.
 - Persistent AI Coach conversations with streamed OpenAI responses and bounded, owner-scoped read tools.
 - Structured weekly plan generation, validated preview, explicit save, a saved-plan Library with list/detail views, and a current-plan summary on the athlete dashboard.
-- Browser-local Live Coach for Vertical Pull: complete-rep counting, automatic five-variant or unknown classification, deterministic cues, local voice clips, and backend-checked Pro access.
+- Browser-local Live Coach for Vertical Pull: complete-rep counting, evidence-based canonical or partial variant labels, deterministic cues, local voice clips, and backend-checked Pro access.
 - Free/Pro entitlements, usage accounting, Stripe test checkout, provider-priced subscription status, period-end cancellation/resumption, and verified webhook reconciliation.
 - Durable analysis/explanation jobs, cleanup, worker heartbeats, admin queue/worker monitoring, and guarded retry actions.
 - DOC-02 seeded admin and Pro athlete demo identities with reproducible workout history and a readiness-validated foundation plan, subject to a verified Stripe test subscription.

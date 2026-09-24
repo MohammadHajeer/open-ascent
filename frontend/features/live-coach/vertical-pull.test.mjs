@@ -4,8 +4,8 @@ import test from "node:test";
 import { selectPrioritizedCue } from "./cues.ts";
 import { pullUpLandmarkFixture } from "./fixtures/pull-up-landmarks.ts";
 import { LiveVerticalPullAnalyzer, classifyCompletedVerticalPullRep } from "./vertical-pull-analyzer.ts";
-import { classifyHandWidth, classifyPoseGrip } from "./pull-up-semantics.ts";
-import { LIVE_VERTICAL_PULL_MOVEMENTS } from "./vertical-pull-config.ts";
+import { classifyHandWidth, classifyPoseGrip, handWidthRatio, measurePullUpPose } from "./pull-up-semantics.ts";
+import { LIVE_VERTICAL_PULL_MOVEMENTS, verticalPullVariantLabel } from "./vertical-pull-config.ts";
 
 function sample(at, angle, fields = {}) {
   return {
@@ -83,12 +83,15 @@ test("one family session counts mixed reps and maintains a per-variant breakdown
   assert.equal(result.validRepCount, 5);
   assert.deepEqual(result.variantBreakdown, {
     "pull-up": 1, "chin-up": 1, "close-grip-pull-up": 0,
-    "wide-grip-pull-up": 1, "high-pull-up": 1, unknown: 1,
+    "wide-grip-pull-up": 1, "high-pull-up": 1,
+    "close-vertical-pull": 0, "wide-vertical-pull": 0,
+    "high-vertical-pull": 0, "standard-width-vertical-pull": 1,
+    "standard-height-vertical-pull": 0, unknown: 0,
   });
-  assert.equal(result.latestRep.classification.variant, "unknown");
+  assert.equal(result.latestRep.classification.variant, "standard-width-vertical-pull");
 });
 
-test("noisy or insufficient grip and width evidence stays unknown rather than flickering", () => {
+test("noisy or insufficient attributes keep their independent evidence", () => {
   const good = Array.from({ length: 5 }, () => ({ grip: "supinated", width: "standard" }));
   good[2] = { grip: "pronated", width: "standard" };
   assert.equal(classifyCompletedVerticalPullRep(good, [0.5]).variant, "chin-up");
@@ -97,13 +100,30 @@ test("noisy or insufficient grip and width evidence stays unknown rather than fl
     { grip: "supinated", width: "standard" },
     { grip: "pronated", width: "standard" },
     { grip: "supinated", width: "standard" },
-  ], [0.5]).variant, "unknown");
+  ], [0.5]).variant, "standard-width-vertical-pull");
   assert.equal(classifyCompletedVerticalPullRep([
     { grip: "unknown", width: "wide" },
     { grip: "unknown", width: "wide" },
     { grip: "unknown", width: "wide" },
-  ], [0.5]).variant, "unknown");
-  assert.equal(classifyCompletedVerticalPullRep(good, [0.17]).variant, "unknown");
+  ], [0.5]).variant, "wide-vertical-pull");
+  assert.equal(classifyCompletedVerticalPullRep(good, [0.17]).variant, "chin-up");
+  assert.equal(classifyCompletedVerticalPullRep([
+    { grip: "unknown", width: "unknown" },
+    { grip: "unknown", width: "unknown" },
+  ], []).variant, "unknown");
+  assert.equal(classifyCompletedVerticalPullRep([
+    { grip: "unknown", width: "unknown" },
+    { grip: "unknown", width: "unknown" },
+  ], [0.4]).variant, "standard-height-vertical-pull");
+  assert.equal(classifyCompletedVerticalPullRep([
+    { grip: "unknown", width: "standard" },
+    { grip: "unknown", width: "standard" },
+  ], [0.02]).variant, "high-vertical-pull");
+  assert.equal(classifyCompletedVerticalPullRep([
+    { grip: "pronated", width: "unknown" },
+    { grip: "pronated", width: "unknown" },
+  ], []).variant, "pull-up");
+  assert.equal(verticalPullVariantLabel("wide-vertical-pull"), "Wide Vertical Pull");
 });
 
 test("hand spacing is scaled to shoulders and threshold gaps stay unknown", () => {
@@ -119,11 +139,103 @@ test("hand spacing is scaled to shoulders and threshold gaps stay unknown", () =
   assert.equal(classify(0.3, 0.21), "close");
   assert.equal(classify(0.2, 0.24), "standard");
   assert.equal(classify(0.2, 0.4), "wide");
-  assert.equal(classify(0.2, 0.3), "unknown");
+  assert.equal(classify(0.2, 0.31), "unknown");
   assert.equal(classify(0.04, 0.04), "unknown");
 });
 
-test("coarse pose palms require both visible, agreeing hands", () => {
+test("noisy landmark width sequences keep close, standard, and wide apart across scale", () => {
+  for (const [expected, baseline] of [
+    ["close", 0.76], ["standard", 1.22], ["wide", 1.82],
+  ]) {
+    const observed = [];
+    for (const [scale, jitter] of [[0.7, -0.03], [1, 0.02], [1.3, 0], [0.85, 0.04]]) {
+      const landmarks = pullUpLandmarkFixture({ elbowAngleDeg: 150 });
+      const shoulderSpan = 0.24 * scale;
+      const wristSpan = shoulderSpan * (baseline + jitter);
+      landmarks[11].x = 0.5 - shoulderSpan / 2;
+      landmarks[12].x = 0.5 + shoulderSpan / 2;
+      landmarks[15].x = 0.5 - wristSpan / 2;
+      landmarks[16].x = 0.5 + wristSpan / 2;
+      landmarks[23].y = landmarks[11].y + 0.22 * scale;
+      landmarks[24].y = landmarks[12].y + 0.22 * scale;
+      assert.ok(Math.abs(handWidthRatio(landmarks) - (baseline + jitter)) < 1e-8);
+      observed.push(classifyHandWidth(landmarks));
+    }
+    assert.deepEqual(observed, [expected, expected, expected, expected]);
+  }
+});
+
+test("mirror display coordinates do not change width or upper-torso height evidence", () => {
+  const landmarks = pullUpLandmarkFixture({ elbowAngleDeg: 45 });
+  landmarks[11].y = 0.10;
+  landmarks[12].y = 0.10;
+  landmarks[23].y = 0.32;
+  landmarks[24].y = 0.32;
+  const mirrored = landmarks.map((item) => ({ ...item, x: 1 - item.x }));
+  const first = measurePullUpPose(landmarks, 0);
+  const second = measurePullUpPose(mirrored, 0);
+  assert.ok(first && second);
+  assert.ok(first.upperTorsoToWristRatio <= 0.05);
+  assert.equal(first.upperTorsoToWristRatio, second.upperTorsoToWristRatio);
+  assert.equal(first.width, second.width);
+  assert.equal(first.grip, "unknown");
+  assert.equal(second.grip, "unknown");
+});
+
+test("upper-torso height ratio survives normal camera-distance changes", () => {
+  const landmarks = pullUpLandmarkFixture({ elbowAngleDeg: 45 });
+  landmarks[11].y = 0.10;
+  landmarks[12].y = 0.10;
+  landmarks[23].y = 0.32;
+  landmarks[24].y = 0.32;
+  const ratios = [0.35, 0.7, 1.2].map((scale) => {
+    const scaled = landmarks.map((item) => ({
+      ...item,
+      x: 0.5 + (item.x - 0.5) * scale,
+      y: 0.5 + (item.y - 0.5) * scale,
+    }));
+    return measurePullUpPose(scaled, 0).upperTorsoToWristRatio;
+  });
+  for (const ratio of ratios) assert.ok(Math.abs(ratio - ratios[0]) < 1e-8);
+  assert.ok(ratios[0] <= 0.05);
+});
+
+test("classification visibility can fail without invalidating count geometry", () => {
+  const landmarks = pullUpLandmarkFixture({ elbowAngleDeg: 150 });
+  landmarks[15].visibility = 0.52;
+  landmarks[15].presence = 0.52;
+  const observation = measurePullUpPose(landmarks, 0);
+  assert.ok(observation);
+  assert.equal(observation.width, "unknown");
+  assert.equal(observation.widthRatio, null);
+  assert.ok(observation.angleDeg > 145);
+});
+
+test("missing and jittery width frames do not erase a counted fast rep", () => {
+  const analyzer = new LiveVerticalPullAnalyzer();
+  const widths = ["wide", "wide", "unknown", "wide", "standard", "wide", "wide"];
+  const frames = [
+    ...bottom.map(([at, angle], index) => [at, angle, { grip: "unknown", width: widths[index],
+      widthRatio: widths[index] === "unknown" ? null : widths[index] === "wide" ? 1.78 : 1.49 }]),
+    [500, 110, { grip: "unknown", width: widths[5], widthRatio: 1.76 }],
+    [580, 45, { grip: "unknown", width: widths[6], widthRatio: 1.79 }],
+    [660, 150, { grip: "unknown", width: "unknown", widthRatio: null }],
+  ];
+  const result = feed(analyzer, frames);
+  assert.equal(result.validRepCount, 1);
+  assert.equal(result.latestRep.classification.variant, "wide-vertical-pull");
+  assert.equal(result.latestRep.classification.grip, "unknown");
+  assert.equal(result.latestRep.classification.width, "wide");
+  assert.ok(analyzer.getClassificationDiagnostics().widthVotes.wide >
+    analyzer.getClassificationDiagnostics().widthVotes.standard);
+
+  const absent = oneRep({ grip: "unknown", width: "unknown" },
+    { upperTorsoToWristRatio: null });
+  assert.equal(absent.validRepCount, 1);
+  assert.equal(absent.latestRep.classification.variant, "unknown");
+});
+
+test("coarse Pose hand points cannot establish pronation or supination", () => {
   const landmarks = pullUpLandmarkFixture({ elbowAngleDeg: 150 });
   landmarks[15].x = 0.3; landmarks[16].x = 0.7;
   const shape = (reversed = false) => {
@@ -134,9 +246,9 @@ test("coarse pose palms require both visible, agreeing hands", () => {
     for (const index of [17, 18, 19, 20]) landmarks[index].y = 0.05;
   };
   shape();
-  assert.equal(classifyPoseGrip(landmarks), "supinated");
+  assert.equal(classifyPoseGrip(landmarks), "unknown");
   shape(true);
-  assert.equal(classifyPoseGrip(landmarks), "pronated");
+  assert.equal(classifyPoseGrip(landmarks), "unknown");
   landmarks[18].visibility = 0.2;
   assert.equal(classifyPoseGrip(landmarks), "unknown");
 });

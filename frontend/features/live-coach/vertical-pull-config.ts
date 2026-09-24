@@ -8,7 +8,21 @@ export const LIVE_VERTICAL_PULL_MOVEMENTS = [
 
 export type LiveVerticalPullMovement = (typeof LIVE_VERTICAL_PULL_MOVEMENTS)[number]["slug"];
 
-export type VerticalPullVariant = LiveVerticalPullMovement | "unknown";
+export const PARTIAL_VERTICAL_PULL_VARIANTS = [
+  { slug: "close-vertical-pull", label: "Close Vertical Pull" },
+  { slug: "wide-vertical-pull", label: "Wide Vertical Pull" },
+  { slug: "high-vertical-pull", label: "High Vertical Pull" },
+  { slug: "standard-width-vertical-pull", label: "Standard-Width Vertical Pull" },
+  { slug: "standard-height-vertical-pull", label: "Standard-Height Vertical Pull" },
+] as const;
+
+export type VerticalPullVariant = LiveVerticalPullMovement |
+  (typeof PARTIAL_VERTICAL_PULL_VARIANTS)[number]["slug"] | "unknown";
+
+export function verticalPullVariantLabel(variant: VerticalPullVariant) {
+  return [...LIVE_VERTICAL_PULL_MOVEMENTS, ...PARTIAL_VERTICAL_PULL_VARIANTS]
+    .find((item) => item.slug === variant)?.label ?? "Unknown variant";
+}
 
 export function emptyVariantBreakdown(): Record<VerticalPullVariant, number> {
   return {
@@ -17,14 +31,22 @@ export function emptyVariantBreakdown(): Record<VerticalPullVariant, number> {
     "close-grip-pull-up": 0,
     "wide-grip-pull-up": 0,
     "high-pull-up": 0,
+    "close-vertical-pull": 0,
+    "wide-vertical-pull": 0,
+    "high-vertical-pull": 0,
+    "standard-width-vertical-pull": 0,
+    "standard-height-vertical-pull": 0,
     unknown: 0,
   };
 }
 
 export const VARIANT_EVIDENCE = {
-  closeWidthRatioMax: 0.85,
-  standardWidthRatioMin: 1.0,
-  standardWidthRatioMax: 1.4,
-  wideWidthRatioMin: 1.65,
+  closeWidthRatioMax: 0.90,
+  standardWidthRatioMin: 0.98,
+  standardWidthRatioMax: 1.50,
+  wideWidthRatioMin: 1.60,
   highUpperTorsoToWristRatioMax: 0.10,
+  standardUpperTorsoToWristRatioMin: 0.22,
+  // Only a small resolution floor; the decision itself uses a torso ratio.
+  minTorsoSpanForHeight: 0.025,
 } as const;

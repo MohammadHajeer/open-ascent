@@ -15,7 +15,7 @@
 
 ## Live Coach
 
-Live Coach is a Pro-gated browser camera experience for the **Vertical Pull** family. MediaPipe pose inference runs locally. It counts complete bottom-to-top-to-bottom reps, selects a prioritized deterministic cue, and classifies each completed valid rep as Pull-Up, Chin-Up, Close-Grip Pull-Up, Wide-Grip Pull-Up, High Pull-Up, or **unknown** when evidence is insufficient. A variant breakdown and current phase appear in the session panel. Local prerecorded voice clips provide counts and cues. The session requires safety acknowledgement and releases the camera on stop. It does not save a workout or upload camera frames.
+Live Coach is a Pro-gated browser camera experience for the **Vertical Pull** family. MediaPipe pose inference runs locally. It counts complete bottom-to-top-to-bottom reps, selects a prioritized deterministic cue, and keeps grip, hand width, and upper-torso height evidence independently for each completed rep. It uses canonical Pull-Up and Chin-Up names only when grip direction is reliable; otherwise supported width or height evidence yields a partial label such as Wide Vertical Pull or High Vertical Pull. Fully unknown means no useful classification evidence. A variant breakdown and current phase appear in the session panel. Local prerecorded voice clips provide counts and cues. The session requires safety acknowledgement and releases the camera on stop. It does not save a workout or upload camera frames.
 
 ## Admin experience
 

@@ -61,38 +61,28 @@ function visible(landmarks: readonly PoseLandmark[], indexes: readonly number[],
   return indexes.every((index) => landmarks[index] && visibility(landmarks[index]) >= minimum);
 }
 
-// Pose hand points are much coarser than the uploaded analyzer's separate
-// Hand Landmarker. An edge-on or occluded palm deliberately stays unknown.
-export function classifyPoseGrip(landmarks: readonly PoseLandmark[]): "pronated" | "supinated" | "unknown" {
-  if (!visible(landmarks, [15, 16, 17, 18, 19, 20], 0.75)) return "unknown";
-  const classifyHand = (wristIndex: number, indexIndex: number, pinkyIndex: number, left: boolean) => {
-    const wrist = landmarks[wristIndex];
-    const index = landmarks[indexIndex];
-    const pinky = landmarks[pinkyIndex];
-    const ix = index.x - wrist.x;
-    const iy = index.y - wrist.y;
-    const px = pinky.x - wrist.x;
-    const py = pinky.y - wrist.y;
-    const il = Math.hypot(ix, iy);
-    const pl = Math.hypot(px, py);
-    if (il < 0.015 || pl < 0.015) return "unknown";
-    // Match the uploaded analyzer's front-facing palm winding, with a wider
-    // margin because Pose extrapolates fingers under an occluding bar.
-    const score = ((ix * py - iy * px) / (il * pl)) * (left ? 1 : -1);
-    if (Math.abs(score) < 0.45) return "unknown";
-    return score > 0 ? "pronated" : "supinated";
-  };
-  const left = classifyHand(15, 19, 17, true);
-  const right = classifyHand(16, 20, 18, false);
-  return left === right ? left : "unknown";
+// Pose's few hand points do not resolve palm direction on an occluded bar.
+// Keep this unknown until a reliable automatic hand signal is available.
+export function classifyPoseGrip(landmarks: readonly PoseLandmark[]): "unknown" {
+  void landmarks;
+  return "unknown";
+}
+
+export function handWidthRatio(landmarks: readonly PoseLandmark[]): number | null {
+  if (!visible(landmarks, [11, 12, 15, 16, 23, 24], 0.55)) return null;
+  const shoulderSpan = Math.abs(landmarks[12].x - landmarks[11].x);
+  const wristSpan = Math.abs(landmarks[16].x - landmarks[15].x);
+  const shoulderY = (landmarks[11].y + landmarks[12].y) / 2;
+  const hipY = (landmarks[23].y + landmarks[24].y) / 2;
+  const torsoSpan = Math.abs(hipY - shoulderY);
+  // Relative proportions reject an edge-on torso or collapsed wrist track.
+  if (torsoSpan <= 0 || shoulderSpan / torsoSpan < 0.35 || wristSpan / torsoSpan < 0.15) return null;
+  return wristSpan / shoulderSpan;
 }
 
 export function classifyHandWidth(landmarks: readonly PoseLandmark[]) {
-  if (!visible(landmarks, [11, 12, 15, 16])) return "unknown";
-  const shoulderSpan = Math.abs(landmarks[12].x - landmarks[11].x);
-  const wristSpan = Math.abs(landmarks[16].x - landmarks[15].x);
-  if (shoulderSpan <= 0.06 || wristSpan <= 0.02) return "unknown";
-  const ratio = wristSpan / shoulderSpan;
+  const ratio = handWidthRatio(landmarks);
+  if (ratio === null) return "unknown";
   if (ratio <= VARIANT_EVIDENCE.closeWidthRatioMax) return "close";
   if (ratio >= VARIANT_EVIDENCE.wideWidthRatioMin) return "wide";
   if (ratio >= VARIANT_EVIDENCE.standardWidthRatioMin && ratio <= VARIANT_EVIDENCE.standardWidthRatioMax) return "standard";
@@ -196,8 +186,9 @@ export function measurePullUpPose(
       Math.abs(hipCenterX - wristCenterX) < PULL_UP_SEMANTICS.bodyAlignmentTolerance,
     grip: classifyPoseGrip(landmarks),
     width: classifyHandWidth(landmarks),
+    widthRatio: handWidthRatio(landmarks),
     // Upper torso proxy relative to the wrist line; no bar is detected.
-    upperTorsoToWristRatio: torsoSpan > 0.08
+    upperTorsoToWristRatio: torsoSpan > VARIANT_EVIDENCE.minTorsoSpanForHeight
       ? (shoulderCenterY + 0.25 * torsoSpan - wristCenterY) / torsoSpan : null,
     kneeAngleDeg: kneeAngles?.every((angle) => angle !== null)
       ? Math.min(...kneeAngles as number[]) : null,
