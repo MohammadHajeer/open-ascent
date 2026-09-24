@@ -68,6 +68,8 @@ class StripeTestGateway:
             or getattr(price, "type", None) != "recurring"
             or recurring is None
             or getattr(recurring, "interval", None) != "month"
+            or getattr(recurring, "interval_count", None) != 1
+            or getattr(price, "currency", None) != "usd"
         ):
             raise CheckoutConfigurationError(
                 "The configured Pro price is not an active monthly test price."

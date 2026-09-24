@@ -65,4 +65,6 @@ The API exposes `/health` and `/health/db`. The worker entry point is `uv run py
 
 Use `pnpm lint` and `pnpm test` as the standard checks. Frontend scripts also include `pnpm --dir frontend test:analysis`, `test:subscription`, `test:progress`, `test:workouts`, and `test:coach`. These are separate from the root `pnpm test` command.
 
+Run the full backend suite against a dedicated, clean non-production test database. Guest-capacity tests assume there are no pre-existing guest analyses for the current UTC day; the DOC-02 demo database can contain such records and produce quota failures unrelated to a code change.
+
 For presentation data, continue with [Demo setup](demo-setup.md).

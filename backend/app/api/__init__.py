@@ -4,6 +4,7 @@ from app.api.admin_management import router as admin_management_router
 from app.api.admin_operations import router as admin_operations_router
 from app.api.analysis import router as analysis_router
 from app.api.analysis_stream import router as analysis_stream_router
+from app.api.athlete_profile import router as athlete_profile_router
 from app.api.coach import router as coach_router
 from app.api.dashboard import router as dashboard_router
 from app.api.dashboard_tour import router as dashboard_tour_router
@@ -31,6 +32,7 @@ api_router.include_router(movement_documentation_router)
 api_router.include_router(sse_smoke_router)
 api_router.include_router(stripe_smoke_router)
 api_router.include_router(stripe_webhook_router)
+api_router.include_router(athlete_profile_router)
 api_router.include_router(subscriptions_router)
 api_router.include_router(analysis_router)
 api_router.include_router(analysis_stream_router)

@@ -1,15 +1,17 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { ArrowUpRight, Check, ShieldCheck } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { apiFetch } from "@/lib/api";
 
 const freeFeatures = [
   "Persistent authenticated analysis history",
   "Basic progress tracking",
   "Limited uploaded video analyses",
-  "Limited AI Coach usage as it becomes available",
+  "One weekly plan generation each month",
   "Movement library and documentation",
   "Training plan capability within plan limits",
 ];
@@ -35,6 +37,20 @@ function PlanList({ features }: { features: string[] }) {
       ))}
     </ul>
   );
+}
+
+async function ProPrice() {
+  let display: string | null = null;
+  try {
+    const price = await apiFetch<{ unit_amount: number; currency: string; interval: string }>(
+      "/subscriptions/pro-price", { cache: "no-store" },
+    );
+    const amount = new Intl.NumberFormat("en-US", { style: "currency", currency: price.currency }).format(price.unit_amount / 100);
+    display = `${amount} / ${price.interval}`;
+  } catch {
+    // Keep the plan comparison available if the billing provider is offline.
+  }
+  return <p className="mt-3 text-base font-medium">{display ?? "See current price in Settings"}</p>;
 }
 
 export function Plans() {
@@ -103,6 +119,9 @@ export function Plans() {
               <h3 className="text-[clamp(3rem,5vw,5rem)] leading-[0.93] font-medium tracking-[-0.065em]">
                 Pro
               </h3>
+              <Suspense fallback={<p className="mt-3 text-sm text-visual-foreground/70">Checking monthly price…</p>}>
+                <ProPrice />
+              </Suspense>
               <p className="mt-5 max-w-lg text-sm leading-6 text-visual-foreground/70">
                 Advanced coaching and progression for a more responsive training
                 practice.

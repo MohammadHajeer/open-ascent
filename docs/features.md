@@ -9,7 +9,8 @@
 - **Readiness and recalibration:** Published safety rules use structured evidence and can return `PASS`, `FAIL`, or `UNKNOWN`. Only qualifying, target-matched max-test analyses update measured rep capability. Self-reports remain marked as provisional.
 - **AI Coach:** Persistent conversations, streamed responses, owner-scoped read tools for profile, workouts, progress, analyses, and published guides. A separate action generates a structured weekly plan proposal; the athlete reviews a preview and clicks **Save Plan**. Readiness is checked again at save time.
 - **Library:** Authenticated athletes can browse their own saved plans and open a plan to review its days, exercises, and repetition or hold-duration prescriptions. The dashboard retains a current-plan summary.
-- **Subscriptions and usage:** Free/Pro entitlement and usage checks, Stripe test checkout and webhook reconciliation, plus account plan information.
+- **Subscriptions and usage:** Free/Pro entitlement and usage checks, Stripe test checkout and webhook reconciliation. Settings and the landing comparison read the configured Stripe test monthly Price (currently USD $9.99), show renewal or scheduled cancellation dates, and support cancellation at period end while paid Pro access continues. An active athlete can keep the plan before cancellation takes effect.
+- **Profile:** The private athlete profile shows saved goal, equipment, availability, starting self reports, and current provisional or measured capability labels.
 - **Guided tour:** Dashboard tour state and guided entry points for key athlete tools.
 
 ## Live Coach

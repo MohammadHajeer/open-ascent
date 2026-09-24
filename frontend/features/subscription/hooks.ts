@@ -1,8 +1,8 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { beginProCheckout, fetchLiveCoachAccess, fetchSubscriptionStatus } from "./api";
+import { beginProCheckout, cancelProSubscription, fetchLiveCoachAccess, fetchSubscriptionStatus, resumeProSubscription } from "./api";
 import { subscriptionKeys } from "./keys";
 
 export function useSubscriptionStatus() {
@@ -22,4 +22,26 @@ export function useLiveCoachAccess() {
 
 export function useBeginProCheckout() {
   return useMutation({ mutationFn: beginProCheckout });
+}
+
+export function useCancelProSubscription() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: cancelProSubscription,
+    onSuccess: (status) => {
+      queryClient.setQueryData(subscriptionKeys.status(), status);
+      void queryClient.invalidateQueries({ queryKey: subscriptionKeys.status() });
+    },
+  });
+}
+
+export function useResumeProSubscription() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: resumeProSubscription,
+    onSuccess: (status) => {
+      queryClient.setQueryData(subscriptionKeys.status(), status);
+      void queryClient.invalidateQueries({ queryKey: subscriptionKeys.status() });
+    },
+  });
 }

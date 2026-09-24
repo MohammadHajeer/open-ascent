@@ -516,9 +516,33 @@ CURATED_READINESS_RULES = {
     ),
 }
 
+# Foundation prescriptions accept recent, self-performed workout entries.
+# This establishes only logged training readiness, never measured capability.
+FOUNDATION_READINESS_RULES = {
+    "pull-up": ("recent_logged_pull_up", 1),
+    "push-up": ("recent_logged_push_up", 5),
+    "dips": ("recent_logged_dips", 1),
+}
+
 
 def curated_documentation(db: Session, seed: dict) -> MovementSafetyContent:
     content = deepcopy(seed["documentation"])
+    foundation = FOUNDATION_READINESS_RULES.get(seed["slug"])
+    if foundation:
+        source = db.scalar(select(Movement).where(Movement.slug == seed["slug"]))
+        if source is None:
+            raise ValueError(f"Foundation rule source is unavailable: {seed['slug']}")
+        code, threshold = foundation
+        content["prerequisites"].append(
+            f"At least {threshold} self-performed {source.name} repetition{'s' if threshold != 1 else ''} logged in the last 90 days"
+        )
+        content["readiness_rules"] = [{
+            "code": code, "type": "movement_performance",
+            "prerequisite_index": len(content["prerequisites"]) - 1,
+            "movement_id": source.id, "metric": "reps", "operator": ">=",
+            "value": threshold, "max_age_days": 90,
+            "accepted_sources": ["manual", "uploaded_analysis"],
+        }]
     rules = CURATED_READINESS_RULES.get(seed["slug"], ())
     if not rules:
         return MovementSafetyContent.model_validate(content)

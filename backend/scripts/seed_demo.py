@@ -253,6 +253,53 @@ def seed_workouts(db, profile, movements, now):
     db.flush()
 
 
+def publish_foundation_readiness(db, admin, movements):
+    """Add SAF-04 rules through the published-guide service if absent."""
+    from app.schemas.movement_documentation import MovementDocumentationUpdate
+    from app.schemas.movement_safety import MovementSafetyContentDraft
+    from app.services.movement_documentation import MovementDocumentationService
+    from scripts.seed_movements import FOUNDATION_READINESS_RULES
+
+    changed = 0
+    for slug, (code, threshold) in FOUNDATION_READINESS_RULES.items():
+        movement = movements[slug]
+        published = MovementDocumentationService.get_published(db, movement.id)
+        if published is None:
+            raise RuntimeError(f"Published {slug} guide is required")
+        if any(rule.get("code") == code for rule in published.content.get("readiness_rules") or []):
+            continue
+        if published.content.get("readiness_rules"):
+            raise RuntimeError(f"{slug} has custom readiness rules; review before seeding")
+        draft = MovementDocumentationService.create_draft_from_published(
+            db, movement.id, admin.id
+        )
+        prerequisites = list(published.content["prerequisites"])
+        prerequisites.append(
+            f"At least {threshold} self-performed {movement.name} repetition{'s' if threshold != 1 else ''} logged in the last 90 days"
+        )
+        rule = {
+            "code": code, "type": "movement_performance",
+            "prerequisite_index": len(prerequisites) - 1,
+            "movement_id": movement.id, "metric": "reps", "operator": ">=",
+            "value": threshold, "max_age_days": 90,
+            "accepted_sources": ["manual", "uploaded_analysis"],
+        }
+        updated = MovementDocumentationService.update_draft(
+            db, draft.id,
+            MovementDocumentationUpdate(
+                edit_revision=draft.edit_revision,
+                content=MovementSafetyContentDraft(
+                    prerequisites=prerequisites, readiness_rules=[rule]
+                ),
+            ),
+        )
+        MovementDocumentationService.publish_draft(
+            db, updated.id, admin.id, expected_revision=updated.edit_revision
+        )
+        changed += 1
+    return changed
+
+
 def link_analyses(db, profile, analysis_ids):
     from sqlalchemy import select
 
@@ -406,8 +453,11 @@ def save_valid_plan(db, profile, movements):
 
 
 def main() -> None:
+    from dotenv import load_dotenv
+
+    load_dotenv(".env")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("accounts", "rich"))
+    parser.add_argument("phase", choices=("accounts", "rich", "refresh"))
     parser.add_argument(
         "--stripe-subscription-id", help="Existing active Stripe test subscription"
     )
@@ -424,8 +474,7 @@ def main() -> None:
             "DATABASE_URL",
             "SUPABASE_URL",
             "SUPABASE_SERVICE_ROLE_KEY",
-            "DEMO_ADMIN_PASSWORD",
-            "DEMO_ATHLETE_PASSWORD",
+            *(("DEMO_ADMIN_PASSWORD", "DEMO_ATHLETE_PASSWORD") if args.phase != "refresh" else ()),
             "OPENAI_API_KEY",
             "OPENAI_MODEL",
             "STRIPE_SECRET_KEY",
@@ -442,6 +491,7 @@ def main() -> None:
     from app.core.supabase import supabase
     from app.db.database import SessionLocal
     from app.models.movement import Movement
+    from app.models.profile import Profile
     from app.services.entitlements import seed_plan_catalog
 
     now = datetime.now(UTC)
@@ -462,20 +512,37 @@ def main() -> None:
             if len(movements) != 3:
                 raise RuntimeError("Seed movements before demo accounts")
             seed_plan_catalog(db, pro_stripe_price_id=settings.stripe_pro_price_id)
-            admin = demo_user(
-                db, supabase, ADMIN_EMAIL, os.environ["DEMO_ADMIN_PASSWORD"], "admin"
-            )
-            athlete = demo_user(
-                db,
-                supabase,
-                ATHLETE_EMAIL,
-                os.environ["DEMO_ATHLETE_PASSWORD"],
-                "athlete",
-            )
+            if args.phase == "refresh":
+                from sqlalchemy import text
+                identities = {}
+                for email in (ADMIN_EMAIL, ATHLETE_EMAIL):
+                    row = db.execute(text("SELECT id, raw_app_meta_data FROM auth.users WHERE lower(email)=:email"), {"email": email}).first()
+                    if row is None or (row.raw_app_meta_data or {}).get("open_ascent_demo") != MARKER:
+                        raise RuntimeError(f"{email} is not a DOC-02 demo identity")
+                    identities[email] = db.get(Profile, row.id)
+                admin, athlete = identities[ADMIN_EMAIL], identities[ATHLETE_EMAIL]
+                if admin is None or athlete is None or admin.app_role != "admin" or athlete.app_role != "athlete":
+                    raise RuntimeError("DOC-02 profiles are incomplete")
+            else:
+                admin = demo_user(
+                    db, supabase, ADMIN_EMAIL, os.environ["DEMO_ADMIN_PASSWORD"], "admin"
+                )
+                athlete = demo_user(
+                    db, supabase, ATHLETE_EMAIL,
+                    os.environ["DEMO_ATHLETE_PASSWORD"], "athlete",
+                )
             onboard(db, athlete, movements, now)
-            if args.phase == "rich":
-                verify_pro(db, athlete, args.stripe_subscription_id, settings, now)
+            if args.phase in ("rich", "refresh"):
+                subscription_id = args.stripe_subscription_id
+                if args.phase == "refresh" and not subscription_id:
+                    from app.models.subscription import UserSubscription
+                    membership = db.scalar(select(UserSubscription).where(UserSubscription.user_id == athlete.id))
+                    subscription_id = membership.stripe_subscription_id if membership else None
+                if not subscription_id:
+                    raise RuntimeError("A verified Stripe test subscription is required")
+                verify_pro(db, athlete, subscription_id, settings, now)
                 seed_workouts(db, athlete, movements, now)
+                published = publish_foundation_readiness(db, admin, movements)
                 changed = (
                     link_analyses(db, athlete, args.analysis_id)
                     if args.analysis_id
@@ -483,7 +550,7 @@ def main() -> None:
                 )
                 saved = save_valid_plan(db, athlete, movements)
                 print(
-                    f"Measured recalibrations: {changed}; validated saved plan: {saved}"
+                    f"Published foundation guides: {published}; measured recalibrations: {changed}; validated saved plan: {saved}"
                 )
             db.commit()
             print(

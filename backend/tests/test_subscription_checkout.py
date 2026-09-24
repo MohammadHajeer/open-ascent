@@ -18,6 +18,12 @@ from app.models.enums import PlanCode
 from app.models.profile import Profile
 from app.models.subscription import SubscriptionPlan, UserSubscription
 from app.services.entitlements import resolve_effective_plan
+from app.services.stripe_billing import (
+    BillingNotEligibleError,
+    cancel_subscription_at_period_end,
+    resume_subscription,
+    subscription_overview,
+)
 from app.services.stripe_checkout import (
     CheckoutConfigurationError,
     CheckoutProviderError,
@@ -27,6 +33,103 @@ from app.services.stripe_checkout import (
 )
 
 TEST_PRICE = "price_test_open_ascent_monthly"
+
+
+class FakeBillingGateway:
+    def __init__(self, subscription=None):
+        self.subscription = subscription
+        self.cancel_calls = 0
+        self.resume_calls = 0
+
+    def retrieve_price(self, _price_id):
+        return {
+            "livemode": False, "active": True, "type": "recurring",
+            "currency": "usd", "unit_amount": 999,
+            "recurring": {"interval": "month", "interval_count": 1},
+        }
+
+    def retrieve_subscription(self, _subscription_id):
+        return self.subscription
+
+    def schedule_cancellation(self, _subscription_id):
+        self.cancel_calls += 1
+        self.subscription["cancel_at_period_end"] = True
+        return self.subscription
+
+    def resume_subscription(self, _subscription_id):
+        self.resume_calls += 1
+        self.subscription["cancel_at_period_end"] = False
+        return self.subscription
+
+
+def _active_billing_member(db, user_id):
+    pro = db.scalar(select(SubscriptionPlan).where(SubscriptionPlan.code == "pro"))
+    membership = db.scalar(select(UserSubscription).where(UserSubscription.user_id == user_id))
+    now = datetime.now(UTC)
+    membership.plan_id = pro.id
+    membership.provider_status = "active"
+    membership.stripe_subscription_id = f"sub_test_{user_id.hex}"
+    membership.last_verified_at = now
+    membership.effective_start = membership.current_period_start = now - timedelta(days=1)
+    membership.effective_end = membership.current_period_end = now + timedelta(days=29)
+    db.get(Profile, user_id).stripe_customer_id = f"cus_test_{user_id.hex}"
+    db.commit()
+    return membership, now
+
+
+def test_billing_price_comes_from_configured_stripe_test_price(checkout_context):
+    db, user_id, _checkout, config = checkout_context
+    overview = subscription_overview(db, user_id=user_id, settings=config, gateway=FakeBillingGateway())
+    assert overview["effective_plan"] == "free"
+    assert overview["pro_price"] == {"unit_amount": 999, "currency": "USD", "interval": "month"}
+    assert overview["can_cancel"] is False
+
+
+def test_period_end_cancellation_preserves_pro_and_is_idempotent(checkout_context):
+    db, user_id, _checkout, config = checkout_context
+    membership, now = _active_billing_member(db, user_id)
+    gateway = FakeBillingGateway({
+        "id": membership.stripe_subscription_id,
+        "customer": db.get(Profile, user_id).stripe_customer_id,
+        "livemode": False, "status": "active", "cancel_at_period_end": False,
+        "items": {"data": [{
+            "price": {"id": TEST_PRICE, "livemode": False, "type": "recurring", "recurring": {"interval": "month", "interval_count": 1}},
+            "current_period_start": int((now - timedelta(days=1)).timestamp()),
+            "current_period_end": int((now + timedelta(days=29)).timestamp()),
+        }]},
+    })
+    cancel_subscription_at_period_end(db, user_id=user_id, settings=config, gateway=gateway)
+    cancel_subscription_at_period_end(db, user_id=user_id, settings=config, gateway=gateway)
+    overview = subscription_overview(db, user_id=user_id, settings=config, gateway=gateway)
+    assert gateway.cancel_calls == 1
+    assert overview["effective_plan"] == "pro"
+    assert overview["cancel_at_period_end"] is True
+    assert overview["can_cancel"] is False
+    assert overview["current_period_end"] is not None
+    resume_subscription(db, user_id=user_id, settings=config, gateway=gateway)
+    resumed = subscription_overview(db, user_id=user_id, settings=config, gateway=gateway)
+    assert gateway.resume_calls == 1
+    assert resumed["effective_plan"] == "pro"
+    assert resumed["cancel_at_period_end"] is False
+    assert resumed["can_cancel"] is True
+
+
+def test_cancellation_is_scoped_to_authenticated_user(checkout_context):
+    db, user_id, _checkout, config = checkout_context
+    membership, _now = _active_billing_member(db, user_id)
+    other_id = uuid.uuid4()
+    db.connection().exec_driver_sql(
+        "INSERT INTO profiles (id, display_name) VALUES (?, ?)",
+        (other_id.hex, "Other athlete"),
+    )
+    free = db.scalar(select(SubscriptionPlan).where(SubscriptionPlan.code == "free"))
+    db.add(UserSubscription(user_id=other_id, plan_id=free.id))
+    db.commit()
+    gateway = FakeBillingGateway()
+    with pytest.raises(BillingNotEligibleError):
+        cancel_subscription_at_period_end(db, user_id=other_id, settings=config, gateway=gateway)
+    assert membership.cancel_at_period_end is False
+    assert gateway.cancel_calls == 0
 
 
 class FakeStripeGateway:

@@ -11,7 +11,18 @@ from app.schemas.subscription import (
     LiveCoachAccessResponse,
     SubscriptionStatusResponse,
 )
-from app.services.entitlements import is_feature_enabled, resolve_effective_plan
+from app.services.entitlements import is_feature_enabled
+from app.services.stripe_billing import (
+    BillingConfigurationError,
+    BillingNotEligibleError,
+    BillingProviderError,
+    StripeBillingGateway,
+    StripeTestBillingGateway,
+    cancel_subscription_at_period_end,
+    configured_pro_price,
+    resume_subscription,
+    subscription_overview,
+)
 from app.services.stripe_checkout import (
     CheckoutConfigurationError,
     CheckoutNotEligibleError,
@@ -28,14 +39,85 @@ def get_stripe_gateway() -> StripeGateway:
     return StripeTestGateway(settings.stripe_secret_key)
 
 
+def get_billing_gateway() -> StripeBillingGateway:
+    return StripeTestBillingGateway(settings.stripe_secret_key)
+
+
+@router.get("/pro-price")
+def get_pro_price(
+    db: DbSession,
+    gateway: Annotated[StripeBillingGateway, Depends(get_billing_gateway)],
+    response: Response,
+) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return configured_pro_price(db, settings, gateway)
+    except BillingConfigurationError as exc:
+        raise HTTPException(status_code=503, detail="Pro pricing is unavailable.") from exc
+    except BillingProviderError as exc:
+        raise HTTPException(status_code=502, detail="Pro pricing is temporarily unavailable.") from exc
+
+
 @router.get("/me", response_model=SubscriptionStatusResponse)
 def get_subscription_status(
     user_id: CurrentUserId,
     db: DbSession,
+    gateway: Annotated[StripeBillingGateway, Depends(get_billing_gateway)],
+    response: Response,
 ) -> SubscriptionStatusResponse:
-    return SubscriptionStatusResponse(
-        effective_plan=resolve_effective_plan(db, user_id).value
-    )
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return SubscriptionStatusResponse.model_validate(
+            subscription_overview(db, user_id=user_id, settings=settings, gateway=gateway)
+        )
+    except BillingConfigurationError as exc:
+        raise HTTPException(status_code=503, detail="Test billing is not configured.") from exc
+    except BillingProviderError as exc:
+        raise HTTPException(status_code=502, detail="Billing information is temporarily unavailable.") from exc
+
+
+@router.post("/cancel", response_model=SubscriptionStatusResponse)
+def cancel_pro_subscription(
+    user_id: CurrentUserId,
+    db: DbSession,
+    gateway: Annotated[StripeBillingGateway, Depends(get_billing_gateway)],
+    response: Response,
+) -> SubscriptionStatusResponse:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        cancel_subscription_at_period_end(
+            db, user_id=user_id, settings=settings, gateway=gateway
+        )
+        return SubscriptionStatusResponse.model_validate(
+            subscription_overview(db, user_id=user_id, settings=settings, gateway=gateway)
+        )
+    except BillingNotEligibleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except BillingConfigurationError as exc:
+        raise HTTPException(status_code=503, detail="Test billing is not configured.") from exc
+    except BillingProviderError as exc:
+        raise HTTPException(status_code=502, detail="Subscription billing is temporarily unavailable.") from exc
+
+
+@router.post("/resume", response_model=SubscriptionStatusResponse)
+def resume_pro_subscription(
+    user_id: CurrentUserId,
+    db: DbSession,
+    gateway: Annotated[StripeBillingGateway, Depends(get_billing_gateway)],
+    response: Response,
+) -> SubscriptionStatusResponse:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        resume_subscription(db, user_id=user_id, settings=settings, gateway=gateway)
+        return SubscriptionStatusResponse.model_validate(
+            subscription_overview(db, user_id=user_id, settings=settings, gateway=gateway)
+        )
+    except BillingNotEligibleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except BillingConfigurationError as exc:
+        raise HTTPException(status_code=503, detail="Test billing is not configured.") from exc
+    except BillingProviderError as exc:
+        raise HTTPException(status_code=502, detail="Subscription billing is temporarily unavailable.") from exc
 
 
 @router.get("/live-coach-access", response_model=LiveCoachAccessResponse)

@@ -29,7 +29,12 @@ from app.services.movement_documentation import (
 )
 from app.services.readiness import ReadinessService
 from app.services.readiness_evidence import ReadinessEvidenceBuilder
-from scripts.seed_movements import CURATED_READINESS_RULES, MOVEMENTS, seed_movement
+from scripts.seed_movements import (
+    CURATED_READINESS_RULES,
+    FOUNDATION_READINESS_RULES,
+    MOVEMENTS,
+    seed_movement,
+)
 
 
 @compiles(JSONB, "sqlite")
@@ -408,8 +413,13 @@ def test_curated_seed_guides_preserve_unstructured_safety_prerequisites(db):
         original = seed["documentation"]["prerequisites"]
         assert safety.prerequisites[:len(original)] == original
         expected = CURATED_READINESS_RULES.get(seed["slug"], ())
-        assert len(safety.readiness_rules or []) == len(expected)
-        assert len(safety.prerequisites) == len(original) + len(expected)
+        foundation = FOUNDATION_READINESS_RULES.get(seed["slug"])
+        assert len(safety.readiness_rules or []) == len(expected) + int(bool(foundation))
+        assert len(safety.prerequisites) == len(original) + len(expected) + int(bool(foundation))
+        if foundation:
+            assert safety.readiness_rules[0].code == foundation[0]
+            assert safety.readiness_rules[0].accepted_sources == ["manual", "uploaded_analysis"]
+            assert safety.readiness_rules[0].max_age_days == 90
         for index, (code, source_slug, requirement) in enumerate(expected):
             rule_entry = safety.readiness_rules[index]
             source = db.query(Movement).filter_by(slug=source_slug).one()
@@ -422,9 +432,22 @@ def test_curated_seed_guides_preserve_unstructured_safety_prerequisites(db):
             assert rule_entry.accepted_sources == ["uploaded_analysis"]
             assert safety.prerequisites[rule_entry.prerequisite_index] == requirement
         evidence, decision = result(db, profile, target)
-        assert len(evidence) == len(expected)
+        assert len(evidence) == len(expected) + int(bool(foundation))
         assert all(item.satisfied is None for item in evidence)
         assert decision.status is ReadinessStatus.UNKNOWN
+
+
+def test_foundation_rules_accept_recent_manual_sets_without_measured_capability(db):
+    for seed in MOVEMENTS:
+        seed_movement(db, seed)
+    profile = athlete(db)
+    for slug, (_code, threshold) in FOUNDATION_READINESS_RULES.items():
+        target = db.query(Movement).filter_by(slug=slug).one()
+        assert result(db, profile, target)[1].status is ReadinessStatus.UNKNOWN
+        logged_set(db, profile, target, source="manual", reps=threshold)
+        evidence, decision = result(db, profile, target)
+        assert decision.status is ReadinessStatus.PASS
+        assert evidence[0].source == "manual"
 
 
 def test_curated_content_migration_matches_seed_templates():

@@ -12,3 +12,9 @@ export const fetchLiveCoachAccess = () =>
 
 export const beginProCheckout = () =>
   authApiFetch<CheckoutSession>("/subscriptions/checkout", { method: "POST" });
+
+export const cancelProSubscription = () =>
+  authApiFetch<SubscriptionStatus>("/subscriptions/cancel", { method: "POST" });
+
+export const resumeProSubscription = () =>
+  authApiFetch<SubscriptionStatus>("/subscriptions/resume", { method: "POST" });

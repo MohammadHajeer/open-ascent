@@ -23,11 +23,19 @@ This creates/confirms the demo accounts, admin role, and Yazan's completed onboa
 
 Sign in as Yazan and complete the application's normal Pro checkout in Stripe test mode. Use the resulting **real, active** test subscription ID from that account. The rich seed verifies it; a fabricated subscription row or ID is rejected.
 
+The configured test Price currently resolves to **USD $9.99 per month**. Check the Stripe test Price before a demo; the application displays its current amount rather than a frontend constant.
+
 ```powershell
 uv run python -m scripts.seed_demo rich --stripe-subscription-id <STRIPE_TEST_SUBSCRIPTION_ID>
 ```
 
-This adds seven manual training sessions over four weeks. It does not synthesize an analysis result, AI conversation, feature usage, or measurement.
+This adds seven manual training sessions over four weeks. It publishes structured foundation readiness rules for Pull-Up, Push-Up, and Dips through the existing guide service when the published guides have no custom rules. The curated saved plan passes the same SAF-04 validator used for AI previews and Library saves. It does not synthesize an analysis result, AI conversation, feature usage, or measurement.
+
+For an already marked DOC-02 account with an existing active Stripe test subscription, refresh the verified demo state without supplying passwords or a subscription ID:
+
+```powershell
+uv run python -m scripts.seed_demo refresh
+```
 
 For measured recalibration, first upload a real supported movement video as a **max test** and wait for analysis to complete. Supply each qualifying authenticated analysis ID to the rich command; the seed links it to a self-performed workout set:
 
@@ -35,7 +43,7 @@ For measured recalibration, first upload a real supported movement video as a **
 uv run python -m scripts.seed_demo rich --stripe-subscription-id <STRIPE_TEST_SUBSCRIPTION_ID> --analysis-id <ANALYSIS_UUID>
 ```
 
-The backend accepts only target-matched valid rep evidence. A curated saved plan appears only if a movement actually passes readiness and the existing validator accepts it. For the full demo, generate a separate new proposal in AI Coach, show preview plus explicit save, then open the saved plan in Library.
+The backend accepts only target-matched valid rep evidence. The foundation plan relies on recent logged sets; advanced variations requiring analyzer-confirmed reps remain `UNKNOWN` without a real upload. For the full demo, generate a separate new proposal in AI Coach, show preview plus explicit save, then open the saved plan in Library.
 
 ## Reruns and preflight
 

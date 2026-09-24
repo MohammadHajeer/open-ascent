@@ -1,4 +1,5 @@
 import { Compass, MonitorCog, ShieldCheck, SlidersHorizontal, UserRound } from "lucide-react";
+import Link from "next/link";
 
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
@@ -21,7 +22,7 @@ export default async function SettingsPage({
       <DashboardPageHeader
         eyebrow="Account settings"
         title="Your workspace."
-        description="A quiet place for account and training preferences as they become available."
+        description="Review your plan, profile, and workspace preferences."
       />
 
       <PlanBilling checkoutReturn={checkoutReturn} />
@@ -53,7 +54,7 @@ export default async function SettingsPage({
           <div className="flex gap-4 px-5 py-6 sm:px-7">
             <UserRound className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
             <p className="text-sm leading-6 text-foreground-soft">
-              Your account details will be available here when profile editing is connected.
+              Review your goal, equipment, availability, and self reported starting point in your <Link href="/dashboard/profile" className="font-medium text-primary underline underline-offset-2">athlete profile</Link>.
             </p>
           </div>
         </DashboardSection>
@@ -62,7 +63,7 @@ export default async function SettingsPage({
           <div className="flex gap-4 px-5 py-6 sm:px-7">
             <SlidersHorizontal className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden="true" />
             <p className="text-sm leading-6 text-foreground-soft">
-              Training preferences will be managed here when those settings are available.
+              Your training context is shown in your <Link href="/dashboard/profile" className="font-medium text-primary underline underline-offset-2">profile</Link>. Your sessions and progress are available from the training workspace.
             </p>
           </div>
         </DashboardSection>

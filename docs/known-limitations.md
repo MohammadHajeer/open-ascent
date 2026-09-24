@@ -8,6 +8,7 @@
 - **Measured hold capability:** The current uploaded-analysis recalibration path accepts repetition movements only. Logged holds can appear in training/progress and may contribute to rules that accept them, but they are not an uploaded-video measured hold recalibration.
 - **Readiness evidence:** A movement remains `UNKNOWN` when a published rule lacks acceptable, current, structured evidence. A self-reported baseline or standalone upload is not automatically enough to establish measured capability.
 - **External services:** Coach responses, plan generation, analysis explanations, Stripe state, and hosted Supabase operations depend on provider availability and configuration. The demo should have completed results ready.
+- **Demo measurement:** Yazan's foundation readiness comes from recent self-performed manual workouts. His initial rep estimates remain provisional, and advanced analyzer-gated variations remain `UNKNOWN` until a real qualifying upload exists.
 - **Deployment:** The repository documents local development and test-mode checkout; it does not include a verified production deployment procedure or claim production validation.
 
 ## Intentional scope boundaries

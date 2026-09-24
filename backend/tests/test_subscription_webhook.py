@@ -400,6 +400,36 @@ def test_duplicate_event_is_idempotent_and_does_not_duplicate_rows(
     assert db.scalar(select(func.count()).select_from(StripeWebhookEvent)) == 1
 
 
+def test_renewal_uses_latest_verified_stripe_period(webhook_context) -> None:
+    db, user_id, customer_id, membership, gateway, test_settings = webhook_context
+    now = int(time.time())
+    initial = _active_event(webhook_context, event_id="evt_first_period", created=now)
+    reconcile_verified_event(db, initial, settings=test_settings, gateway=gateway)
+    db.commit()
+    first_end = membership.current_period_end
+
+    renewed = _subscription(
+        subscription_id="sub_test_monthly", customer_id=customer_id,
+        start=int(first_end.timestamp()), end=int(first_end.timestamp()) + 2_592_000,
+    )
+    gateway.subscriptions[renewed["id"]] = renewed
+    result = reconcile_verified_event(
+        db,
+        _event(
+            event_id="evt_renewed", event_type="customer.subscription.updated",
+            created=now + 5, data_object=renewed,
+        ),
+        settings=test_settings, gateway=gateway,
+    )
+    db.commit()
+
+    assert result.outcome == "applied"
+    assert membership.current_period_start == first_end
+    assert membership.current_period_end > first_end
+    assert membership.cancel_at_period_end is False
+    assert resolve_effective_plan(db, user_id, as_of=first_end + timedelta(days=1)) is PlanCode.PRO
+
+
 def test_delayed_older_event_cannot_overwrite_newer_verified_state(
     webhook_context,
 ) -> None:

@@ -61,9 +61,14 @@ new AI plan live during the presentation if that sequence is important.
 uv run python -m scripts.seed_demo rich --stripe-subscription-id sub_TEST_ID
 ```
 
+For an existing marked DOC-02 account with an active linked Stripe test subscription, run `uv run python -m scripts.seed_demo refresh`. This re-verifies the subscription and needs no demo passwords or copied provider ID.
+
 Optionally add `--analysis-id UUID` once per qualifying upload. The command
 adds seven historical manual sessions across four weeks, producing progress
-trends. Without analysis IDs it skips measured recalibration and leaves
+trends. It publishes structured foundation rules for Pull-Up, Push-Up, and Dips
+through the guide service if those guides have no custom rules. Recent
+self-performed manual sets can pass those rules; they are not measured
+capabilities. Without analysis IDs it skips measured recalibration and leaves
 analysis history alone. The AI Coach reads the normal profile, workouts,
 analyses, and measured state; no AI response or usage is invented. Current
 usage is governed by the existing Pro plan and any actual feature calls. An

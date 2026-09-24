@@ -7,7 +7,7 @@
 | 0:00–0:35 | Landing `/` | Show product entry and Analyze/Movements links. | “Open Ascent connects training records, movement evidence, and coaching decisions.” | Live |
 | 0:35–1:20 | Signup `/signup` → onboarding `/onboarding` | Show signup fields, then a prepared new athlete at onboarding; enter a goal and baseline. | “The starting numbers are self-reported. We keep them separate from measured evidence.” | Preloaded signup; live onboarding if the account is ready |
 | 1:20–1:30 | Cut / account switch | Use the time-jump slide or edit: **“After a few weeks of training with Open Ascent…”** Sign in as Yazan. | “Now there is enough history to see how the product responds to actual training.” | Preloaded cut |
-| 1:30–2:25 | Athlete dashboard `/dashboard` | Show recent workouts, progress summary, latest analysis, and current saved plan if present. | “The dashboard brings the athlete’s own record and next steps together.” | Live, data preloaded |
+| 1:30–2:25 | Athlete dashboard `/dashboard` | Show recent workouts, progress summary, and current saved foundation plan. Open Profile to show the training context if time permits. | “The dashboard brings the athlete’s own record and next steps together.” | Live, data preloaded |
 | 2:25–3:05 | Train `/dashboard/train` and Progress `/dashboard/progress` | Open a completed workout and progress view; point out rep/hold trends. | “Logged sets build the trend. A video result alone does not become a training claim.” | Live, history preloaded |
 | 3:05–4:10 | Analyses `/dashboard/analyses` → completed detail | Open a prepared Vertical Pull result; show valid/partial/uncertain counts, form findings, and explanation if ready. | “A worker processes the private upload, then the athlete can inspect what was observed and what remains uncertain.” | Preloaded result |
 | 4:10–5:15 | Live Coach `/dashboard/train/live-coach` | Acknowledge safety, start camera, perform one or two controlled reps, show count, variant breakdown, cue, and stop. | “Pose inference stays in this browser. Completed Vertical Pull reps are counted and classified as Pull-Up, Chin-Up, Close-Grip, Wide-Grip, High Pull-Up, or unknown; local voice clips deliver cues. Pro access is checked by the server.” | Live after device rehearsal; use a short prepared capture if camera is unreliable |
@@ -19,7 +19,7 @@
 
 ## Stage the browser
 
-Preload separate browser profiles or windows for the new athlete, Yazan, and Mohammad so switching accounts does not invalidate another tab’s session. Prepare a completed authenticated Vertical Pull analysis for Yazan and open its detail URL. Have a completed Coach conversation and a valid plan preview ready in case provider latency interrupts the live request. If the demo environment cannot produce a readiness-approved plan, show the preview and explain the save gate; never claim that a rejected plan was saved. Open Library after saving and show the plan detail.
+Preload separate browser profiles or windows for the new athlete, Yazan, and Mohammad so switching accounts does not invalidate another tab’s session. The DOC-02 refresh provides a validated saved foundation plan; it does not create an analysis or AI preview. Prepare a real completed authenticated Vertical Pull analysis separately if that segment is shown. Have a completed Coach conversation and a valid plan preview ready in case provider latency interrupts the live request. Open Library after saving and show the plan detail.
 
 Keep signup **visual** unless email confirmation is known to work during the presentation. Avoid live video upload, analysis wait, Pro checkout, webhook timing, and fresh demo seeding on stage. Rehearse the camera on the actual machine, in a current browser on `localhost` or HTTPS, with a stable bar, full upper body and wrists visible, permission granted, and audio unmuted. If the live camera fails, use a previously recorded local capture of the UI and state that it is a rehearsal capture. Prepare analysis results beforehand; any AI explanation should already be loaded. For live Coach/plan calls, keep a completed response and preview in another conversation so the story can continue if OpenAI is slow.
 
@@ -38,7 +38,7 @@ Keep signup **visual** unless email confirmation is known to work during the pre
 - [ ] Analysis, explanation, and cleanup workers running; admin heartbeat panel healthy.
 - [ ] Alembic migrations at head; movement and subscription seed data present.
 - [ ] Demo admin and Yazan accounts verified in separate browser sessions.
-- [ ] Yazan’s Pro subscription and Live Coach entitlement verified through the app.
+- [ ] Yazan’s Pro subscription, $9.99 monthly test price, renewal/cancellation state, and Live Coach entitlement verified through the app.
 - [ ] Rich workout/progress demo data present; saved plans visible in Library and their detail pages.
 - [ ] Completed analysis results and optional explanation ready; detail route preloaded.
 - [ ] Camera permission, framing, bar setup, and Live Coach voice/audio checked on the actual device.
