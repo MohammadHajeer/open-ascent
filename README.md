@@ -1,151 +1,55 @@
+<p align="center"><img src="frontend/public/assets/brand/symbol-light.svg" alt="Open Ascent symbol" width="112" height="112"></p>
+
 # Open Ascent
 
-Open Ascent is an AI-powered calisthenics coaching platform built as a full-stack monorepo.
+**AI Calisthenics Coach**
 
-## Project Structure
+Open Ascent helps athletes record training, review movement evidence, and make informed decisions about their next session. It combines a workout and progress record with asynchronous video analysis, a conversational coach, and browser-local live feedback for vertical pulls.
 
-```text
-open-ascent/
-├── frontend/   # Next.js application
-├── backend/    # FastAPI application
-├── .husky/     # Git hooks
-├── package.json
-├── pnpm-workspace.yaml
-└── README.md
-```
+## At a glance
 
-## Tech Stack
+- Log workouts and view progress from self-performed sets.
+- Upload supported Vertical Pull videos for deterministic rep and form analysis; signed-in athletes can revisit their results.
+- Use Live Coach for local pose-based rep counting, variant classification, form cues, and voice clips with Pro access.
+- Ask AI Coach about your own training record and published movement guides; generate a structured weekly plan, preview it, then explicitly save it.
+- Review movement safety and readiness guidance, with measured capability updates only from qualifying analysis evidence.
+- Manage movement content, users, subscriptions, and job health through the admin workspace.
 
-### Frontend
+## How it is built
 
-- Next.js
-- TypeScript
-- Tailwind CSS
-- shadcn/ui
-- Supabase Auth
+The [Next.js App Router frontend](frontend/) talks to a [FastAPI backend](backend/). Supabase provides authentication, PostgreSQL, and private video storage. SQLAlchemy and Alembic manage data and migrations. Background workers process uploads, generate explanations, and clean up expired media. MediaPipe and OpenCV power recorded-video analysis; Live Coach runs MediaPipe pose inference in the browser. OpenAI powers the conversational coach, structured plan proposals, and optional bounded analysis assistance. Stripe checkout and verified webhooks support Pro entitlements.
 
-### Backend
+## Quick start
 
-- FastAPI
-- SQLAlchemy
-- Alembic
-- PostgreSQL / Supabase
-- MediaPipe
-- OpenCV
-- OpenAI
+Install Node.js, pnpm, Python 3.12, uv, and the Stripe CLI. Configure a non-production Supabase project and the placeholder variables in [`frontend/.env.example`](frontend/.env.example) and [`backend/.env.example`](backend/.env.example). Then:
 
-## Package Management
-
-- Frontend / workspace: `pnpm`
-- Backend: `uv`
-
-## Development
-
-From the repository root:
-
-```bash
+```powershell
 pnpm install
+cd backend
+uv sync
+uv run alembic upgrade head
+uv run python -m scripts.seed_movements
+uv run python -m scripts.seed_subscriptions
+cd ..
 pnpm dev
 ```
 
-This starts:
+`pnpm dev` starts the frontend, API, worker group, and Stripe webhook forwarding. See [Getting started](docs/getting-started.md) for setup details and [Demo setup](docs/demo-setup.md) for the seeded presentation accounts.
 
-- Next.js frontend
-- FastAPI backend
-- deterministic analysis worker
-- Stripe CLI webhook forwarding to `http://localhost:8000/webhooks/stripe`
+## Documentation
 
-You can also run them separately:
+| Guide | What it covers |
+| --- | --- |
+| [Getting started](docs/getting-started.md) | Prerequisites, environment, migrations, local commands, and tests |
+| [Architecture](docs/architecture.md) | Components and data flow |
+| [Features](docs/features.md) | Implemented athlete, coach, and admin experiences |
+| [Security](docs/security.md) | Authorization and privacy boundaries |
+| [Workers and jobs](docs/workers-and-jobs.md) | Queues, leases, retries, and cleanup |
+| [Demo setup](docs/demo-setup.md) | DOC-02 accounts and rich data seed |
+| [Capability freeze](docs/capability-freeze.md) | Final supported scope |
+| [Known limitations](docs/known-limitations.md) | Current limits and future work |
+| [Demo flow](docs/demo-flow.md) | Capstone script and rehearsal checklist |
 
-```bash
-pnpm dev:frontend
-pnpm dev:backend
-pnpm dev:worker
-pnpm dev:stripe
-```
+## Quality checks
 
-### Local Stripe webhooks
-
-Install the Stripe CLI and authenticate once with `stripe login`. Before the
-first local run, ask the CLI for its local webhook signing secret:
-
-```bash
-stripe listen --print-secret
-```
-
-Copy the printed `whsec_...` value into the ignored `backend/.env` file:
-
-```dotenv
-STRIPE_WEBHOOK_SECRET=whsec_...
-```
-
-Then use the normal entry point:
-
-```bash
-pnpm dev
-```
-
-The `stripe-webhooks` process starts `stripe listen` alongside the existing
-frontend, backend, and worker processes and forwards test-mode events to the
-backend webhook endpoint. The backend reads `backend/.env` only at startup, so
-if the CLI signing secret changes, stop development, update that local value,
-and restart `pnpm dev`. The secret remains local and is never stored in source
-control. Missing CLI installation or authentication errors are emitted directly
-by the labeled Stripe process and stop the concurrent development group.
-
-The guest Analyze flow needs the current database migration and published
-pull-up/chin-up movement guides. From `backend`, run `uv run alembic upgrade head`
-and then run `uv run python -m scripts.seed_movements` and
-`uv run python -m scripts.seed_subscriptions` when setting up an environment.
-The worker reads private videos and uses the MediaPipe task files in
-`backend/models`.
-
-## Auth Hook Setup
-
-From `backend`, run `uv run alembic upgrade head`. Then, in the Supabase
-Dashboard, open **Authentication → Hooks (Auth Hooks) → Custom Access Token**.
-Choose **Postgres Function**, select `public.open_ascent_access_token_hook`, and
-enable the hook. New access tokens include `onboarding_complete: boolean`,
-sourced from `profiles.onboarding_completed_at`, and `user_role`, sourced from
-`profiles.app_role`. Valid application roles are `athlete` and `admin`; an
-unavailable or invalid role produces a `null` claim and never grants admin
-access. This claim does not replace Supabase's built-in `role` claim.
-
-When onboarding later sets `onboarding_completed_at`, the frontend must call
-`await supabase.auth.refreshSession()` before navigating to `/dashboard`. The
-refresh issues a token with the updated claim. FastAPI continues to enforce
-authorization for protected API actions.
-
-After changing `profiles.app_role`, the current JWT keeps its old `user_role`
-until the session refreshes. Call `await supabase.auth.refreshSession()` or
-sign out and sign in again to obtain a token with the new role. FastAPI checks
-the current database profile for admin actions, so its authorization does not
-depend on the potentially stale JWT role.
-
-## Quality Checks
-
-```bash
-pnpm lint
-pnpm test
-```
-
-Git hooks are managed with Husky:
-
-- `pre-commit` → lint staged files
-- `pre-push` → run backend tests
-
-## Environment
-
-Copy the example environment files before running the project:
-
-```text
-frontend/.env.example
-backend/.env.example
-```
-
-Then provide the required local environment variables.
-
-## Branches
-
-- `main` — stable code
-- `dev` — active development
+From the repository root, run `pnpm lint` and `pnpm test` for frontend/backend linting and backend tests. `pnpm test:live-coach` runs the focused Live Coach suite; other frontend suites are listed in [`frontend/package.json`](frontend/package.json). The [testing commands](docs/getting-started.md#testing) guide has the full list.
