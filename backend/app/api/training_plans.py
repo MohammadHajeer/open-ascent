@@ -14,6 +14,7 @@ from app.db.database import DbSession
 from app.models.enums import FeatureKey, FeatureUsageStatus
 from app.models.subscription import FeatureUsage
 from app.schemas.plan_generation import LibraryPlanRequest
+from app.schemas.readiness_check import ReadinessAnswersInput
 from app.services import coach as coach_service
 from app.services import training_plan as plans
 from app.services.entitlements import UnconfiguredAllowanceError, get_user_entitlement
@@ -28,12 +29,32 @@ from app.services.plan_modes import (
     normalize_request,
     progress_context,
 )
+from app.services.readiness_check import preflight, store_answers
 
 router = APIRouter(prefix="/coach/plans", tags=["coach-plans"])
 
 
 class SavePlanInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+@router.post("/preflight")
+def preflight_library_generation(payload: LibraryPlanRequest, profile: AthleteProfile, db: DbSession) -> dict:
+    try:
+        return preflight(db, profile.id, payload)
+    except ProgressUnavailable as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/readiness-check")
+def submit_readiness_check(payload: ReadinessAnswersInput, profile: AthleteProfile, db: DbSession) -> dict:
+    try:
+        store_answers(db, profile.id, payload)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"saved": len(payload.answers)}
 
 
 @router.get("/generation-options")
@@ -60,6 +81,9 @@ def generation_options(profile: AthleteProfile, db: DbSession) -> dict:
 @router.post("/generations", status_code=202)
 def start_library_generation(payload: LibraryPlanRequest, profile: AthleteProfile, db: DbSession) -> dict:
     try:
+        readiness = preflight(db, profile.id, payload)
+        if readiness["status"] != "ready":
+            raise HTTPException(409, readiness.get("message") or "Complete the Quick readiness check before generating a plan.")
         content, metadata = normalize_request(db, profile.id, payload)
         conversation, generation, created = coach_service.create_and_reserve_generation(
             db, profile, payload.client_request_id, content, kind="plan", plan_context=metadata

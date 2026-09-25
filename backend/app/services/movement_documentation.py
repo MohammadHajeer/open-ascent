@@ -16,6 +16,7 @@ from app.schemas.movement_documentation import (
     MovementDocumentationUpdate,
 )
 from app.schemas.movement_safety import MovementSafetyContent
+from app.services.foundation_readiness import permits_structured_self_report
 
 
 class MovementNotFoundError(Exception):
@@ -239,6 +240,13 @@ class MovementDocumentationService:
             if source_movement is None or source_movement.prescription_type != expected:
                 raise InvalidSafetyContentError(
                     "Readiness rule movement and metric must match."
+                )
+            if ("structured_self_report" in rule.accepted_sources
+                    and not permits_structured_self_report(
+                        db.get(Movement, draft.movement_id), validated_content, rule
+                    )):
+                raise InvalidSafetyContentError(
+                    "Structured self-report is limited to reviewed foundation rules."
                 )
 
         draft.content = validated_content.model_dump(mode="json", exclude_none=True)

@@ -534,14 +534,14 @@ def curated_documentation(db: Session, seed: dict) -> MovementSafetyContent:
             raise ValueError(f"Foundation rule source is unavailable: {seed['slug']}")
         code, threshold = foundation
         content["prerequisites"].append(
-            f"At least {threshold} self-performed {source.name} repetition{'s' if threshold != 1 else ''} logged in the last 90 days"
+            f"At least {threshold} controlled {source.name} repetition{'s' if threshold != 1 else ''}, supported by recent training or a structured self-report"
         )
         content["readiness_rules"] = [{
             "code": code, "type": "movement_performance",
             "prerequisite_index": len(content["prerequisites"]) - 1,
             "movement_id": source.id, "metric": "reps", "operator": ">=",
             "value": threshold, "max_age_days": 90,
-            "accepted_sources": ["manual", "uploaded_analysis"],
+            "accepted_sources": ["manual", "uploaded_analysis", "structured_self_report"],
         }]
     rules = CURATED_READINESS_RULES.get(seed["slug"], ())
     if not rules:

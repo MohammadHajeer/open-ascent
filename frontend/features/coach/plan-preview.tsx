@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { getPlanPreview, savePlanPreview } from "./api";
 import type { PlanPreview } from "./types";
 
@@ -52,6 +53,7 @@ export function PlanPreviewCard({ previewId, onSaved }: { previewId: string; onS
           <p className="font-semibold text-foreground">{preview.origin.mode === "profile" ? "Start from my profile" : preview.origin.mode === "goal" ? "Build toward a goal" : "Adapt to my progress"}{preview.origin.goal_name ? ` · ${preview.origin.goal_name}` : ""}</p>
           <p>Based on: {preview.origin.based_on.join(" · ")}</p>
         </div>}
+        {preview.provisional_readiness && <Alert className="mt-3"><AlertTitle>Provisional readiness</AlertTitle><AlertDescription>Based partly on your self-reported readiness. Open Ascent will refine future plans as you log training and analysis evidence.</AlertDescription></Alert>}
         <div className="mt-4 space-y-3">
           {preview.days.map(day => <div key={day.day_index} className="rounded-lg border border-border/70 bg-background-alt/30 p-3">
             <h4 className="text-sm font-semibold text-foreground">Day {day.day_index}{day.label ? ` · ${day.label}` : ""}</h4>

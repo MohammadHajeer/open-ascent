@@ -36,7 +36,7 @@ from app.services.training_plan import (
     complete_preview,
 )
 
-PLAN_INSTRUCTIONS = """Create a seven-day or shorter weekly calisthenics training plan for this athlete. Return only the typed plan proposal. Use only the eligible canonical movement IDs supplied in the current request. The backend independently verifies every movement and its readiness. Pick the correct prescription target: repetitions for repetitions movements and hold_seconds for duration movements; provide exactly one. Use integer sets, target, and rest_seconds. Keep the plan appropriately modest for the athlete's evidence and goal. In profile mode, use self-reported onboarding only as provisional design context. In goal mode, the goal movement may be unready: identify the prerequisite gap and prescribe only eligible precursor exercises; never include the goal movement merely because it is the goal. In progress mode, use the supplied COACH-03 trends rather than inventing a fitness score. Explain in the summary why the selected exercises fit the request, including a prerequisite-first approach when applicable. Respect reported availability, equipment and movement avoidances. Do not claim to have measured unprovided performance. Do not turn movement safety guidance into a readiness claim. The available tools only read athlete records and published guides; use them when useful. Do not write records or ask tools to do so. Do not include medical advice or pain-provoking activity."""
+PLAN_INSTRUCTIONS = """Create a seven-day or shorter weekly calisthenics training plan for this athlete. Return only the typed plan proposal. Use only the eligible canonical movement IDs supplied in the current request. The backend independently verifies every movement and its readiness. Pick the correct prescription target: repetitions for repetitions movements and hold_seconds for duration movements; provide exactly one. Use integer sets, target, and rest_seconds. Keep the plan appropriately modest for the athlete's evidence and goal. For a movement with provisional_structured_self_report readiness, prescribe at most three sets and no more repetitions per set than its documented foundation threshold: Pull-Up one, Push-Up five, Dips one. Prefer at most three training days when only provisional movements are available, with no aggressive progression. In profile mode, use self-reported onboarding only as provisional design context. In goal mode, the goal movement may be unready: identify the prerequisite gap and prescribe only eligible precursor exercises; never include the goal movement merely because it is the goal. In progress mode, use the supplied COACH-03 trends rather than inventing a fitness score. Explain in the summary why the selected exercises fit the request, including a prerequisite-first approach when applicable. Respect reported availability, equipment and movement avoidances. Do not claim to have measured unprovided performance. Do not turn movement safety guidance into a readiness claim. The available tools only read athlete records and published guides; use them when useful. Do not write records or ask tools to do so. Do not include medical advice or pain-provoking activity."""
 
 
 def _eligible_movements(db, user_id: uuid.UUID) -> list[dict]:
@@ -53,6 +53,10 @@ def _eligible_movements(db, user_id: uuid.UUID) -> list[dict]:
                     "id": str(movement.id),
                     "name": movement.name,
                     "prescription_type": movement.prescription_type,
+                    "readiness_basis": "provisional_structured_self_report" if any(
+                        item.source == "structured_self_report" and item.satisfied is True
+                        for item in evidence
+                    ) else "recorded_evidence",
                 }
             )
     return eligible
@@ -99,7 +103,7 @@ def run_plan_generation(
             _set_state(
                 generation_id,
                 "failed",
-                content="No movements currently pass your readiness and equipment checks. Log a suitable foundation workout or assessment, then try again. Your onboarding answers remain useful context but cannot prove readiness.",
+                content="No movements currently pass your readiness and equipment checks. Complete the Quick readiness check for an eligible foundation movement or log a suitable workout, then try again.",
                 error_code="no_ready_movements",
             )
             terminal_written = True

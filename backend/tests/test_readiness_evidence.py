@@ -19,16 +19,22 @@ from app.models.analysis import Analysis
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.models.profile import Profile
+from app.models.readiness_self_report import ReadinessSelfReport
 from app.models.training import WorkoutSession, WorkoutSet
 from app.schemas.movement_documentation import MovementDocumentationUpdate
 from app.schemas.movement_safety import MovementSafetyContent
+from app.schemas.plan_generation import LibraryPlanRequest
 from app.schemas.readiness import ReadinessStatus
+from app.schemas.readiness_check import ReadinessAnswersInput
+from app.schemas.training_plan import WeeklyPlanCandidate
 from app.services.movement_documentation import (
     InvalidSafetyContentError,
     MovementDocumentationService,
 )
 from app.services.readiness import ReadinessService
+from app.services.readiness_check import preflight, store_answers
 from app.services.readiness_evidence import ReadinessEvidenceBuilder
+from app.services.training_plan import PlanValidationError, validate_candidate
 from scripts.seed_movements import (
     CURATED_READINESS_RULES,
     FOUNDATION_READINESS_RULES,
@@ -49,12 +55,13 @@ def db():
     @event.listens_for(engine, "connect")
     def register_functions(connection, _record):
         connection.create_function("gen_random_uuid", 0, lambda: uuid.uuid4().hex)
-        connection.create_function("now", 0, lambda: datetime.now(UTC).isoformat())
+        connection.create_function("now", 0, lambda: datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f"))
 
     tables = (
         Profile.__table__,
         Movement.__table__,
         MovementDocumentation.__table__,
+        ReadinessSelfReport.__table__,
         Analysis.__table__,
         WorkoutSession.__table__,
         WorkoutSet.__table__,
@@ -418,7 +425,7 @@ def test_curated_seed_guides_preserve_unstructured_safety_prerequisites(db):
         assert len(safety.prerequisites) == len(original) + len(expected) + int(bool(foundation))
         if foundation:
             assert safety.readiness_rules[0].code == foundation[0]
-            assert safety.readiness_rules[0].accepted_sources == ["manual", "uploaded_analysis"]
+            assert safety.readiness_rules[0].accepted_sources == ["manual", "uploaded_analysis", "structured_self_report"]
             assert safety.readiness_rules[0].max_age_days == 90
         for index, (code, source_slug, requirement) in enumerate(expected):
             rule_entry = safety.readiness_rules[index]
@@ -450,6 +457,135 @@ def test_foundation_rules_accept_recent_manual_sets_without_measured_capability(
         assert evidence[0].source == "manual"
 
 
+def test_zero_history_profile_check_unlocks_only_foundation_rules_for_owner(db):
+    for seed in MOVEMENTS:
+        seed_movement(db, seed)
+    profile = athlete(db)
+    profile.coaching_context = {"equipment": ["pull_up_bar", "dip_bars"]}
+    other = athlete(db)
+    request = LibraryPlanRequest(client_request_id=uuid.uuid4(), mode="profile")
+    check = preflight(db, profile.id, request)
+    assert check["status"] == "check_required"
+    assert {item["rule_code"] for item in check["questions"]} == {
+        "recent_logged_push_up", "recent_logged_pull_up", "recent_logged_dips"
+    }
+    answers = ReadinessAnswersInput.model_validate({"answers": [
+        {**{key: question[key] for key in ("movement_id", "documentation_id", "rule_code")},
+         "response": "able"}
+        for question in check["questions"]
+    ]})
+    store_answers(db, profile.id, answers)
+    assert preflight(db, profile.id, request)["status"] == "ready"
+    assert db.query(ReadinessSelfReport).filter_by(user_id=profile.id).count() == 3
+    assert profile.athlete_state == {}
+    assert db.query(Analysis).filter_by(user_id=profile.id).count() == 0
+    for slug in ("pull-up", "push-up", "dips"):
+        target = db.query(Movement).filter_by(slug=slug).one()
+        evidence, decision = result(db, profile, target)
+        assert decision.status is ReadinessStatus.PASS
+        assert evidence[0].source == "structured_self_report"
+        assert evidence[0].reference_id is not None
+        assert result(db, other, target)[1].status is ReadinessStatus.UNKNOWN
+    advanced = db.query(Movement).filter_by(slug="muscle-up").one()
+    assert result(db, profile, advanced)[1].status is ReadinessStatus.UNKNOWN
+    pull_up = db.query(Movement).filter_by(slug="pull-up").one()
+    proposal = {"title": "Starter", "days": [{"day_index": 1, "exercises": [{
+        "movement_id": pull_up.id, "sets": 2, "reps": 1, "rest_seconds": 90
+    }]}]}
+    validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
+    proposal["days"][0]["exercises"][0]["reps"] = 2
+    with pytest.raises(PlanValidationError, match="conservative target"):
+        validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
+    proposal["days"][0]["exercises"][0]["movement_id"] = advanced.id
+    with pytest.raises(PlanValidationError, match="cannot be prescribed yet"):
+        validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
+    proposal["days"][0]["exercises"][0].update(movement_id=pull_up.id, reps=1)
+    proposal["days"] = [{**proposal["days"][0], "day_index": index} for index in range(1, 5)]
+    with pytest.raises(PlanValidationError, match="at most three training days"):
+        validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
+    logged_set(db, profile, pull_up, source="manual", reps=1)
+    assert result(db, profile, pull_up)[0][0].source == "manual"
+
+
+def test_negative_and_avoid_answers_block_and_later_training_can_supersede_not_yet(db):
+    for seed in MOVEMENTS:
+        seed_movement(db, seed)
+    profile = athlete(db)
+    target = db.query(Movement).filter_by(slug="push-up").one()
+    doc = MovementDocumentationService.get_published(db, target.id)
+    base = {"movement_id": target.id, "documentation_id": doc.id,
+            "rule_code": "recent_logged_push_up"}
+    store_answers(db, profile.id, ReadinessAnswersInput.model_validate({
+        "answers": [{**base, "response": "not_yet"}]
+    }))
+    assert result(db, profile, target)[1].status is ReadinessStatus.FAIL
+    report = db.query(ReadinessSelfReport).filter_by(user_id=profile.id).one()
+    report.reported_at = datetime.now(UTC) - timedelta(days=1)
+    db.flush()
+    logged_set(db, profile, target, source="manual", reps=5)
+    evidence, decision = result(db, profile, target)
+    assert decision.status is ReadinessStatus.PASS
+    assert evidence[0].source == "manual"
+    store_answers(db, profile.id, ReadinessAnswersInput.model_validate({
+        "answers": [{**base, "response": "avoid"}]
+    }))
+    assert result(db, profile, target)[1].status is ReadinessStatus.FAIL
+
+
+def test_muscle_up_goal_uses_foundation_check_without_unlocking_goal(db):
+    for seed in MOVEMENTS:
+        seed_movement(db, seed)
+    profile = athlete(db)
+    profile.coaching_context = {"equipment": ["pull_up_bar", "dip_bars"]}
+    muscle_up = db.query(Movement).filter_by(slug="muscle-up").one()
+    request = LibraryPlanRequest(client_request_id=uuid.uuid4(), mode="goal",
+                                 goal_movement_id=muscle_up.id)
+    check = preflight(db, profile.id, request)
+    assert check["status"] == "check_required"
+    assert {item["movement_name"] for item in check["questions"]} == {"Pull-Up", "Dips"}
+    store_answers(db, profile.id, ReadinessAnswersInput.model_validate({"answers": [
+        {**{key: question[key] for key in ("movement_id", "documentation_id", "rule_code")},
+         "response": "able"}
+        for question in check["questions"]
+    ]}))
+    assert preflight(db, profile.id, request)["status"] == "ready"
+    pull_up = db.query(Movement).filter_by(slug="pull-up").one()
+    safe = WeeklyPlanCandidate.model_validate({"title": "Toward Muscle-Up", "days": [{
+        "day_index": 1, "exercises": [{"movement_id": pull_up.id, "sets": 2,
+                                       "reps": 1, "rest_seconds": 90}]
+    }]})
+    validate_candidate(db, profile.id, safe)
+    blocked = safe.model_copy(deep=True)
+    blocked.days[0].exercises[0].movement_id = muscle_up.id
+    with pytest.raises(PlanValidationError, match="cannot be prescribed yet"):
+        validate_candidate(db, profile.id, blocked)
+
+
+def test_stale_guide_answer_cannot_unlock_new_published_guide(db):
+    for seed in MOVEMENTS:
+        seed_movement(db, seed)
+    profile = athlete(db)
+    target = db.query(Movement).filter_by(slug="push-up").one()
+    old = MovementDocumentationService.get_published(db, target.id)
+    store_answers(db, profile.id, ReadinessAnswersInput.model_validate({"answers": [{
+        "movement_id": target.id, "documentation_id": old.id,
+        "rule_code": "recent_logged_push_up", "response": "able"
+    }]}))
+    old.status = "archived"
+    replacement = MovementDocumentation(
+        movement_id=target.id, version=old.version + 1, status="published",
+        content=old.content, published_at=datetime.now(UTC),
+    )
+    db.add(replacement)
+    db.flush()
+    assert result(db, profile, target)[1].status is ReadinessStatus.UNKNOWN
+    with pytest.raises(ValueError, match="question changed"):
+        store_answers(db, profile.id, ReadinessAnswersInput.model_validate({"answers": [{
+            "movement_id": target.id, "documentation_id": old.id,
+            "rule_code": "recent_logged_push_up", "response": "able"
+        }]}))
+
+
 def test_curated_content_migration_matches_seed_templates():
     path = Path(__file__).parents[1] / "alembic" / "versions" / (
         "c7e8f9a0b123_curated_readiness_rules.py"
@@ -463,6 +599,17 @@ def test_curated_content_migration_matches_seed_templates():
     for slug, (expected_prose, templates) in migration.CURATED.items():
         assert expected_prose == seeds[slug]["documentation"]["prerequisites"]
         assert tuple(templates) == CURATED_READINESS_RULES[slug]
+
+
+def test_self_report_migration_targets_only_seeded_foundation_rules():
+    path = Path(__file__).parents[1] / "alembic" / "versions" / (
+        "b71e2c934af0_structured_readiness_self_report.py"
+    )
+    spec = spec_from_file_location("structured_readiness_migration", path)
+    assert spec is not None and spec.loader is not None
+    migration = module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    assert migration.FOUNDATIONS == FOUNDATION_READINESS_RULES
 
 
 @pytest.mark.parametrize("target_slug", [
@@ -587,6 +734,24 @@ def test_publishing_rejects_rule_with_wrong_source_movement_type(db):
         MovementDocumentationService.publish_draft(
             db, draft.id, admin.id
         )
+
+
+def test_publishing_rejects_self_report_for_advanced_rule(db):
+    admin = athlete(db)
+    source = movement(db, slug="pull-up")
+    target = movement(db, slug="muscle-up")
+    entry = rule(source, sources=["uploaded_analysis", "structured_self_report"], value=1)
+    draft = MovementDocumentation(
+        id=uuid.uuid4(), movement_id=target.id, version=1, status="draft",
+        content={"notice": "Move with control.", "difficulty": "advanced",
+                 "stressed_areas": ["shoulders"], "prerequisites": ["One valid pull-up"],
+                 "cautions": [], "stop_conditions": ["Stop for pain"],
+                 "readiness_rules": [entry]},
+    )
+    db.add(draft)
+    db.flush()
+    with pytest.raises(InvalidSafetyContentError, match="Structured self-report"):
+        MovementDocumentationService.publish_draft(db, draft.id, admin.id)
 
 
 def test_published_rule_survives_json_round_trip_and_prose_edit_invalidates_mapping(db):

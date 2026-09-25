@@ -8,9 +8,9 @@ Final repository snapshot for the capstone presentation.
 - Public movement guides and safety documentation, with admin management of movement content.
 - Workout logging, recent history, dashboard summaries, progress views, and guided dashboard tour.
 - Guest and authenticated uploaded-video analysis for the Vertical Pull family, with queued processing, deterministic rep/form results, private authenticated history, and optional AI explanation.
-- Evidence-aware readiness; target-matched, self-performed max-test analysis can recalibrate measured **rep** capability.
+- Evidence-aware readiness; target-matched, self-performed max-test analysis can recalibrate measured **rep** capability. A structured, provisional Quick readiness check supports eligible foundation rules for new athletes without claiming measurement.
 - Persistent AI Coach conversations with streamed OpenAI responses and bounded, owner-scoped read tools.
-- Library-led structured weekly plan generation in profile, goal, and progress modes, with validated preview, explicit save, saved-plan list/detail views, and a current-plan summary on the athlete dashboard. AI Coach retains conversational plan proposals through the same engine.
+- Library-led structured weekly plan generation in profile, goal, and progress modes, with an unmetered Profile/Goal readiness preflight, validated preview, explicit save, saved-plan list/detail views, and a current-plan summary on the athlete dashboard. AI Coach retains conversational plan proposals through the same engine.
 - Browser-local Live Coach for Vertical Pull: complete-rep counting, evidence-based canonical or partial variant labels, deterministic cues, local voice clips, and backend-checked Pro access.
 - Free/Pro entitlements, usage accounting, Stripe test checkout, provider-priced subscription status, period-end cancellation/resumption, and verified webhook reconciliation.
 - Durable analysis/explanation jobs, cleanup, worker heartbeats, admin queue/worker monitoring, and guarded retry actions.

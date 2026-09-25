@@ -18,11 +18,13 @@ from sqlalchemy.pool import StaticPool
 from app.api.dependencies.auth import require_athlete
 from app.db.database import get_db
 from app.main import app
+from app.models.analysis import Analysis
 from app.models.coach import CoachGeneration, Conversation, Message
 from app.models.enums import FeatureKey
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.models.profile import Profile
+from app.models.readiness_self_report import ReadinessSelfReport
 from app.models.training import (
     TrainingPlan,
     TrainingPlanPreview,
@@ -31,6 +33,7 @@ from app.models.training import (
 )
 from app.schemas.plan_generation import LibraryPlanRequest
 from app.schemas.readiness import ReadinessEvidence
+from app.schemas.readiness_check import ReadinessAnswersInput
 from app.schemas.training_plan import (
     PlanOrigin,
     WeeklyPlanCandidate,
@@ -39,7 +42,9 @@ from app.schemas.training_plan import (
 from app.services import coach, plan_modes, training_plan
 from app.services import coach_plan_generation as plan_generation
 from app.services.feature_usage import QuotaExceededError
+from app.services.readiness_check import store_answers
 from app.services.readiness_evidence import ReadinessEvidenceBuilder
+from scripts.seed_movements import MOVEMENTS, seed_movement
 
 
 @compiles(JSONB, "sqlite")
@@ -56,27 +61,35 @@ def plan_db(monkeypatch):
     @event.listens_for(engine, "connect")
     def register_functions(connection, _record):
         connection.create_function("gen_random_uuid", 0, lambda: uuid.uuid4().hex)
-        connection.create_function("now", 0, lambda: datetime.now(UTC).isoformat())
+        connection.create_function("now", 0, lambda: datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f"))
 
+    tables = (
+        Profile.__table__, Movement.__table__, MovementDocumentation.__table__,
+        ReadinessSelfReport.__table__, Analysis.__table__, Conversation.__table__,
+        Message.__table__, CoachGeneration.__table__, TrainingPlan.__table__,
+        TrainingPlanPreview.__table__, WorkoutSession.__table__, WorkoutSet.__table__,
+    )
     defaults = [
         (column, column.server_default)
-        for column in Profile.__table__.columns
+        for table in tables for column in table.columns
         if isinstance(column.type, JSONB)
+    ]
+    partial_indexes = [
+        (table, index) for table in tables for index in list(table.indexes)
+        if index.dialect_options["postgresql"].get("where") is not None
     ]
     for column, _default in defaults:
         column.server_default = None
+    for table, index in partial_indexes:
+        table.indexes.remove(index)
     try:
-        Profile.__table__.create(engine)
+        for table in tables:
+            table.create(engine)
     finally:
         for column, default in defaults:
             column.server_default = default
-    for table in (
-        Movement.__table__, MovementDocumentation.__table__,
-        Conversation.__table__, Message.__table__, CoachGeneration.__table__,
-        TrainingPlan.__table__, TrainingPlanPreview.__table__,
-        WorkoutSession.__table__, WorkoutSet.__table__,
-    ):
-        table.create(engine)
+        for table, index in partial_indexes:
+            table.indexes.add(index)
     # PostgreSQL's partial active-session index becomes an unconditional index
     # under SQLite, which would reject two completed historical sessions.
     with engine.begin() as connection:
@@ -561,6 +574,7 @@ def test_library_generation_endpoint_uses_authenticated_owner_and_rejects_extra_
         return SimpleNamespace(id=uuid.uuid4()), SimpleNamespace(id=uuid.uuid4(), status="completed"), True
 
     monkeypatch.setattr(coach, "create_and_reserve_generation", admit)
+    monkeypatch.setattr("app.api.training_plans.preflight", lambda *_args: {"status": "ready", "questions": []})
 
     def database():
         with factory() as db:
@@ -579,6 +593,79 @@ def test_library_generation_endpoint_uses_authenticated_owner_and_rejects_extra_
             assert client.post("/coach/plans/generations", json={**payload, "user_id": str(owner.id)}).status_code == 422
     finally:
         app.dependency_overrides.clear()
+
+
+def test_quick_check_is_unmetered_and_generation_still_uses_existing_admission(plan_db, monkeypatch):
+    factory, owner, stranger, _movement = plan_db
+    with factory() as db:
+        seed_movement(db, next(item for item in MOVEMENTS if item["slug"] == "push-up"))
+        db.commit()
+    admissions = []
+
+    def admit(_db, profile, request_id, content, *, kind, plan_context):
+        admissions.append((profile.id, request_id, kind))
+        return SimpleNamespace(id=uuid.uuid4()), SimpleNamespace(id=uuid.uuid4(), status="completed"), True
+
+    monkeypatch.setattr(coach, "create_and_reserve_generation", admit)
+
+    def database():
+        with factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = database
+    app.dependency_overrides[require_athlete] = lambda: owner
+    try:
+        with TestClient(app) as client:
+            request = {"client_request_id": str(uuid.uuid4()), "mode": "profile"}
+            blocked = client.post("/coach/plans/generations", json=request)
+            assert blocked.status_code == 409
+            assert admissions == []
+            check = client.post("/coach/plans/preflight", json=request)
+            assert check.status_code == 200
+            assert check.json()["status"] == "check_required"
+            question = check.json()["questions"][0]
+            assert question["rule_code"] == "recent_logged_push_up"
+            assert client.post("/coach/plans/readiness-check", json={"answers": [{
+                "movement_id": question["movement_id"],
+                "documentation_id": question["documentation_id"],
+                "rule_code": question["rule_code"], "response": "able",
+                "user_id": str(stranger.id),
+            }]}).status_code == 422
+            assert client.post("/coach/plans/readiness-check", json={"answers": [{
+                "movement_id": question["movement_id"],
+                "documentation_id": question["documentation_id"],
+                "rule_code": question["rule_code"], "response": "able",
+            }]}).status_code == 200
+            assert admissions == []
+            assert client.post("/coach/plans/preflight", json=request).json()["status"] == "ready"
+            assert client.post("/coach/plans/generations", json=request).status_code == 202
+            assert admissions == [(owner.id, uuid.UUID(request["client_request_id"]), "plan")]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_provisional_basis_is_labelled_in_preview_and_saved_plan(plan_db):
+    factory, owner, _stranger, _movement = plan_db
+    with factory() as db:
+        seed_movement(db, next(item for item in MOVEMENTS if item["slug"] == "push-up"))
+        target = db.scalar(select(Movement).where(Movement.slug == "push-up"))
+        guide = db.scalar(select(MovementDocumentation).where(
+            MovementDocumentation.movement_id == target.id,
+            MovementDocumentation.status == "published",
+        ))
+        db.commit()
+        store_answers(db, owner.id, ReadinessAnswersInput.model_validate({"answers": [{
+            "movement_id": target.id, "documentation_id": guide.id,
+            "rule_code": "recent_logged_push_up", "response": "able",
+        }]}))
+        item = generation(db, owner)
+        preview = training_plan.complete_preview(
+            db, generation_id=item.id, user_id=owner.id,
+            candidate=candidate(target.id), provider_response_id="resp_provisional",
+        )
+        assert training_plan.preview_read(db, preview)["provisional_readiness"] is True
+        saved = training_plan.save_preview(db, owner.id, preview.id)
+        assert training_plan.saved_plan_summary(saved)["provisional_readiness"] is True
 
 
 def test_plan_admission_uses_one_plan_unit_and_safe_idempotency(plan_db, monkeypatch):
@@ -646,7 +733,7 @@ def test_provider_tool_round_yields_structured_preview_without_saving(plan_db, m
     )
     calls = []
     proposal = plan_generation.WeeklyPlanProposal.model_validate(
-        candidate(movement.id).model_dump(mode="json", exclude={"origin"})
+        candidate(movement.id).model_dump(mode="json", exclude={"origin", "provisional_readiness"})
     )
 
     class FakeResponses:

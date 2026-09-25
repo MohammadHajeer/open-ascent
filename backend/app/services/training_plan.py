@@ -42,6 +42,7 @@ def validate_candidate(
 ) -> None:
     """Run canonical, prescription, and SAF-04 gates before preview and Save."""
     checked: set[uuid.UUID] = set()
+    provisional_movements: set[uuid.UUID] = set()
     for day in candidate.days:
         for exercise in day.exercises:
             movement = db.get(Movement, exercise.movement_id)
@@ -79,6 +80,25 @@ def validate_candidate(
                     f"{movement.name[:80]} cannot be prescribed yet: "
                     + "; ".join(item[:180] for item in detail),
                 )
+            if any(item.source == "structured_self_report" and item.satisfied is True for item in evidence):
+                provisional_movements.add(movement.id)
+                provisional_cap = min(
+                    int(item.observed_value) for item in evidence
+                    if item.source == "structured_self_report" and item.satisfied is True
+                )
+                prescriptions = [entry for planned_day in candidate.days for entry in planned_day.exercises
+                                 if entry.movement_id == movement.id]
+                if any(entry.sets > 3 or entry.reps is None or entry.reps > provisional_cap
+                       for entry in prescriptions):
+                    raise PlanValidationError(
+                        "provisional_volume_exceeded",
+                        f"{movement.name[:80]} needs a conservative target until training evidence is logged.",
+                    )
+    if checked and checked == provisional_movements and len(candidate.days) > 3:
+        raise PlanValidationError(
+            "provisional_volume_exceeded",
+            "A starter plan based only on self-reported readiness should use at most three training days.",
+        )
 
 
 def validate_library_constraints(db: Session, user_id: uuid.UUID, candidate: WeeklyPlanCandidate, metadata: dict | None) -> None:
@@ -95,6 +115,14 @@ def validate_library_constraints(db: Session, user_id: uuid.UUID, candidate: Wee
             movement = db.get(Movement, exercise.movement_id)
             if movement and not equipment_available(movement.slug, context):
                 raise PlanValidationError("equipment_unavailable", f"{movement.name[:80]} needs equipment outside your profile.")
+
+
+def uses_provisional_readiness(db: Session, user_id: uuid.UUID, candidate: WeeklyPlanCandidate) -> bool:
+    return any(
+        item.source == "structured_self_report" and item.satisfied is True
+        for movement_id in {exercise.movement_id for day in candidate.days for exercise in day.exercises}
+        for item in ReadinessEvidenceBuilder.build(db, user_id=user_id, movement_id=movement_id)
+    )
 
 
 def complete_preview(
@@ -128,6 +156,7 @@ def complete_preview(
         raise PlanValidationError("stale_generation", "Plan generation is no longer active.")
     validate_candidate(db, user_id, candidate)
     validate_library_constraints(db, user_id, candidate, generation.plan_context)
+    candidate = candidate.model_copy(update={"provisional_readiness": uses_provisional_readiness(db, user_id, candidate)})
     preview = TrainingPlanPreview(
         user_id=user_id,
         coach_generation_id=generation_id,
@@ -182,6 +211,7 @@ def preview_read(db: Session, preview: TrainingPlanPreview) -> dict:
         "title": candidate.title,
         "summary": candidate.summary,
         "origin": candidate.origin.model_dump(mode="json") if candidate.origin else None,
+        "provisional_readiness": candidate.provisional_readiness,
         "days": [
             {
                 "day_index": day.day_index,
@@ -239,6 +269,7 @@ def save_preview(
         raise PlanValidationError("invalid_preview", "Plan preview is invalid.") from exc
     validate_candidate(db, user_id, candidate)
     validate_library_constraints(db, user_id, candidate, generation.plan_context)
+    candidate = candidate.model_copy(update={"provisional_readiness": uses_provisional_readiness(db, user_id, candidate)})
     saved = TrainingPlan(
         user_id=user_id,
         title=candidate.title,
@@ -286,6 +317,7 @@ def saved_plan_summary(plan: TrainingPlan) -> dict:
         "title": plan.title,
         "summary": candidate.summary,
         "origin": candidate.origin.model_dump(mode="json") if candidate.origin else None,
+        "provisional_readiness": candidate.provisional_readiness,
         "saved_at": plan.saved_at.isoformat(),
         "training_day_count": len(candidate.days),
         "movement_count": len({

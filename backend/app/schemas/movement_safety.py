@@ -26,6 +26,7 @@ ReadinessSource = Literal[
     "manual",
     "self_reported",
     "initial_assessment",
+    "structured_self_report",
 ]
 
 
@@ -44,7 +45,7 @@ class MovementPerformanceRule(BaseModel):
     operator: Literal[">="]
     value: Decimal = Field(gt=0, le=86400, max_digits=10, decimal_places=3)
     max_age_days: int = Field(ge=1, le=365)
-    accepted_sources: list[ReadinessSource] = Field(min_length=1, max_length=5)
+    accepted_sources: list[ReadinessSource] = Field(min_length=1, max_length=6)
 
     @model_validator(mode="after")
     def distinct_sources(self) -> MovementPerformanceRule:

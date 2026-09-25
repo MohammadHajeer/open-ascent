@@ -78,6 +78,7 @@ class WeeklyPlanCandidate(_Candidate):
     summary: Summary | None = None
     days: list[PlanDay] = Field(min_length=1, max_length=7)
     origin: PlanOrigin | None = None
+    provisional_readiness: bool = False
 
     @model_validator(mode="after")
     def weekly_shape(self) -> WeeklyPlanCandidate:

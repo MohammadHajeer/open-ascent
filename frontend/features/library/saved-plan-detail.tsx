@@ -39,6 +39,7 @@ export function SavedPlanDetail({ planId }: { planId: string }) {
   return <div className="space-y-8">
     <DashboardPageHeader eyebrow="Library / Saved plan" title={value.title} description={value.summary ?? "Review the days and exercises in this saved weekly plan."} action={back} />
     {value.origin && <p className="text-xs text-foreground-soft">{value.origin.mode === "profile" ? "Started from profile" : value.origin.mode === "goal" ? `Goal: ${value.origin.goal_name}` : "Adapted to progress"} · Based on {value.origin.based_on.join(", ")}</p>}
+    {value.provisional_readiness && <p className="text-xs text-foreground-soft">This plan was based partly on structured self-reported readiness at the time it was saved.</p>}
     <p className="text-sm text-foreground-soft">Saved {savedDate} · {value.training_day_count} training {value.training_day_count === 1 ? "day" : "days"} · {value.movement_count} {value.movement_count === 1 ? "movement" : "movements"}</p>
     <div className="grid gap-4 xl:grid-cols-2">
       {value.days.map((day) => <DashboardSection key={day.day_index} eyebrow={`Day ${day.day_index}`} title={day.label ?? `Training day ${day.day_index}`}>

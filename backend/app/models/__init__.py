@@ -9,6 +9,7 @@ from app.models.guest_analysis_usage import GuestAnalysisUsage
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.models.profile import Profile
+from app.models.readiness_self_report import ReadinessSelfReport
 from app.models.subscription import (
     FeatureUsage,
     PlanEntitlement,
@@ -37,6 +38,7 @@ __all__ = [
     "MovementDocumentation",
     "PlanEntitlement",
     "Profile",
+    "ReadinessSelfReport",
     "StripeWebhookEvent",
     "SubscriptionPlan",
     "TrainingPlan",

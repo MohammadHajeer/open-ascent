@@ -15,9 +15,11 @@ from app.models.analysis import Analysis
 from app.models.enums import MovementPrescriptionType
 from app.models.movement import Movement
 from app.models.profile import Profile
+from app.models.readiness_self_report import ReadinessSelfReport
 from app.models.training import WorkoutSession, WorkoutSet
 from app.schemas.movement_safety import MovementPerformanceRule, MovementSafetyContent
 from app.schemas.readiness import ReadinessEvidence
+from app.services.foundation_readiness import permits_structured_self_report
 from app.services.movement_documentation import MovementDocumentationService
 
 ASSESSMENT_REP_KEYS = {
@@ -121,7 +123,7 @@ class ReadinessEvidenceBuilder:
             requirement = safety.prerequisites[rule.prerequisite_index]
             evidence.append(
                 ReadinessEvidenceBuilder._evaluate_rule(
-                    db, profile, rule, requirement, evaluated_at
+                    db, profile, movement, documentation.id, safety, rule, requirement, evaluated_at
                 )
             )
         return evidence
@@ -130,6 +132,9 @@ class ReadinessEvidenceBuilder:
     def _evaluate_rule(
         db: Session,
         profile: Profile,
+        target_movement: Movement,
+        documentation_id: uuid.UUID,
+        safety: MovementSafetyContent,
         rule: MovementPerformanceRule,
         requirement: str,
         now: datetime,
@@ -145,6 +150,22 @@ class ReadinessEvidenceBuilder:
         )
         if source_movement is None or source_movement.prescription_type != expected_type:
             return ReadinessEvidence(requirement=requirement)
+
+        report = None
+        if "structured_self_report" in accepted and permits_structured_self_report(target_movement, safety, rule):
+            report = db.scalar(
+                select(ReadinessSelfReport)
+                .where(
+                    ReadinessSelfReport.user_id == profile.id,
+                    ReadinessSelfReport.movement_id == target_movement.id,
+                    ReadinessSelfReport.documentation_id == documentation_id,
+                    ReadinessSelfReport.rule_code == rule.code,
+                    ReadinessSelfReport.reported_at >= cutoff,
+                    ReadinessSelfReport.reported_at <= now,
+                )
+                .order_by(ReadinessSelfReport.reported_at.desc(), ReadinessSelfReport.id.desc())
+                .limit(1)
+            )
 
         if "initial_assessment" in accepted and rule.metric == "reps":
             assessment = profile.initial_assessment or {}
@@ -231,6 +252,29 @@ class ReadinessEvidenceBuilder:
                         reference_id=analysis.id,
                         is_max_test=analysis.execution_intent == "max_test",
                     )
+                )
+
+        # A current explicit avoidance always blocks the movement. A newer
+        # negative ability answer blocks older training, while later directly
+        # comparable training may supersede it. A positive answer is used only
+        # when no accepted stronger observations exist.
+        if report is not None:
+            latest_stronger = max((item.observed_at for item in observations), default=None)
+            reported_at = _utc(report.reported_at)
+            if report.response == "avoid" or (
+                report.response == "not_yet"
+                and (latest_stronger is None or latest_stronger <= reported_at)
+            ):
+                return ReadinessEvidence(
+                    requirement=requirement, satisfied=False,
+                    source="structured_self_report", observed_at=reported_at,
+                    reference_id=report.id, observed_value=Decimal(0),
+                )
+            if report.response == "able" and not observations:
+                return ReadinessEvidence(
+                    requirement=requirement, satisfied=True,
+                    source="structured_self_report", observed_at=reported_at,
+                    reference_id=report.id, observed_value=rule.value,
                 )
 
         # The live_coach workout source is currently user-writable and has no
