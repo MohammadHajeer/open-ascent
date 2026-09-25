@@ -48,9 +48,10 @@ export function SessionDetails({ session }: Props) {
           </div>
         </div>
         <p className="mt-3 text-sm leading-6 text-foreground-soft">
-          The browser downloads static MediaPipe code and a pose model. Camera
-          frames are passed directly from the video element to local inference;
-          they are not recorded, encoded, uploaded, or persisted.
+          The browser downloads the MediaPipe pose model and code from public
+          CDNs, plus the coach&apos;s voice clips. Camera frames go straight from
+          the video preview to on-device tracking; they are not recorded,
+          encoded, uploaded, or saved.
         </p>
 
         <div className="mt-5 grid grid-cols-2 gap-3 border-t border-border pt-5">
@@ -73,7 +74,7 @@ export function SessionDetails({ session }: Props) {
         </div>
         <p className="mt-4 flex items-center gap-2 text-xs text-foreground-faint">
           <Gauge className="size-3.5" />
-          {delegate ? `${delegate} delegate · 12 fps target` : "12 fps target · measured when running"}
+          {delegate ? `Running on ${delegate} · 12 fps target` : "12 fps target · measured when running"}
         </p>
       </div>
     </section>

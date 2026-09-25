@@ -54,9 +54,9 @@ export default function TrainPage() {
               Live Coach
             </h2>
             <p className="mt-3 text-sm leading-6 text-foreground-soft">
-              Camera-based pose inference runs locally in your browser. Get a
-              deterministic rep count, phase, and one prioritized cue without
-              uploading camera frames.
+              Count vertical pull reps and get focused form cues from your
+              camera in real time. Pose tracking runs in your browser, and camera
+              frames are never uploaded.
             </p>
             <p className="mt-4 flex items-center gap-2 text-xs text-foreground-faint">
               <ShieldCheck className="size-4 text-primary" />

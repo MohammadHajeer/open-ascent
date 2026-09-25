@@ -278,26 +278,36 @@ test("reset clears total, breakdown, and in-progress classification", () => {
   assert.equal(Object.values(result.variantBreakdown).reduce((a, b) => a + b), 0);
 });
 
-test("sustained incomplete extension cues; normal and single noisy frames do not", () => {
+test("a bent-arm hang cues extension only after it persists; settling into the hang does not", () => {
+  const bentHang = (until) => Array.from({ length: until / 100 + 1 }, (_, index) => [index * 100, 130]);
   const analyzer = new LiveVerticalPullAnalyzer();
-  let result = feed(analyzer, [[0, 130], [100, 130], [200, 130]]);
+  let result = feed(analyzer, bentHang(800));
+  assert.notEqual(selectPrioritizedCue(result).id, "extend-at-bottom");
+  result = feed(analyzer, [[900, 130], [1000, 130]]);
   assert.equal(selectPrioritizedCue(result).id, "extend-at-bottom");
   analyzer.reset();
-  result = feed(analyzer, [[0, 150], [100, 130], [200, 150]]);
+  result = feed(analyzer, [[0, 130], [100, 130], [200, 130], [300, 150], [1200, 130]]);
   assert.notEqual(selectPrioritizedCue(result).id, "extend-at-bottom");
 });
 
-test("sustained deep knee bend cues; normal and single noisy frames do not", () => {
+test("lowering after a tracking reset does not trigger an extension cue", () => {
   const analyzer = new LiveVerticalPullAnalyzer();
-  feed(analyzer, bottom);
-  let result = feed(analyzer, [[500, 150, { kneeAngleDeg: 130 }],
-    [600, 150, { kneeAngleDeg: 130 }], [700, 150, { kneeAngleDeg: 130 }]]);
-  assert.equal(selectPrioritizedCue(result).id, "excessive-knee-bend");
-  analyzer.reset();
-  feed(analyzer, bottom);
-  result = feed(analyzer, [[500, 150, { kneeAngleDeg: 170 }],
-    [600, 150, { kneeAngleDeg: 130 }], [700, 150, { kneeAngleDeg: 170 }]]);
-  assert.notEqual(selectPrioritizedCue(result).id, "excessive-knee-bend");
+  feed(analyzer, [...bottom, [480, 110], [560, 45]]);
+  analyzer.update(null, 640);
+  analyzer.update(null, 800);
+  // Three bent-arm frames over 160 ms: a normal descent, not a bent-arm hang.
+  const result = feed(analyzer, [[880, 80], [960, 100], [1040, 130]]);
+  assert.equal(result.phase, "unknown");
+  assert.notEqual(selectPrioritizedCue(result).id, "extend-at-bottom");
+});
+
+test("knee position alone never produces a form cue", () => {
+  const analyzer = new LiveVerticalPullAnalyzer();
+  const bent = { kneeAngleDeg: 100 };
+  const result = feed(analyzer, [...bottom.map(([at, angle]) => [at, angle, bent]),
+    [500, 110, bent], [580, 45, bent], [660, 150, bent], [760, 150, bent], [860, 150, bent]]);
+  assert.equal(result.validRepCount, 1);
+  assert.equal(result.formFault, null);
 });
 
 test("sustained lower-body reversal cues swing; a one-frame spike does not", () => {

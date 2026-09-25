@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { selectPrioritizedCue } from "./cues.ts";
 import { pullUpLandmarkFixture } from "./fixtures/pull-up-landmarks.ts";
-import { LivePullUpAnalyzer } from "./pull-up-analyzer.ts";
+import { LiveVerticalPullAnalyzer as LivePullUpAnalyzer } from "./vertical-pull-analyzer.ts";
 import { measurePullUpPose } from "./pull-up-semantics.ts";
 
 function observation(timestampMs, angleDeg, overrides = {}) {

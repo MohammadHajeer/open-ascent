@@ -1,5 +1,5 @@
 import { PULL_UP_SEMANTICS } from "./pull-up-semantics.ts";
-import { emptyVariantBreakdown, VARIANT_EVIDENCE, type VerticalPullVariant } from "./vertical-pull-config.ts";
+import { emptyVariantBreakdown, FORM_EVIDENCE, VARIANT_EVIDENCE, type VerticalPullVariant } from "./vertical-pull-config.ts";
 import type {
   PullUpObservation,
   PullUpPhase,
@@ -61,8 +61,6 @@ export class LiveVerticalPullAnalyzer {
   private lastClassificationDiagnostics: ClassificationDiagnostics | null = null;
   private extensionSamples = 0;
   private extensionSinceMs: number | null = null;
-  private kneeSamples = 0;
-  private kneeSinceMs: number | null = null;
   private lowerPath: { at: number; hip: number; ankle: number }[] = [];
   private formFault: PullUpSnapshot["formFault"] = null;
   private phase: PullUpPhase = "unknown";
@@ -97,8 +95,6 @@ export class LiveVerticalPullAnalyzer {
     this.lastClassificationDiagnostics = null;
     this.extensionSamples = 0;
     this.extensionSinceMs = null;
-    this.kneeSamples = 0;
-    this.kneeSinceMs = null;
     this.lowerPath = [];
     this.formFault = null;
   }
@@ -386,7 +382,8 @@ export class LiveVerticalPullAnalyzer {
   }
 
   private observeForm(observation: PullUpObservation, timestampMs: number, setupReady: boolean) {
-    const extensionIssue = this.phase === "unknown" && setupReady && observation.angleDeg < 140;
+    const extensionIssue = this.phase === "unknown" && setupReady &&
+      observation.angleDeg < FORM_EVIDENCE.extensionAngleMaxDeg;
     if (extensionIssue) {
       this.extensionSinceMs ??= timestampMs;
       this.extensionSamples += 1;
@@ -394,31 +391,20 @@ export class LiveVerticalPullAnalyzer {
       this.extensionSinceMs = null;
       this.extensionSamples = 0;
     }
-    const kneeIssue = this.phase !== "unknown" && observation.kneeAngleDeg !== undefined &&
-      observation.kneeAngleDeg !== null && observation.kneeAngleDeg <= 145;
-    if (kneeIssue) {
-      this.kneeSinceMs ??= timestampMs;
-      this.kneeSamples += 1;
-    } else {
-      this.kneeSinceMs = null;
-      this.kneeSamples = 0;
-    }
     if (this.phase !== "unknown" && observation.hipHorizontalRatio != null &&
       observation.ankleHorizontalRatio != null) {
       this.lowerPath.push({ at: timestampMs, hip: observation.hipHorizontalRatio,
         ankle: observation.ankleHorizontalRatio });
-      this.lowerPath = this.lowerPath.filter((item) => timestampMs - item.at <= 1200);
+      this.lowerPath = this.lowerPath.filter((item) => timestampMs - item.at <= FORM_EVIDENCE.swingWindowMs);
     }
-    const stableExtension = this.extensionSamples >= 3 && this.extensionSinceMs !== null &&
-      timestampMs - this.extensionSinceMs >= 160;
-    const stableKnee = this.kneeSamples >= 3 && this.kneeSinceMs !== null &&
-      timestampMs - this.kneeSinceMs >= 160;
-    this.formFault = stableExtension ? "extend-at-bottom" :
-      stableKnee ? "excessive-knee-bend" : this.hasBodySwing() ? "body-swing" : null;
+    const stableExtension = this.extensionSamples >= FORM_EVIDENCE.extensionMinSamples &&
+      this.extensionSinceMs !== null &&
+      timestampMs - this.extensionSinceMs >= FORM_EVIDENCE.extensionMinMs;
+    this.formFault = stableExtension ? "extend-at-bottom" : this.hasBodySwing() ? "body-swing" : null;
   }
 
   private hasBodySwing() {
-    if (this.lowerPath.length < 5) return false;
+    if (this.lowerPath.length < FORM_EVIDENCE.swingMinSamples) return false;
     return (["hip", "ankle"] as const).some((key) => {
       const raw = this.lowerPath.map((item) => item[key]);
       const values = raw.map((_, index) => {
@@ -428,13 +414,10 @@ export class LiveVerticalPullAnalyzer {
         return neighbors.length % 2 ? neighbors[mid] : (neighbors[mid - 1] + neighbors[mid]) / 2;
       });
       const range = Math.max(...values) - Math.min(...values);
-      if (range < 0.30) return false;
+      if (range < FORM_EVIDENCE.swingMinRange) return false;
       const directions = values.slice(1).map((value, index) => value - values[index])
-        .filter((delta) => Math.abs(delta) >= 0.05).map(Math.sign);
+        .filter((delta) => Math.abs(delta) >= FORM_EVIDENCE.swingMinStep).map(Math.sign);
       return directions.some((direction, index) => index > 0 && direction !== directions[index - 1]);
     });
   }
 }
-
-// Keep the Phase 1 API and its regression fixtures intact.
-export class LivePullUpAnalyzer extends LiveVerticalPullAnalyzer {}

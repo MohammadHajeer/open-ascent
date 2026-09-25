@@ -1,15 +1,42 @@
 import Link from "next/link";
-import { Camera, Check, CircleAlert, RefreshCw, Square, Volume2, VolumeX } from "lucide-react";
+import { Camera, Check, CircleAlert, Info, RefreshCw, Square, Volume2, VolumeX } from "lucide-react";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { useLiveCoachSession } from "../hooks/use-live-coach-session.ts";
-import { LIVE_VERTICAL_PULL_MOVEMENTS, PARTIAL_VERTICAL_PULL_VARIANTS, verticalPullVariantLabel } from "../vertical-pull-config.ts";
+import type { PullUpPhase, PullUpRep } from "../types.ts";
+import {
+  LIVE_VERTICAL_PULL_MOVEMENTS,
+  PARTIAL_VERTICAL_PULL_VARIANTS,
+  verticalPullVariantLabel,
+} from "../vertical-pull-config.ts";
 
 type Props = { session: ReturnType<typeof useLiveCoachSession> };
+
+const PHASE_LABELS: Record<PullUpPhase, string> = {
+  unknown: "Setting up",
+  bottom: "Hang",
+  rising: "Pulling",
+  top: "Top",
+  lowering: "Lowering",
+};
+
+const VARIANTS = [...LIVE_VERTICAL_PULL_MOVEMENTS, ...PARTIAL_VERTICAL_PULL_VARIANTS];
+
+function attributeLabel(value: string) {
+  return value === "unknown" ? "Unclear" : value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function lastRepDetail(classification: NonNullable<PullUpRep["classification"]>) {
+  const parts = [`Width: ${attributeLabel(classification.width)}`, `Height: ${attributeLabel(classification.height)}`];
+  // Grip is unknown for every pose-only rep; the family note already says so.
+  if (classification.grip !== "unknown") parts.unshift(`Grip: ${attributeLabel(classification.grip)}`);
+  return parts.join(" · ");
+}
 
 export function SessionPanel({ session }: Props) {
   const {
@@ -18,7 +45,11 @@ export function SessionPanel({ session }: Props) {
     toggleVoice, devices, selectedDeviceId, setSelectedDeviceId,
     startSession, stopSession,
   } = session;
-  const phaseLabel = snapshot.phase === "unknown" ? "Finding start" : snapshot.phase;
+  const breakdown = [
+    ...VARIANTS.filter((variant) => snapshot.variantBreakdown[variant.slug] > 0),
+    ...(snapshot.variantBreakdown.unknown > 0 ? [{ slug: "unknown" as const, label: "Unclassified" }] : []),
+  ];
+  const latestValidRep = snapshot.latestRep?.outcome === "valid" ? snapshot.latestRep : null;
 
   return (
     <aside className="flex flex-col border-t border-border lg:border-t-0 lg:border-l">
@@ -33,50 +64,44 @@ export function SessionPanel({ session }: Props) {
           <SelectContent><SelectItem value="vertical-pull">Vertical Pull</SelectItem></SelectContent>
         </Select>
         <p className="mt-2 text-xs leading-5 text-foreground-faint">
-          Reps use visible width and upper-torso height evidence. Grip stays uncertain when the camera cannot establish palm direction. Other families are not yet available.
+          Counts pull-ups, chin-ups, and their width and height variations. The camera can&apos;t reliably see which way your palms face, so reps are labeled by hand width and pull height.
         </p>
       </div>
 
       <div className="grid grid-cols-2 border-b border-border">
         <Metric label="Completed reps" value={String(snapshot.validRepCount)} />
-        <Metric label="Current phase" value={phaseLabel} capitalize />
+        <Metric label="Current phase" value={PHASE_LABELS[snapshot.phase]} />
       </div>
 
       <div className="border-b border-border px-5 py-4 sm:px-6">
         <p className="font-mono text-[0.56rem] font-semibold tracking-[0.14em] text-primary uppercase">
           Rep breakdown
         </p>
-        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:text-sm">
-          {LIVE_VERTICAL_PULL_MOVEMENTS.map((movement) => (
-            <div key={movement.slug} className="flex justify-between gap-2 text-foreground-soft">
-              <span>{movement.label}</span><span className="font-mono">{snapshot.variantBreakdown[movement.slug]}</span>
-            </div>
-          ))}
-          {PARTIAL_VERTICAL_PULL_VARIANTS.filter((variant) => snapshot.variantBreakdown[variant.slug] > 0)
-            .map((variant) => (
+        {breakdown.length ? (
+          <dl className="mt-2 grid gap-y-1 text-xs sm:text-sm">
+            {breakdown.map((variant) => (
               <div key={variant.slug} className="flex justify-between gap-2 text-foreground-soft">
-                <span>{variant.label}</span><span className="font-mono">{snapshot.variantBreakdown[variant.slug]}</span>
+                <dt>{variant.label}</dt>
+                <dd className="font-mono">{snapshot.variantBreakdown[variant.slug]}</dd>
               </div>
             ))}
-          <div className="flex justify-between gap-2 text-foreground-soft">
-            <span>Unknown variant</span><span className="font-mono">{snapshot.variantBreakdown.unknown}</span>
-          </div>
-        </div>
-        {snapshot.latestRep?.outcome === "valid" ? (
-          <div className="mt-2 text-xs text-foreground-faint">
-            <p>Last rep: {verticalPullVariantLabel(snapshot.latestRep.classification?.variant ?? "unknown")}</p>
-            {snapshot.latestRep.classification ? (
-              <p className="mt-1">
-                Grip: {snapshot.latestRep.classification.grip} · Width: {snapshot.latestRep.classification.width} · Height: {snapshot.latestRep.classification.height}
-              </p>
-            ) : null}
+          </dl>
+        ) : (
+          <p className="mt-2 text-xs leading-5 text-foreground-faint">
+            Completed reps are grouped here by the width and height the camera can see.
+          </p>
+        )}
+        {latestValidRep ? (
+          <div className="mt-2 text-xs leading-5 text-foreground-faint">
+            <p>Last rep: {verticalPullVariantLabel(latestValidRep.classification?.variant ?? "unknown")}</p>
+            {latestValidRep.classification ? <p>{lastRepDetail(latestValidRep.classification)}</p> : null}
           </div>
         ) : null}
       </div>
 
       <div className="flex-1 p-5 sm:p-6">
         <p className="font-mono text-[0.56rem] font-semibold tracking-[0.14em] text-primary uppercase">
-          Live cue · highest priority
+          Coach cue
         </p>
         <div
           className={cn(
@@ -91,8 +116,10 @@ export function SessionPanel({ session }: Props) {
           <div className="flex items-start gap-3">
             {cue.tone === "attention" ? (
               <CircleAlert className="mt-0.5 size-5 shrink-0 text-warning" />
-            ) : (
+            ) : cue.tone === "positive" ? (
               <Check className="mt-0.5 size-5 shrink-0 text-primary" />
+            ) : (
+              <Info className="mt-0.5 size-5 shrink-0 text-primary" />
             )}
             <div>
               <p className="font-medium">{cue.title}</p>
@@ -104,30 +131,36 @@ export function SessionPanel({ session }: Props) {
         </div>
 
         {errorMessage ? (
-          <p className="mt-4 rounded-xl border border-destructive/25 bg-destructive/5 p-3 text-sm leading-5 text-destructive">
-            {errorMessage}
-          </p>
+          <Alert variant="destructive" className="mt-4">
+            <CircleAlert />
+            <AlertDescription>{errorMessage}</AlertDescription>
+          </Alert>
         ) : null}
 
         {!hasLiveCoachAccess ? (
-          <div className="mt-4 rounded-xl border border-border bg-background-alt/65 p-4 text-sm leading-5 text-foreground-soft">
-            {access.isPending ? (
-              "Checking Live Coach access…"
-            ) : access.isError ? (
-              "Live Coach access could not be verified. Refresh before starting a session."
-            ) : (
-              <>
-                Live Coach is included with Pro. Safety guidance remains
-                available on every plan. {" "}
-                <Link
-                  href="/dashboard/settings"
-                  className="font-medium text-primary underline underline-offset-4"
-                >
-                  View plan
-                </Link>
-              </>
-            )}
-          </div>
+          <Alert role="status" className="mt-4">
+            <AlertDescription>
+              {access.isPending ? (
+                "Checking Live Coach access…"
+              ) : access.isError ? (
+                <span className="flex flex-wrap items-center justify-between gap-2">
+                  We couldn&apos;t confirm your Live Coach access.
+                  <Button type="button" variant="outline" size="sm" onClick={() => void access.refetch()} disabled={access.isFetching}>
+                    <RefreshCw className={cn("size-3.5", access.isFetching && "animate-spin")} />
+                    Try again
+                  </Button>
+                </span>
+              ) : (
+                <>
+                  Live Coach is included with Pro. Safety guidance remains
+                  available on every plan.{" "}
+                  <Link href="/dashboard/settings" className="font-medium text-primary">
+                    View plan
+                  </Link>
+                </>
+              )}
+            </AlertDescription>
+          </Alert>
         ) : null}
       </div>
 
@@ -178,7 +211,7 @@ export function SessionPanel({ session }: Props) {
               </SelectContent>
             </Select>
             <p className="text-xs leading-5 text-foreground-faint">
-              Active camera: {devices.find((device) => device.deviceId === selectedDeviceId)?.label ?? "Default"}. Stop the session to switch cameras.
+              {isActive ? "Stop the session to switch cameras." : "The selected camera is used when you start."}
             </p>
           </div>
         ) : (
@@ -222,28 +255,13 @@ export function SessionPanel({ session }: Props) {
   );
 }
 
-function Metric({
-  label,
-  value,
-  capitalize = false,
-}: {
-  label: string;
-  value: string;
-  capitalize?: boolean;
-}) {
+function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="p-5 sm:p-6">
       <p className="font-mono text-[0.54rem] font-semibold tracking-[0.12em] text-foreground-faint uppercase">
         {label}
       </p>
-      <p
-        className={cn(
-          "mt-2 text-2xl font-medium tracking-[-0.04em]",
-          capitalize && "capitalize",
-        )}
-      >
-        {value}
-      </p>
+      <p className="mt-2 text-2xl font-medium tracking-[-0.04em]">{value}</p>
     </div>
   );
 }

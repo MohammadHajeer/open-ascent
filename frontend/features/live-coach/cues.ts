@@ -36,19 +36,12 @@ const cues = {
     title: "Extend at the bottom",
     detail: "Reach a steady hang with straighter elbows before pulling.",
   },
-  kneeBend: {
-    id: "excessive-knee-bend",
-    priority: 72,
-    tone: "attention",
-    title: "Keep your legs straighter",
-    detail: "Avoid a sustained deep knee bend while pulling.",
-  },
   swing: {
     id: "body-swing",
     priority: 72,
     tone: "attention",
     title: "Reduce the swing",
-    detail: "Let your lower body settle before the next pull.",
+    detail: "Let your hips and legs settle under the bar before the next pull.",
   },
   partial: {
     id: "finish-top",
@@ -107,7 +100,6 @@ export function selectPrioritizedCue(
     candidates.push(cues.starting);
   }
   if (snapshot.formFault === "extend-at-bottom") candidates.push(cues.extension);
-  if (snapshot.formFault === "excessive-knee-bend") candidates.push(cues.kneeBend);
   if (snapshot.formFault === "body-swing") candidates.push(cues.swing);
   const recentRep = snapshot.phase === "bottom" && snapshot.latestRep &&
     timestampMs - snapshot.latestRep.endMs <= 2500;

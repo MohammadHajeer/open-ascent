@@ -50,3 +50,21 @@ export const VARIANT_EVIDENCE = {
   // Only a small resolution floor; the decision itself uses a torso ratio.
   minTorsoSpanForHeight: 0.025,
 } as const;
+
+// Form cues need sustained evidence. Knee flexion is deliberately absent: from
+// the recommended front camera it happens along the depth axis, which a 2D
+// knee angle barely registers, and a bent-knee hang is normal on a low bar.
+export const FORM_EVIDENCE = {
+  // Bent-arm hang before counting starts. One second separates an athlete
+  // still settling into the hang (or re-hanging after a tracking reset) from
+  // one who needs to extend.
+  extensionAngleMaxDeg: 140,
+  extensionMinMs: 1000,
+  extensionMinSamples: 3,
+  // Lower-body sway relative to the wrists, in torso lengths. A front camera
+  // sees side-to-side sway; front-to-back swing is mostly along the depth axis.
+  swingWindowMs: 1200,
+  swingMinSamples: 5,
+  swingMinRange: 0.30,
+  swingMinStep: 0.05,
+} as const;

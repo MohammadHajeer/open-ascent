@@ -10,7 +10,7 @@ type Status = "not_started" | "completed" | "dismissed";
 const steps = [
   { route: "/dashboard", target: "dashboard-overview", title: "Your overview", description: "Start here to find your movement record and a direct path to analysis." },
   { route: "/dashboard/train", target: "workout-log", title: "Record your training", description: "Log sets and holds to build a reliable history of your practice." },
-  { route: "/dashboard/train/live-coach", target: "live-coach", title: "Live Coach", description: "Use the browser camera for local pull-up rep counting and focused cues when you choose to start it." },
+  { route: "/dashboard/train/live-coach", target: "live-coach", title: "Live Coach", description: "Use your camera for on-device vertical pull rep counting, form cues, and voice coaching when you choose to start it." },
   { route: "/dashboard/analyses", target: "analysis-history", title: "Saved analyses", description: "Review completed movement analyses and open a new recorded-video analysis." },
   { route: "/dashboard/progress", target: "progress-view", title: "Track progress", description: "Compare logged performance and weekly consistency for a movement over time." },
   { route: "/dashboard/coach", target: "ai-coach", title: "AI Coach", description: "Ask focused training questions and review coaching guidance in this workspace." },

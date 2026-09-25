@@ -149,10 +149,6 @@ export function measurePullUpPose(
   const hipCenterY = (leftHip.y + rightHip.y) / 2;
   const torsoSpan = hipCenterY - shoulderCenterY;
   const kneesAndAnklesVisible = visible(landmarks, [23, 24, 25, 26, 27, 28]);
-  const kneeAngles = kneesAndAnklesVisible ? [
-    calculateAngle(landmarks[23], landmarks[25], landmarks[27]),
-    calculateAngle(landmarks[24], landmarks[26], landmarks[28]),
-  ] : null;
   const ankleCenterX = kneesAndAnklesVisible
     ? (landmarks[27].x + landmarks[28].x) / 2 : null;
 
@@ -190,8 +186,6 @@ export function measurePullUpPose(
     // Upper torso proxy relative to the wrist line; no bar is detected.
     upperTorsoToWristRatio: torsoSpan > VARIANT_EVIDENCE.minTorsoSpanForHeight
       ? (shoulderCenterY + 0.25 * torsoSpan - wristCenterY) / torsoSpan : null,
-    kneeAngleDeg: kneeAngles?.every((angle) => angle !== null)
-      ? Math.min(...kneeAngles as number[]) : null,
     hipHorizontalRatio: kneesAndAnklesVisible && torsoSpan > 0.08
       ? (hipCenterX - wristCenterX) / torsoSpan : null,
     ankleHorizontalRatio: ankleCenterX !== null && torsoSpan > 0.08

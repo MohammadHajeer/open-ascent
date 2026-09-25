@@ -30,7 +30,6 @@ export type PullUpObservation = {
   width?: "close" | "standard" | "wide" | "unknown";
   widthRatio?: number | null;
   upperTorsoToWristRatio?: number | null;
-  kneeAngleDeg?: number | null;
   hipHorizontalRatio?: number | null;
   ankleHorizontalRatio?: number | null;
 };
@@ -62,7 +61,7 @@ export type PullUpSnapshot = {
   latestRep: PullUpRep | null;
   variantBreakdown: Record<VerticalPullVariant, number>;
   observation: PullUpObservation | null;
-  formFault?: "extend-at-bottom" | "excessive-knee-bend" | "body-swing" | null;
+  formFault?: "extend-at-bottom" | "body-swing" | null;
 };
 
 export type CueTone = "neutral" | "positive" | "attention";

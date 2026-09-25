@@ -11,7 +11,9 @@ import { CAMERA_OFF_CUE, INITIAL_SNAPSHOT, type DeviceOption, type SessionStatus
 import { drawPose, clearCanvas } from "../utils/pose-canvas.ts";
 import { normalizeSessionError, sessionErrorMessage } from "../utils/session-errors.ts";
 import { LiveCoachVoice } from "../voice.ts";
+import { createWebAudioVoiceOutput } from "../voice-output.ts";
 import type { LiveCoachCue } from "../types.ts";
+import { useScreenWakeLock } from "./use-screen-wake-lock.ts";
 import { fetchLiveCoachAccess } from "@/features/subscription/api";
 import { useLiveCoachAccess } from "@/features/subscription/hooks";
 
@@ -20,7 +22,7 @@ export function useLiveCoachSession() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<LiveCoachCameraSession | null>(null);
-  const analyzerRef = useRef(new LiveVerticalPullAnalyzer());
+  const [analyzer] = useState(() => new LiveVerticalPullAnalyzer());
   const lastLoggedRepRef = useRef(0);
   const voiceRef = useRef<LiveCoachVoice | null>(null);
   const startGenerationRef = useRef(0);
@@ -45,6 +47,7 @@ export function useLiveCoachSession() {
     status === "loading-pose" ||
     status === "running";
   const hasLiveCoachAccess = access.data?.allowed === true;
+  useScreenWakeLock(status === "running");
 
   useEffect(() => () => {
     startGenerationRef.current += 1;
@@ -55,39 +58,51 @@ export function useLiveCoachSession() {
   async function startSession() {
     if (!videoRef.current || !safetyAcknowledged || !hasLiveCoachAccess || isActive) return;
     const generation = ++startGenerationRef.current;
+    // Audio must be created inside the Start click: mobile browsers only
+    // unlock playback from a user gesture, and the access check below awaits.
+    sessionRef.current?.stop();
+    voiceRef.current?.stop();
+    const voice = new LiveCoachVoice(createWebAudioVoiceOutput());
+    voice.setEnabled(voiceEnabled);
+    voice.preload();
+    voiceRef.current = voice;
+    // Bring the camera and count into view; the Start button sits below them.
+    videoRef.current.closest("section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const releaseVoice = () => {
+      voice.stop();
+      if (voiceRef.current === voice) voiceRef.current = null;
+    };
+
     setStatus("verifying-access");
     setErrorMessage(null);
     try {
       const freshAccess = await fetchLiveCoachAccess();
       if (generation !== startGenerationRef.current) return;
       if (!freshAccess.allowed) {
+        releaseVoice();
         setStatus("idle");
-        setErrorMessage("Live Coach requires an active Pro entitlement. Check your plan and try again.");
+        setErrorMessage("Live Coach is included with Pro. Check your plan, then try again.");
         void access.refetch();
         return;
       }
     } catch {
       if (generation !== startGenerationRef.current) return;
+      releaseVoice();
       setStatus("error");
-      setErrorMessage("Live Coach access could not be verified. Try again when your connection is available.");
+      setErrorMessage("We couldn't confirm your Live Coach access. Check your connection and try again.");
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia) {
+      releaseVoice();
       setStatus("error");
       setErrorMessage(
-        "This browser does not expose camera access. Use a current Chromium browser over HTTPS or localhost.",
+        "This browser can't open the camera. Use a current browser on a secure (HTTPS) page.",
       );
       return;
     }
 
-    sessionRef.current?.stop();
-    voiceRef.current?.stop();
-    const voice = new LiveCoachVoice((path) => new Audio(path));
-    voice.setEnabled(voiceEnabled);
-    voice.preload();
     voice.start();
-    voiceRef.current = voice;
-    analyzerRef.current.reset();
+    analyzer.reset();
     lastLoggedRepRef.current = 0;
     clearCanvas(canvasRef.current);
     setSnapshot(INITIAL_SNAPSHOT);
@@ -141,7 +156,13 @@ export function useLiveCoachSession() {
       await refreshCameraList(result.deviceId);
     } catch (error) {
       if (generation !== startGenerationRef.current) return;
-      handleSessionError(normalizeSessionError(error));
+      const sessionError = normalizeSessionError(error);
+      // A remembered camera that was unplugged fails its exact-device request.
+      if (selectedDeviceId && sessionError.cause instanceof DOMException &&
+        (sessionError.cause.name === "OverconstrainedError" || sessionError.cause.name === "NotFoundError")) {
+        setSelectedDeviceId("");
+      }
+      handleSessionError(sessionError);
     }
   }
 
@@ -149,7 +170,7 @@ export function useLiveCoachSession() {
     startGenerationRef.current += 1;
     sessionRef.current?.stop();
     sessionRef.current = null;
-    if (status === "running" && snapshot.validRepCount > 0) voiceRef.current?.finish();
+    if (status === "running") voiceRef.current?.finish(snapshot);
     else voiceRef.current?.stop();
     setStatus("stopped");
     setCue(CAMERA_OFF_CUE);
@@ -162,7 +183,7 @@ export function useLiveCoachSession() {
     const observation = frame.landmarks
       ? measurePullUpPose(frame.landmarks, frame.timestampMs)
       : null;
-    const nextSnapshot = analyzerRef.current.update(
+    const nextSnapshot = analyzer.update(
       observation,
       frame.timestampMs,
       frame.landmarks !== null,
@@ -175,7 +196,7 @@ export function useLiveCoachSession() {
       console.debug("[Live Coach variant]", {
         rep: nextSnapshot.latestRep.index,
         gripSource: "Pose only",
-        ...analyzerRef.current.getClassificationDiagnostics(),
+        ...analyzer.getClassificationDiagnostics(),
       });
     }
     setSnapshot(nextSnapshot);

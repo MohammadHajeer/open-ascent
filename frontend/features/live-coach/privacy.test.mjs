@@ -15,8 +15,36 @@ function sourceFiles(directory) {
 }
 
 test("Live Coach has no raw-frame upload, recording, or encoding path", () => {
+  const files = sourceFiles(featureRoot).filter((path) => !path.endsWith("privacy.test.mjs"));
+  const source = files.map((path) => readFileSync(path, "utf8")).join("\n");
+  for (const forbidden of [
+    /\bMediaRecorder\b/,
+    /\.toBlob\s*\(/,
+    /\.toDataURL\s*\(/,
+    /\bFormData\b/,
+    /\bXMLHttpRequest\b/,
+    /\bWebSocket\b/,
+    /\bapiFetch\b/,
+    /\bauthApiFetch\b/,
+    /\bsupabase\b/i,
+    /\bsendBeacon\b/,
+  ]) {
+    assert.doesNotMatch(source, forbidden);
+  }
+
+  // The only network read is a same-origin GET of the bundled voice clips.
+  const fetching = files.filter((path) => /\bfetch\s*\(/.test(readFileSync(path, "utf8")));
+  assert.deepEqual(fetching.map((path) => path.slice(featureRoot.length + 1)), ["voice-output.ts"]);
+  const loader = readFileSync(join(featureRoot, "voice-output.ts"), "utf8");
+  assert.equal(loader.match(/\bfetch\s*\(/g).length, 1);
+  assert.match(loader, /fetch\(`\$\{VOICE_ROOT\}\/\$\{path\}`\)/);
+  assert.match(loader, /export const VOICE_ROOT = "\/live-coach\/voice";/);
+  assert.doesNotMatch(loader, /\b(method|body)\s*:/);
+});
+
+test("Live Coach source outside the voice loader makes no network calls", () => {
   const source = sourceFiles(featureRoot)
-    .filter((path) => !path.endsWith("privacy.test.mjs"))
+    .filter((path) => !path.endsWith("privacy.test.mjs") && !path.endsWith("voice-output.ts"))
     .map((path) => readFileSync(path, "utf8"))
     .join("\n");
 
