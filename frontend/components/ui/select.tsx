@@ -5,7 +5,42 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "cn"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+type SelectItemEntry = { value: string; label: React.ReactNode }
+
+/**
+ * Base UI resolves the closed trigger's label from `items`; without it the
+ * trigger shows the raw value ("all", a UUID). Callers may still pass `items`
+ * explicitly, but most simply render <SelectItem value>Label</SelectItem>, so
+ * collect those here and every Select displays its label by default.
+ */
+function collectSelectItems(node: React.ReactNode, found: SelectItemEntry[] = []) {
+  React.Children.forEach(node, (child) => {
+    if (!React.isValidElement<{ value?: unknown; children?: React.ReactNode }>(child)) return
+    if (child.type === SelectItem && typeof child.props.value === "string") {
+      found.push({ value: child.props.value, label: child.props.children })
+    } else if (child.props.children) {
+      collectSelectItems(child.props.children, found)
+    }
+  })
+  return found
+}
+
+function Select<Value, Multiple extends boolean | undefined = false>({
+  items,
+  children,
+  ...props
+}: SelectPrimitive.Root.Props<Value, Multiple>) {
+  const resolvedItems = items ?? (collectSelectItems(children) as unknown as typeof items)
+
+  return (
+    <SelectPrimitive.Root
+      items={resolvedItems?.length === 0 ? undefined : resolvedItems}
+      {...props}
+    >
+      {children}
+    </SelectPrimitive.Root>
+  )
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (

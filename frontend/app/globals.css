@@ -69,6 +69,7 @@
   --accent-foreground: #4a4538;
 
   --destructive: #b94040;
+  --warning: #96631a;
 
   --input: #d8cfc0;
   --input-surface: var(--popover);
@@ -150,6 +151,7 @@
   --accent-foreground: #d3cec3;
 
   --destructive: #d05c5c;
+  --warning: #d6a75a;
 
   --input: #2a2a28;
 
@@ -213,6 +215,7 @@
   --color-accent-foreground: var(--accent-foreground);
 
   --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
 
   --color-border: var(--border);
   --color-input: var(--input);
@@ -387,6 +390,17 @@
     black 0%,
     transparent 78%
   );
+}
+
+/*
+  Toasts sit above the floating dashboard navigation below `lg`. Sonner writes
+  its offsets inline, so this needs !important.
+*/
+@media (max-width: 1023px) {
+  .oa-toaster-above-nav {
+    --offset-bottom: calc(5.75rem + env(safe-area-inset-bottom)) !important;
+    --mobile-offset-bottom: calc(5.75rem + env(safe-area-inset-bottom)) !important;
+  }
 }
 
 /*

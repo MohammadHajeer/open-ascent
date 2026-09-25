@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft, FileText, GitBranch, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
@@ -10,6 +11,15 @@ import { AdminDataError } from "@/components/admin/admin-movements-client";
 import { DocumentationDetailSkeleton } from "@/components/admin/admin-skeletons";
 import { DocumentationEditor } from "@/components/admin/documentation-editor";
 import { DocumentationStatusBadge } from "@/components/admin/documentation-status-badge";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   useAdminDocumentationDetail,
@@ -19,8 +29,11 @@ import {
 } from "@/features/admin/documentation/hooks";
 import { getAdminErrorMessage } from "@/features/admin/errors";
 
+type EditorContent = Parameters<NonNullable<React.ComponentProps<typeof DocumentationEditor>["onPublish"]>>[0];
+
 export function AdminDocumentationDetailClient({ id }: { id: string }) {
   const router = useRouter();
+  const [pendingPublish, setPendingPublish] = useState<EditorContent | null>(null);
   const documentation = useAdminDocumentationDetail(id);
   const updateDraft = useUpdateDocumentationDraft();
   const publish = usePublishDocumentation();
@@ -35,8 +48,15 @@ export function AdminDocumentationDetailClient({ id }: { id: string }) {
     }
   }
 
-  async function handlePublish(content: Parameters<NonNullable<React.ComponentProps<typeof DocumentationEditor>["onPublish"]>>[0]) {
-    if (!documentation.data || !window.confirm("Publish this documentation version? The existing published version may be archived and replaced.")) return;
+  function handlePublish(content: EditorContent) {
+    if (!documentation.data) return;
+    setPendingPublish(content);
+  }
+
+  async function confirmPublish() {
+    const content = pendingPublish;
+    setPendingPublish(null);
+    if (!documentation.data || !content) return;
 
     try {
       const saved = await updateDraft.mutateAsync({ documentationId: id, content, editRevision: documentation.data.edit_revision });
@@ -130,6 +150,21 @@ export function AdminDocumentationDetailClient({ id }: { id: string }) {
           ) : null}
         </div>
       </div>
+
+      <AlertDialog open={pendingPublish !== null} onOpenChange={(open) => { if (!open) setPendingPublish(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Publish this documentation version?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The existing published version may be archived and replaced.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <Button variant="brand" onClick={() => void confirmPublish()}>Publish version</Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

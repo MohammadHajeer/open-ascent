@@ -6,12 +6,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Activity, Search, Users } from "lucide-react";
 
 import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
+import { MetricStrip } from "@/components/admin/metric-strip";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { ThemedAsset } from "@/components/shared/themed-asset";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { getAdminErrorMessage } from "@/features/admin/errors";
 import { fetchOverview } from "@/features/admin/operations/api";
@@ -25,7 +27,6 @@ import {
 const date = (value: string | null) => value ? new Date(value).toLocaleString() : "—";
 const shortId = (value: string) => value.slice(0, 8);
 const featureLabel = (value: string) => value.replaceAll("_", " ");
-const number = (value: number | undefined) => value === undefined ? "—" : value.toLocaleString();
 
 function useSummary() {
   return useQuery({ queryKey: ["admin", "management", "summary"], queryFn: getManagementSummary });
@@ -35,7 +36,7 @@ function State({ pending, error, empty, title, description, visual, icon, childr
   pending: boolean; error: unknown; empty: boolean; title: string; description: string;
   visual?: React.ReactNode; icon?: React.ReactNode; children: React.ReactNode;
 }) {
-  if (pending) return <div className="space-y-3 py-5" aria-label="Loading records">{[0, 1, 2, 3].map(index => <div key={index} className="h-16 animate-pulse rounded-lg bg-muted" />)}</div>;
+  if (pending) return <div className="space-y-3 py-5" role="status" aria-label="Loading records">{[0, 1, 2, 3].map(index => <Skeleton key={index} className="h-16 rounded-xl" />)}</div>;
   if (error) return <p role="alert" className="rounded-lg border border-destructive/30 p-5 text-sm text-destructive">{getAdminErrorMessage(error)}</p>;
   if (empty) return <DashboardEmptyState title={title} description={description} visual={visual} icon={icon} />;
   return <>{children}</>;
@@ -47,12 +48,6 @@ function Pager({ page, total, size, onPage }: { page: number; total: number; siz
     <span>Page {page} of {last} · {total.toLocaleString()} records</span>
     <div className="flex gap-2"><Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPage(page - 1)}>Previous</Button><Button variant="outline" size="sm" disabled={page >= last} onClick={() => onPage(page + 1)}>Next</Button></div>
   </div>;
-}
-
-function MetricStrip({ items, asOf }: { items: { label: string; value: number | undefined; detail?: string }[]; asOf?: string }) {
-  return <div><div className="grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 xl:grid-cols-4">{items.map(item => <div key={item.label} className="min-h-25 bg-card px-5 py-4">
-    <p className="text-xs text-foreground-soft">{item.label}</p><p className="mt-2 text-2xl font-medium tabular-nums">{number(item.value)}</p>{item.detail ? <p className="mt-1 text-xs text-foreground-soft">{item.detail}</p> : null}
-  </div>)}</div>{asOf ? <p className="mt-2 text-xs text-foreground-soft">Snapshot {date(asOf)}</p> : null}</div>;
 }
 
 function SummaryError({ summary }: { summary: ReturnType<typeof useSummary> }) {
@@ -86,10 +81,10 @@ export function UsersDirectory() {
   const users = summary.data?.users;
   return <div className="space-y-6">
     <DashboardPageHeader eyebrow="Admin / People" title="Users and athletes" description="Account directory with server-side search and pagination." />
-    <MetricStrip asOf={summary.data?.as_of} items={[{ label: "Total accounts", value: users?.total }, { label: "Athletes", value: users?.athletes }, { label: "Admins", value: users?.admins }, { label: "Onboarded athletes", value: users?.onboarded_athletes, detail: users ? `${Math.max(0, users.athletes - users.onboarded_athletes)} remaining` : undefined }]} />
+    <MetricStrip footnote={summary.data ? `Snapshot ${date(summary.data.as_of)}` : undefined} items={[{ label: "Total accounts", value: users?.total }, { label: "Athletes", value: users?.athletes }, { label: "Admins", value: users?.admins }, { label: "Onboarded athletes", value: users?.onboarded_athletes, detail: users ? `${Math.max(0, users.athletes - users.onboarded_athletes)} remaining` : undefined }]} />
     <SummaryError summary={summary} />
     <Card><CardHeader><CardTitle>Account directory</CardTitle><CardDescription>{query.data ? `${query.data.total.toLocaleString()} matching accounts` : "Profile summaries only"}</CardDescription></CardHeader><CardContent className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3 border-b border-border pb-4"><div className="relative w-full sm:max-w-xs"><Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-foreground-soft" /><Input aria-label="Search account names" placeholder="Search names" value={q} onChange={event => { setQ(event.target.value); setPage(1); }} className="pl-9" maxLength={80} /></div><Select value={role} onValueChange={value => { setRole(value ?? "all"); setPage(1); }}><SelectTrigger aria-label="Filter role" className="w-full sm:w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All roles</SelectItem><SelectItem value="athlete">Athletes</SelectItem><SelectItem value="admin">Admins</SelectItem></SelectContent></Select></div>
+      <div className="flex flex-wrap items-center gap-3 border-b border-border pb-4"><div className="relative w-full sm:max-w-xs"><Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-foreground-soft" /><Input aria-label="Search account names" placeholder="Search names" value={q} onChange={event => { setQ(event.target.value); setPage(1); }} className="h-10 pl-9" maxLength={80} /></div><Select value={role} onValueChange={value => { setRole(value ?? "all"); setPage(1); }}><SelectTrigger aria-label="Filter role" className="h-10 w-full sm:w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All roles</SelectItem><SelectItem value="athlete">Athletes</SelectItem><SelectItem value="admin">Admins</SelectItem></SelectContent></Select></div>
       <State pending={query.isPending} error={query.error} empty={!query.data?.items.length} title={q || role !== "all" ? "No matching accounts" : "No accounts yet"} description={q || role !== "all" ? "Try a different name or role filter." : "Accounts will appear here when profiles are created."} icon={<Users className="size-6" />}>
         {query.data?.items.map(user => <DirectoryRow key={user.id} href={`/admin/users/${user.id}`} title={user.display_name} subtitle={`Joined ${date(user.created_at)} · ${user.analysis_count} analyses`} badges={<><Badge variant="outline" className="capitalize">{user.role}</Badge><Badge variant={user.onboarding_complete ? "secondary" : "outline"}>{user.onboarding_complete ? "Onboarded" : "Not onboarded"}</Badge></>} />)}
       </State>{query.data ? <Pager page={page} total={query.data.total} size={query.data.page_size} onPage={setPage} /> : null}
@@ -117,10 +112,10 @@ export function AnalysesDirectory() {
   const query = useQuery({ queryKey: ["admin", "management", "analyses", page, status, owner], queryFn: () => listAnalyses(page, status, owner) });
   const counts = overview.data?.analyses;
   return <div className="space-y-6"><DashboardPageHeader eyebrow="Admin / Analyses" title="Analysis oversight" description="Cross-user status and outcome review without media or credentials." />
-    <MetricStrip asOf={overview.data?.as_of} items={[{ label: "Completed", value: counts?.completed }, { label: "Queued", value: counts?.queued }, { label: "Running", value: counts?.running }, { label: "Failed", value: counts?.failed }]} />
+    <MetricStrip footnote={overview.data ? `Snapshot ${date(overview.data.as_of)}` : undefined} items={[{ label: "Completed", value: counts?.completed }, { label: "Queued", value: counts?.queued }, { label: "Running", value: counts?.running }, { label: "Failed", value: counts?.failed }]} />
     {overview.isError ? <p role="alert" className="text-sm text-destructive">Status summary unavailable: {getAdminErrorMessage(overview.error)}</p> : null}
     <Card><CardHeader><CardTitle>Analysis records</CardTitle><CardDescription>{query.data ? `${query.data.total.toLocaleString()} matching analyses · newest first` : "Newest first"}</CardDescription></CardHeader><CardContent className="space-y-4">
-      <div className="flex flex-wrap gap-3 border-b border-border pb-4"><Select value={status} onValueChange={value => { setStatus(value ?? "all"); setPage(1); }}><SelectTrigger aria-label="Filter analysis status" className="w-full sm:w-48"><SelectValue /></SelectTrigger><SelectContent>{["all", "reserved", "queued", "running", "completed", "failed", "expired"].map(value => <SelectItem key={value} value={value}>{value === "all" ? "All statuses" : value}</SelectItem>)}</SelectContent></Select><Select value={owner} onValueChange={value => { setOwner(value ?? "all"); setPage(1); }}><SelectTrigger aria-label="Filter owner" className="w-full sm:w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All owners</SelectItem><SelectItem value="authenticated">Athletes</SelectItem><SelectItem value="guest">Guests</SelectItem></SelectContent></Select></div>
+      <div className="flex flex-wrap gap-3 border-b border-border pb-4"><Select value={status} onValueChange={value => { setStatus(value ?? "all"); setPage(1); }}><SelectTrigger aria-label="Filter analysis status" className="h-10 w-full sm:w-48"><SelectValue /></SelectTrigger><SelectContent>{["all", "reserved", "queued", "running", "completed", "failed", "expired"].map(value => <SelectItem key={value} value={value}>{value === "all" ? "All statuses" : value}</SelectItem>)}</SelectContent></Select><Select value={owner} onValueChange={value => { setOwner(value ?? "all"); setPage(1); }}><SelectTrigger aria-label="Filter owner" className="h-10 w-full sm:w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All owners</SelectItem><SelectItem value="authenticated">Athletes</SelectItem><SelectItem value="guest">Guests</SelectItem></SelectContent></Select></div>
       <State pending={query.isPending} error={query.error} empty={!query.data?.items.length} title={status !== "all" || owner !== "all" ? "No matching analyses" : "No analyses yet"} description={status !== "all" || owner !== "all" ? "Try another status or owner filter." : "New analyses will appear here as athletes submit them."} visual={<ThemedAsset asset={assets.emptyStates.noAnalyses} alt="" width={160} />}>
         {query.data?.items.map(item => <DirectoryRow key={item.id} href={`/admin/analyses/${item.id}`} title={item.movement_name ?? `Analysis ${shortId(item.id)}`} subtitle={`${item.owner_name ?? (item.owner_kind === "guest" ? "Guest" : "Athlete")} · Created ${date(item.created_at)} · Attempt ${item.attempts}`} meta={item.terminal_outcome ?? undefined} badges={<Badge variant={item.status === "failed" ? "destructive" : item.status === "completed" ? "secondary" : "outline"} className="capitalize">{item.status}</Badge>} />)}
       </State>{query.data ? <Pager page={page} total={query.data.total} size={query.data.page_size} onPage={setPage} /> : null}
@@ -143,10 +138,10 @@ export function UsageDirectory() {
   const query = useQuery({ queryKey: ["admin", "management", "usage", page, q], queryFn: () => listUsage(page, q) });
   const totals = usageTotals(summary.data);
   return <div className="space-y-6"><DashboardPageHeader eyebrow="Admin / Usage" title="Subscription and usage" description="Effective tiers and current UTC month consumption for athletes." />
-    <MetricStrip asOf={summary.data?.as_of} items={[{ label: "Free athletes", value: summary.data?.tiers.free_athletes }, { label: "Pro athletes", value: summary.data?.tiers.pro_athletes }, { label: "Consumed units", value: summary.data ? totals.consumed : undefined, detail: "Current UTC month" }, { label: "Reserved units", value: summary.data ? totals.reserved : undefined, detail: "Current UTC month" }]} />
+    <MetricStrip footnote={summary.data ? `Snapshot ${date(summary.data.as_of)}` : undefined} items={[{ label: "Free athletes", value: summary.data?.tiers.free_athletes }, { label: "Pro athletes", value: summary.data?.tiers.pro_athletes }, { label: "Consumed units", value: summary.data ? totals.consumed : undefined, detail: "Current UTC month" }, { label: "Reserved units", value: summary.data ? totals.reserved : undefined, detail: "Current UTC month" }]} />
     <SummaryError summary={summary} />
-    <Card><CardHeader><CardTitle>Usage by feature</CardTitle><CardDescription>{summary.data ? `${date(summary.data.usage_window.start)} to ${date(summary.data.usage_window.end)}` : "Current UTC month"}</CardDescription></CardHeader><CardContent>{summary.isPending ? <div className="h-20 animate-pulse rounded-lg bg-muted" aria-label="Loading usage summary" /> : summary.isError ? <p className="text-sm text-foreground-soft">Feature totals are unavailable.</p> : <UsageSummary usage={summary.data?.usage ?? {}} />}</CardContent></Card>
-    <Card><CardHeader><CardTitle>Athlete usage</CardTitle><CardDescription>{query.data ? `${query.data.total.toLocaleString()} matching athletes` : "Current period, newest accounts first"}</CardDescription></CardHeader><CardContent className="space-y-4"><div className="border-b border-border pb-4"><div className="relative w-full sm:max-w-xs"><Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-foreground-soft" /><Input aria-label="Search athlete names" placeholder="Search athletes" value={q} onChange={event => { setQ(event.target.value); setPage(1); }} className="pl-9" maxLength={80} /></div></div>
+    <Card><CardHeader><CardTitle>Usage by feature</CardTitle><CardDescription>{summary.data ? `${date(summary.data.usage_window.start)} to ${date(summary.data.usage_window.end)}` : "Current UTC month"}</CardDescription></CardHeader><CardContent>{summary.isPending ? <Skeleton className="h-20 rounded-xl" role="status" aria-label="Loading usage summary" /> : summary.isError ? <p className="text-sm text-foreground-soft">Feature totals are unavailable.</p> : <UsageSummary usage={summary.data?.usage ?? {}} />}</CardContent></Card>
+    <Card><CardHeader><CardTitle>Athlete usage</CardTitle><CardDescription>{query.data ? `${query.data.total.toLocaleString()} matching athletes` : "Current period, newest accounts first"}</CardDescription></CardHeader><CardContent className="space-y-4"><div className="border-b border-border pb-4"><div className="relative w-full sm:max-w-xs"><Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-foreground-soft" /><Input aria-label="Search athlete names" placeholder="Search athletes" value={q} onChange={event => { setQ(event.target.value); setPage(1); }} className="h-10 pl-9" maxLength={80} /></div></div>
       <State pending={query.isPending} error={query.error} empty={!query.data?.items.length} title={q ? "No matching athletes" : "No athletes yet"} description={q ? "Try another name." : "Athlete usage will appear here after accounts are created."} icon={<Activity className="size-6" />}>
         {query.data?.items.map(item => <div key={item.user_id} className="space-y-3 border-b border-border py-4 last:border-b-0"><div className="flex flex-wrap items-center justify-between gap-2"><Link className="text-sm font-medium text-primary hover:underline" href={`/admin/users/${item.user_id}`}>{item.display_name}</Link><Badge variant={item.effective_plan === "pro" ? "secondary" : "outline"} className="capitalize">{item.effective_plan}</Badge></div><UsageSummary usage={item.usage} /></div>)}
       </State>{query.data ? <Pager page={page} total={query.data.total} size={query.data.page_size} onPage={setPage} /> : null}</CardContent></Card>
@@ -158,7 +153,7 @@ export function PlansDirectory() {
   const summary = useSummary();
   const query = useQuery({ queryKey: ["admin", "management", "plans", page], queryFn: () => listPlans(page) });
   return <div className="space-y-6"><DashboardPageHeader eyebrow="Admin / Plans" title="Saved training plans" description="Read-only inspection of plans saved across athletes." />
-    <MetricStrip asOf={summary.data?.as_of} items={[{ label: "Saved plans", value: summary.data?.plans.total }, { label: "Saved in 30 days", value: summary.data?.plans.saved_30d }]} />
+    <MetricStrip columns={2} footnote={summary.data ? `Snapshot ${date(summary.data.as_of)}` : undefined} items={[{ label: "Saved plans", value: summary.data?.plans.total }, { label: "Saved in 30 days", value: summary.data?.plans.saved_30d }]} />
     <SummaryError summary={summary} />
     <Card><CardHeader><CardTitle>Plan library</CardTitle><CardDescription>{query.data ? `${query.data.total.toLocaleString()} plans · newest saved first` : "Newest saved first"}</CardDescription></CardHeader><CardContent className="space-y-4">
       <State pending={query.isPending} error={query.error} empty={!query.data?.items.length} title="No saved plans yet" description="Plans saved by athletes will appear here for read-only review." visual={<ThemedAsset asset={assets.emptyStates.noTrainingPlan} alt="" width={160} />}>
@@ -173,7 +168,7 @@ export function PlanInspection({ id }: { id: string }) {
   const days = item?.plan_document?.days ?? [];
   const exercises = days.reduce((sum, day) => sum + day.exercises.length, 0);
   return <div className="space-y-6"><DashboardPageHeader eyebrow="Admin / Plan" title={item?.title ?? "Training plan"} description="Saved plan inspection. Editing remains with the athlete." />
-    <State pending={query.isPending} error={query.error} empty={!item} title="Plan unavailable" description="This plan could not be found.">{item ? <><MetricStrip items={[{ label: "Training days", value: item.plan_document ? days.length : undefined }, { label: "Exercises", value: item.plan_document ? exercises : undefined }]} />
+    <State pending={query.isPending} error={query.error} empty={!item} title="Plan unavailable" description="This plan could not be found.">{item ? <><MetricStrip columns={2} items={[{ label: "Training days", value: item.plan_document ? days.length : undefined }, { label: "Exercises", value: item.plan_document ? exercises : undefined }]} />
       <Card><CardHeader><CardTitle>{item.title}</CardTitle><CardDescription>Saved {date(item.saved_at)} by <Link className="text-primary hover:underline" href={`/admin/users/${item.user_id}`}>{item.owner_name}</Link></CardDescription></CardHeader><CardContent className="text-sm text-foreground-soft">{item.plan_document?.summary ?? "No summary."}</CardContent></Card>
       {item.document_status === "invalid" ? <p role="alert" className="rounded-lg border border-destructive/30 p-4 text-sm text-destructive">The saved plan document does not match the current structure.</p> : days.map(day => <Card key={day.day_index}><CardHeader><CardTitle>Day {day.day_index}{day.label ? ` · ${day.label}` : ""}</CardTitle></CardHeader><CardContent>{day.exercises.map((exercise, index) => <div key={`${exercise.movement_id}-${index}`} className="border-b border-border py-3 text-sm first:pt-0 last:border-b-0 last:pb-0"><p className="font-mono text-xs text-foreground-soft">Movement {shortId(exercise.movement_id)}</p><p className="mt-1">{exercise.sets} sets · {exercise.reps ? `${exercise.reps} reps` : `${exercise.hold_seconds} sec hold`} · {exercise.rest_seconds} sec rest</p>{exercise.notes ? <p className="mt-1 text-foreground-soft">{exercise.notes}</p> : null}</div>)}</CardContent></Card>)}</> : null}</State>
   </div>;

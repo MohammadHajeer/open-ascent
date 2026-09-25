@@ -9,7 +9,8 @@ import { DashboardSection } from "@/components/dashboard/dashboard-section";
 import { MovementListSkeleton } from "@/components/admin/admin-skeletons";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getAdminErrorMessage } from "@/features/admin/errors";
 import { useAdminMovements } from "@/features/admin/movements/hooks";
 import { cn } from "@/lib/utils";
@@ -66,6 +67,7 @@ export function AdminMovementsClient() {
       eyebrow="Catalog"
       title={`${movements.data.length} movement${movements.data.length === 1 ? "" : "s"}`}
       description="Movement metadata and analyzer availability from the admin catalog."
+      stackAside
       aside={
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
           <label className="relative block w-full sm:w-64">
@@ -84,61 +86,59 @@ export function AdminMovementsClient() {
           description="Try a different name, slug, or family key."
         />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-180 text-left text-sm">
-            <thead className="border-b border-border/70 bg-background-alt/35 text-xs text-foreground-soft">
-              <tr>
-                <th className="px-5 py-3 font-medium sm:px-7">Movement</th>
-                <th className="px-5 py-3 font-medium sm:px-7">Family</th>
-                <th className="px-5 py-3 font-medium sm:px-7">Difficulty</th>
-                <th className="px-5 py-3 font-medium sm:px-7">Analysis</th>
-                <th className="px-5 py-3 font-medium sm:px-7">Guide</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {filteredMovements.map((movement) => (
-                <tr key={movement.id} className="group align-middle">
-                  <td className="px-5 py-4 sm:px-7">
-                    <Link
-                      href={`/admin/movements/${encodeURIComponent(movement.slug)}`}
-                      className="group/link inline-flex items-center gap-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <span className="grid size-9 place-items-center rounded-xl border border-primary/15 bg-primary-light text-primary">
-                        <Dumbbell className="size-4" aria-hidden="true" />
+        <Table className="min-w-180">
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Movement</TableHead>
+              <TableHead>Family</TableHead>
+              <TableHead>Difficulty</TableHead>
+              <TableHead>Analysis</TableHead>
+              <TableHead><span className="sr-only">Guide</span></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredMovements.map((movement) => (
+              <TableRow key={movement.id}>
+                <TableCell>
+                  <Link
+                    href={`/admin/movements/${encodeURIComponent(movement.slug)}`}
+                    className="group/link inline-flex items-center gap-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="grid size-9 place-items-center rounded-xl border border-primary/15 bg-primary-light text-primary">
+                      <Dumbbell className="size-4" aria-hidden="true" />
+                    </span>
+                    <span>
+                      <span className="block font-medium text-foreground group-hover/link:text-primary">
+                        {movement.name}
                       </span>
-                      <span>
-                        <span className="block font-medium text-foreground group-hover/link:text-primary">
-                          {movement.name}
-                        </span>
-                        <span className="mt-0.5 block font-mono text-[0.68rem] text-foreground-faint">
-                          {movement.slug}
-                        </span>
+                      <span className="mt-0.5 block font-mono text-[0.68rem] text-foreground-faint">
+                        {movement.slug}
                       </span>
-                    </Link>
-                  </td>
-                  <td className="px-5 py-4 font-mono text-xs text-foreground-soft sm:px-7">
-                    {movement.family_key}
-                  </td>
-                  <td className="px-5 py-4 capitalize text-foreground-soft sm:px-7">
-                    {movement.difficulty ?? "—"}
-                  </td>
-                  <td className="px-5 py-4 sm:px-7">
-                    <CapabilityValue value={movement.upload_analysis_supported} label="Upload" />
-                  </td>
-                  <td className="px-5 py-4 sm:px-7">
-                    <Link
-                      href={`/admin/movements/${encodeURIComponent(movement.slug)}`}
-                      className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-foreground-soft")}
-                    >
-                      Open
-                      <ArrowUpRight className="size-3.5" aria-hidden="true" />
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </span>
+                  </Link>
+                </TableCell>
+                <TableCell className="font-mono text-xs text-foreground-soft">
+                  {movement.family_key}
+                </TableCell>
+                <TableCell className="capitalize text-foreground-soft">
+                  {movement.difficulty ?? "—"}
+                </TableCell>
+                <TableCell>
+                  <CapabilityValue value={movement.upload_analysis_supported} label="Upload" />
+                </TableCell>
+                <TableCell>
+                  <Link
+                    href={`/admin/movements/${encodeURIComponent(movement.slug)}`}
+                    className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-foreground-soft")}
+                  >
+                    Open
+                    <ArrowUpRight className="size-3.5" aria-hidden="true" />
+                  </Link>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       )}
     </DashboardSection>
   );
@@ -169,9 +169,9 @@ export function AdminDataError({
       <AlertDescription>
         <span>{message}</span>
         {onRetry ? (
-          <button type="button" onClick={onRetry} className="mt-2 block font-medium underline underline-offset-4">
+          <Button type="button" variant="outline" size="sm" onClick={onRetry} className="mt-3">
             Try again
-          </button>
+          </Button>
         ) : null}
       </AlertDescription>
     </Alert>

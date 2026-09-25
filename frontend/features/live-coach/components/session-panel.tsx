@@ -82,7 +82,7 @@ export function SessionPanel({ session }: Props) {
           className={cn(
             "mt-3 rounded-2xl border p-5",
             cue.tone === "attention"
-              ? "border-amber-700/30 bg-amber-500/8"
+              ? "border-warning/35 bg-warning/8"
               : "border-primary/20 bg-primary-light",
           )}
           role="status"
@@ -90,7 +90,7 @@ export function SessionPanel({ session }: Props) {
         >
           <div className="flex items-start gap-3">
             {cue.tone === "attention" ? (
-              <CircleAlert className="mt-0.5 size-5 shrink-0 text-amber-700 dark:text-amber-400" />
+              <CircleAlert className="mt-0.5 size-5 shrink-0 text-warning" />
             ) : (
               <Check className="mt-0.5 size-5 shrink-0 text-primary" />
             )}
@@ -160,19 +160,23 @@ export function SessionPanel({ session }: Props) {
         {devices.length > 1 ? (
           <div className="space-y-2">
             <Label htmlFor="live-coach-camera">Camera</Label>
-            <select
-              id="live-coach-camera"
+            <Select
+              items={devices.map((device) => ({ value: device.deviceId, label: device.label || "Camera" }))}
               value={selectedDeviceId}
-              onChange={(event) => setSelectedDeviceId(event.target.value)}
+              onValueChange={(value) => { if (value) setSelectedDeviceId(value); }}
               disabled={isActive}
-              className="h-10 w-full rounded-xl border border-input bg-background px-3 text-sm disabled:opacity-55"
             >
-              {devices.map((device) => (
-                <option key={device.deviceId} value={device.deviceId}>
-                  {device.label}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger id="live-coach-camera" className="h-10 w-full rounded-xl bg-background/70">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {devices.map((device) => (
+                  <SelectItem key={device.deviceId} value={device.deviceId}>
+                    {device.label || "Camera"}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <p className="text-xs leading-5 text-foreground-faint">
               Active camera: {devices.find((device) => device.deviceId === selectedDeviceId)?.label ?? "Default"}. Stop the session to switch cameras.
             </p>

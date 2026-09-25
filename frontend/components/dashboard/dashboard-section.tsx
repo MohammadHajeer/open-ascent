@@ -1,14 +1,19 @@
+import { cn } from "@/lib/utils";
+
 export function DashboardSection({
   eyebrow,
   title,
   description,
   aside,
+  stackAside = false,
   children,
 }: {
   eyebrow: string;
   title: React.ReactNode;
   description?: React.ReactNode;
   aside?: React.ReactNode;
+  /** Give a control-style `aside` (search, select) its own full-width row on mobile. Icons and badges stay inline. */
+  stackAside?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -27,7 +32,7 @@ export function DashboardSection({
             </p>
           ) : null}
         </div>
-        {aside ? <div className="min-w-0 max-w-full max-sm:w-full max-sm:[&>*]:w-full">{aside}</div> : null}
+        {aside ? <div className={cn("min-w-0 max-w-full", stackAside && "max-sm:w-full max-sm:[&>*]:w-full")}>{aside}</div> : null}
       </div>
       {children}
     </section>

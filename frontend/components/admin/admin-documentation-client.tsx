@@ -12,6 +12,7 @@ import { DocumentationStatusBadge } from "@/components/admin/documentation-statu
 import { DocumentationListSkeleton } from "@/components/admin/admin-skeletons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Select,
   SelectContent,
@@ -113,13 +114,13 @@ export function AdminDocumentationClient() {
             <Input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search movement" className="h-9 pl-9" maxLength={80} />
           </label>
           <Select value={status} onValueChange={(value) => { setStatus((value ?? "all") as "all" | DocumentationStatus); setPage(1); }}>
-            <SelectTrigger className="w-full"><SelectValue placeholder="All statuses" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-full"><SelectValue placeholder="All statuses" /></SelectTrigger>
             <SelectContent>
               {statusOptions.map((option) => <SelectItem key={option} value={option}>{option === "all" ? "All statuses" : option}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={filterMovementId} onValueChange={(value) => { setFilterMovementId(value ?? "all"); setPage(1); }} disabled={movements.isError}>
-            <SelectTrigger className="w-full"><SelectValue placeholder="All movements" /></SelectTrigger>
+            <SelectTrigger className="h-9 w-full"><SelectValue placeholder="All movements" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All movements</SelectItem>
               {(movements.data ?? []).map((movement) => <SelectItem key={movement.id} value={movement.id}>{movement.name}</SelectItem>)}
@@ -139,37 +140,35 @@ export function AdminDocumentationClient() {
 
 function DocumentationTable({ records }: { records: AdminDocumentationSummary[] }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-190 text-left text-sm">
-        <thead className="border-b border-border/70 bg-background-alt/35 text-xs text-foreground-soft">
-          <tr>
-            <th className="px-5 py-3 font-medium sm:px-7">Movement</th>
-            <th className="px-5 py-3 font-medium sm:px-7">Version</th>
-            <th className="px-5 py-3 font-medium sm:px-7">Status</th>
-            <th className="px-5 py-3 font-medium sm:px-7">Updated</th>
-            <th className="px-5 py-3 font-medium sm:px-7">Published</th>
-            <th className="px-5 py-3 font-medium sm:px-7"><span className="sr-only">Open</span></th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border/60">
-          {records.map((record) => (
-            <tr key={record.id}>
-              <td className="px-5 py-4 sm:px-7">
-                <Link href={`/admin/documentation/${record.id}`} className="font-medium text-foreground hover:text-primary">
-                  {record.movement.name}
-                </Link>
-                <span className="mt-1 block font-mono text-[0.68rem] text-foreground-faint">{record.movement.slug}</span>
-              </td>
-              <td className="px-5 py-4 font-mono text-xs text-foreground-soft sm:px-7">v{record.version}</td>
-              <td className="px-5 py-4 sm:px-7"><DocumentationStatusBadge status={record.status} /></td>
-              <td className="px-5 py-4 text-xs text-foreground-soft sm:px-7">{formatDate(record.updated_at)}</td>
-              <td className="px-5 py-4 text-xs text-foreground-soft sm:px-7">{record.published_at ? formatDate(record.published_at) : "—"}</td>
-              <td className="px-5 py-4 sm:px-7"><Link href={`/admin/documentation/${record.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-foreground-soft")}>Open</Link></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <Table className="min-w-190">
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead>Movement</TableHead>
+          <TableHead>Version</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Updated</TableHead>
+          <TableHead>Published</TableHead>
+          <TableHead><span className="sr-only">Open</span></TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {records.map((record) => (
+          <TableRow key={record.id}>
+            <TableCell>
+              <Link href={`/admin/documentation/${record.id}`} className="font-medium text-foreground hover:text-primary">
+                {record.movement.name}
+              </Link>
+              <span className="mt-1 block font-mono text-[0.68rem] text-foreground-faint">{record.movement.slug}</span>
+            </TableCell>
+            <TableCell className="font-mono text-xs text-foreground-soft">v{record.version}</TableCell>
+            <TableCell><DocumentationStatusBadge status={record.status} /></TableCell>
+            <TableCell className="text-xs text-foreground-soft">{formatDate(record.updated_at)}</TableCell>
+            <TableCell className="text-xs text-foreground-soft">{record.published_at ? formatDate(record.published_at) : "—"}</TableCell>
+            <TableCell><Link href={`/admin/documentation/${record.id}`} className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "text-foreground-soft")}>Open</Link></TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft, Camera, ScanLine, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { ExecutionIntent } from "@/lib/analysis";
 
 import { GuestVideoRecorder as AnalysisVideoRecorder } from "../guest-video-recorder";
@@ -372,12 +373,11 @@ function VideoReview({
           </p>
         )}
 
-        <label className="mt-7 flex items-start gap-3 text-sm leading-6 text-foreground">
-          <input
-            className="mt-1 accent-primary"
-            type="checkbox"
+        <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm leading-6 text-foreground">
+          <Checkbox
+            className="mt-1"
             checked={acknowledged}
-            onChange={(event) => onAcknowledgedChange(event.target.checked)}
+            onCheckedChange={(checked) => onAcknowledgedChange(checked === true)}
           />
           I have read the safety guidance below and understand this analysis is
           informational.

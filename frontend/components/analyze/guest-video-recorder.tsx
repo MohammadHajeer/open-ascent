@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, CircleStop, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   cameraErrorMessage,
   formatRecordingTime,
@@ -253,8 +255,8 @@ export function GuestVideoRecorder({
           {clip ? (
             <div>
               <p className="text-sm text-foreground-soft">{clip.durationSeconds.toFixed(1)} seconds · {(clip.file.size / 1048576).toFixed(1)} MB</p>
-              <label className="mt-3 flex max-w-xl items-start gap-3 text-sm leading-6 text-foreground">
-                <input className="mt-1 accent-primary" type="checkbox" checked={acknowledged} onChange={(event) => onAcknowledgedChange(event.target.checked)} />
+              <label className="mt-3 flex max-w-xl cursor-pointer items-start gap-3 text-sm leading-6 text-foreground">
+                <Checkbox className="mt-1" checked={acknowledged} onCheckedChange={(checked) => onAcknowledgedChange(checked === true)} />
                 I have read the safety guidance below and understand this analysis is informational.
               </label>
             </div>
@@ -262,14 +264,18 @@ export function GuestVideoRecorder({
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-sm text-foreground-soft">Keep your full movement and equipment visible.</p>
               {devices.length > 1 && !recording && (
-                <select
-                  aria-label="Camera"
-                  className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                <Select
+                  items={devices.map((device, index) => ({ value: device.deviceId, label: device.label || `Camera ${index + 1}` }))}
                   value={deviceId}
-                  onChange={(event) => void startCamera(event.target.value)}
+                  onValueChange={(value) => { if (value) void startCamera(value); }}
                 >
-                  {devices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}
-                </select>
+                  <SelectTrigger aria-label="Camera" className="h-9 w-56 max-w-full rounded-lg bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {devices.map((device, index) => <SelectItem key={device.deviceId} value={device.deviceId}>{device.label || `Camera ${index + 1}`}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               )}
             </div>
           ) : <p className="text-sm text-foreground-soft">Maximum {maxDurationSeconds} seconds · 10 MB</p>}

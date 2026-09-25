@@ -40,7 +40,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <PrivateStateProvider>
             <TooltipProvider delay={100}>{children}</TooltipProvider>
           </PrivateStateProvider>
-          <Toaster richColors position="bottom-right" />
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

@@ -3,14 +3,17 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
+import { AlertCircle, RefreshCw } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 
+import { MetricStrip } from "@/components/admin/metric-strip";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import { getAdminErrorMessage } from "@/features/admin/errors";
 import { fetchJobs, fetchOverview, fetchWorkers, retryJob, type Job } from "./api";
@@ -74,27 +77,23 @@ export function AdminOperationsDashboard() {
   const snapshot = overview.data?.as_of;
 
   return <div className="space-y-7">
-    <div className="flex flex-wrap items-start justify-between gap-4">
-      <DashboardPageHeader eyebrow="Admin console / Operations" title="Operations overview" description="Worker heartbeat, queue, and failure data from the server." />
-      <Button variant="outline" onClick={refresh} disabled={overview.isFetching || workers.isFetching || jobs.isFetching}><RefreshCw className="size-4" /> Refresh</Button>
-    </div>
-    <p className="text-xs text-foreground-soft">{snapshot ? `Overview snapshot: ${shownTime(snapshot)}. Refresh to check current state.` : "Loading operational snapshot…"}</p>
-    {overview.isError || workers.isError || jobs.isError ? <Card className="border-destructive/30"><CardContent className="text-sm text-destructive">{getAdminErrorMessage(overview.error ?? workers.error ?? jobs.error)}</CardContent></Card> : null}
+    <DashboardPageHeader eyebrow="Admin console / Operations" title="Operations overview" description="Worker heartbeat, queue, and failure data from the server."
+      action={<Button variant="outline" onClick={refresh} disabled={overview.isFetching || workers.isFetching || jobs.isFetching}><RefreshCw className="size-4" aria-hidden="true" /> Refresh</Button>} />
+    <p className="-mt-3 text-xs text-foreground-faint">{snapshot ? `Overview snapshot: ${shownTime(snapshot)}. Refresh to check current state.` : "Loading operational snapshot…"}</p>
+    {overview.isError || workers.isError || jobs.isError ? <Alert variant="destructive"><AlertCircle /><AlertTitle>Some operational data is unavailable</AlertTitle><AlertDescription>{getAdminErrorMessage(overview.error ?? workers.error ?? jobs.error)}</AlertDescription></Alert> : null}
 
-    <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Operations statistics">
-      {[
-        ["Queue depth", overview.data?.queue_depth, "Analyses and explanations waiting"],
-        ["Stale jobs", overview.data?.stale_jobs, "Expired leases or long queue waits"],
-        ["Failed jobs", overview.data?.failed_jobs, "Current terminal failures"],
-        ["Healthy workers", count(overview.data?.worker_health, "healthy"), "Seen within heartbeat threshold"],
-        ["Completed, 24h", overview.data?.throughput_24h.completed, "Analysis throughput"],
-      ].map(([label, value, help]) => <Card key={String(label)}><CardHeader><CardDescription>{label}</CardDescription><CardTitle className="text-3xl tabular-nums">{value ?? "—"}</CardTitle></CardHeader><CardContent className="text-xs text-foreground-soft">{help}</CardContent></Card>)}
-    </section>
+    <MetricStrip columns={5} label="Operations statistics" items={[
+      { label: "Queue depth", value: overview.data?.queue_depth, detail: "Analyses and explanations waiting" },
+      { label: "Stale jobs", value: overview.data?.stale_jobs, detail: "Expired leases or long queue waits" },
+      { label: "Failed jobs", value: overview.data?.failed_jobs, detail: "Current terminal failures" },
+      { label: "Healthy workers", value: count(overview.data?.worker_health, "healthy"), detail: "Seen within heartbeat threshold" },
+      { label: "Completed, 24h", value: overview.data?.throughput_24h.completed, detail: "Analysis throughput" },
+    ]} />
 
     <section className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,1fr)]" aria-label="Operational trends">
-      <Card><CardHeader><CardTitle>Analysis outcomes</CardTitle><CardDescription>Completed and failed per UTC day · last seven days</CardDescription></CardHeader><CardContent>
-        {overview.isPending ? <div className="h-64 animate-pulse rounded-xl bg-muted" aria-label="Loading throughput chart" /> : overview.data ? <>
-          <ChartContainer config={{ completed: { label: "Completed", color: "var(--primary)" }, failed: { label: "Failed", color: "var(--destructive)" } }} className="h-64 w-full aspect-auto">
+      <Card><CardHeader><CardTitle>Analysis outcomes</CardTitle><CardDescription>Completed and failed per UTC day · last seven days</CardDescription></CardHeader><CardContent className="flex flex-1 flex-col">
+        {overview.isPending ? <Skeleton className="min-h-64 flex-1 rounded-xl" role="status" aria-label="Loading throughput chart" /> : overview.data ? <>
+          <ChartContainer config={{ completed: { label: "Completed", color: "var(--primary)" }, failed: { label: "Failed", color: "var(--destructive)" } }} className="min-h-64 w-full flex-1 aspect-auto">
             <BarChart accessibilityLayer data={overview.data.throughput_daily.map(point => ({ ...point, label: point.date.slice(5) }))} margin={{ top: 8, right: 4, left: -24, bottom: 0 }}>
               <CartesianGrid vertical={false} /><XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} /><YAxis allowDecimals={false} tickLine={false} axisLine={false} />
               <ChartTooltip content={<ChartTooltipContent />} />
@@ -114,10 +113,10 @@ export function AdminOperationsDashboard() {
     </section>
 
     <Card><CardHeader><CardTitle>System totals</CardTitle><CardDescription>Counts from the same snapshot</CardDescription></CardHeader><CardContent className="grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
-      <div><span className="text-foreground-soft">Accounts</span><p className="mt-1 text-2xl tabular-nums">{overview.data?.users.total ?? "—"}</p></div>
-      <div><span className="text-foreground-soft">Athletes</span><p className="mt-1 text-2xl tabular-nums">{overview.data?.users.athletes ?? "—"}</p></div>
-      <div><span className="text-foreground-soft">Explanations pending</span><p className="mt-1 text-2xl tabular-nums">{overview.data ? count(overview.data.explanations, "pending") : "—"}</p></div>
-      <div><span className="text-foreground-soft">Explanations failed</span><p className="mt-1 text-2xl tabular-nums">{overview.data ? count(overview.data.explanations, "failed") : "—"}</p></div>
+      <div><span className="text-foreground-soft">Accounts</span><p className="mt-1 text-2xl font-medium tracking-[-0.03em] tabular-nums">{overview.data?.users.total ?? "—"}</p></div>
+      <div><span className="text-foreground-soft">Athletes</span><p className="mt-1 text-2xl font-medium tracking-[-0.03em] tabular-nums">{overview.data?.users.athletes ?? "—"}</p></div>
+      <div><span className="text-foreground-soft">Explanations pending</span><p className="mt-1 text-2xl font-medium tracking-[-0.03em] tabular-nums">{overview.data ? count(overview.data.explanations, "pending") : "—"}</p></div>
+      <div><span className="text-foreground-soft">Explanations failed</span><p className="mt-1 text-2xl font-medium tracking-[-0.03em] tabular-nums">{overview.data ? count(overview.data.explanations, "failed") : "—"}</p></div>
     </CardContent></Card>
 
     <Card id="workers"><CardHeader><CardTitle>Workers</CardTitle><CardDescription>Last seen and current assignment for each recorded instance</CardDescription></CardHeader><CardContent className="space-y-2">

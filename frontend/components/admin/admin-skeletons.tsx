@@ -9,6 +9,7 @@ export function MovementListSkeleton() {
       eyebrow="Catalog"
       title={<Skeleton className="h-6 w-32" />}
       description={<Skeleton className="mt-2 h-4 w-72 max-w-full" />}
+      stackAside
       aside={<Skeleton className="h-9 w-64 max-w-full" />}
     >
       <div className="overflow-hidden">

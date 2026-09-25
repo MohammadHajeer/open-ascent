@@ -132,6 +132,7 @@ export function ProgressView() {
         eyebrow="Performance trend"
         title="Compare like with like."
         description="One movement and one measurement at a time, using only sets attributed to you."
+        stackAside
         aside={
           movementItems.length ? (
             <Select
@@ -262,7 +263,7 @@ function ConsistencyCard({
   icon: React.ReactNode;
 }) {
   return (
-    <Card className="rounded-[1.4rem] bg-card/65 py-5">
+    <Card size="sm" className="py-5">
       <CardHeader className="grid-cols-[1fr_auto] items-start gap-3">
         <div>
           <CardDescription>{label}</CardDescription>

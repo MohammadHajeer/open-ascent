@@ -7,7 +7,7 @@ import { ArrowLeft, LoaderCircle } from "lucide-react";
 import { DashboardEmptyState } from "@/components/dashboard/dashboard-empty-state";
 import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-header";
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 
 import { getSavedPlan, type SavedPlanExercise } from "./api";
@@ -29,7 +29,7 @@ export function SavedPlanDetail({ planId }: { planId: string }) {
       <DashboardEmptyState
         title={missing ? "Plan not found." : "This plan could not be loaded."}
         description={missing ? "This saved plan is unavailable for this account." : "Check your connection and try again."}
-        action={missing ? undefined : <button type="button" onClick={() => void plan.refetch()} className={buttonVariants({ variant: "outline" })}>Try again</button>}
+        action={missing ? undefined : <Button type="button" variant="outline" onClick={() => void plan.refetch()}>Try again</Button>}
       />
     </div>;
   }
