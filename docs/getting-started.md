@@ -51,13 +51,27 @@ pnpm dev:stripe
 
 The API exposes `/health` and `/health/db`. The worker entry point is `uv run python -m scripts.run_analysis_worker` from `backend`. See [Workers and jobs](workers-and-jobs.md) for what it starts.
 
+## Production-style local run
+
+To run the built frontend instead of Next.js development mode, build once and then start:
+
+```powershell
+pnpm build
+pnpm start
+```
+
+`pnpm build` runs `next build` for the frontend (the backend has no build step). `pnpm start` runs `next start`, plain uvicorn without the file watcher, and the worker group; it never rebuilds. Rebuild after frontend code or `NEXT_PUBLIC_*` changes, because those values are baked in at build time. Stop `pnpm dev` first: both use ports 3000 and 8000, and `pnpm build` rewrites `frontend/.next`.
+
+Stripe CLI forwarding is not part of `pnpm start`. It is a local testing tool; deployed environments should point Stripe at a real webhook URL. To test subscriptions against the built stack locally, run `pnpm dev:stripe` in a separate terminal. Individual pieces are available as `pnpm start:frontend`, `pnpm start:backend`, and `pnpm start:worker`.
+
 ## Development commands
 
 | Command (repository root) | Purpose |
 | --- | --- |
 | `pnpm dev:clean` | Clear development artifacts and start the local process group |
 | `pnpm lint` | Frontend ESLint and backend Ruff |
-| `pnpm --dir frontend build` | Build the frontend |
+| `pnpm build` | Production build of the frontend |
+| `pnpm start` | Run the built frontend, API, and workers (no Stripe listener) |
 | `pnpm test` | Backend pytest suite |
 | `pnpm test:live-coach` | Focused Live Coach tests |
 

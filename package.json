@@ -3,6 +3,12 @@
   "private": true,
   "scripts": {
     "dev": "concurrently --kill-others-on-fail -n frontend,backend,worker,stripe-webhooks \"pnpm dev:frontend\" \"pnpm dev:backend\" \"pnpm dev:worker\" \"pnpm dev:stripe:optional\"",
+    "build": "pnpm build:frontend",
+    "build:frontend": "pnpm --dir frontend build",
+    "start": "concurrently --kill-others-on-fail -n frontend,backend,worker \"pnpm start:frontend\" \"pnpm start:backend\" \"pnpm start:worker\"",
+    "start:frontend": "pnpm --dir frontend start",
+    "start:backend": "cd backend && uv run python -u -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --no-access-log",
+    "start:worker": "cd backend && uv run python -u -m scripts.run_analysis_worker",
     "clean:dev": "node scripts/clean-dev.mjs",
     "dev:clean": "pnpm clean:dev && pnpm dev",
     "dev:frontend": "pnpm --dir frontend dev",

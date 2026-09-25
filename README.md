@@ -34,7 +34,7 @@ cd ..
 pnpm dev
 ```
 
-`pnpm dev` starts the frontend, API, worker group, and Stripe webhook forwarding. See [Getting started](docs/getting-started.md) for setup details and [Demo setup](docs/demo-setup.md) for the seeded presentation accounts.
+`pnpm dev` starts the frontend, API, worker group, and Stripe webhook forwarding. For a production-style local run, use `pnpm build` then `pnpm start` (built Next.js output, no file watchers, no Stripe listener). See [Getting started](docs/getting-started.md) for setup details and [Demo setup](docs/demo-setup.md) for the seeded presentation accounts.
 
 ## Documentation
 
