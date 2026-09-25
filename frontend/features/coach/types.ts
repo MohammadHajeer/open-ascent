@@ -3,4 +3,5 @@ export type CoachMessage = { id: string; role: "user" | "assistant"; content: st
 export type ConversationDetail = Conversation & { messages: CoachMessage[] };
 export type Generation = { id: string; status: CoachMessage["status"] | "reserved" | "requesting"; content: string; error_code: string | null };
 export type PlanExercise = { movement_id: string; movement_name: string; movement_slug: string | null; sets: number; reps: number | null; hold_seconds: number | null; rest_seconds: number; notes: string | null };
-export type PlanPreview = { id: string; saved_plan_id: string | null; title: string; summary: string | null; days: { day_index: number; label: string | null; exercises: PlanExercise[] }[] };
+export type PlanOrigin = { mode: "profile" | "goal" | "progress"; goal_name: string | null; based_on: string[]; note: string | null };
+export type PlanPreview = { id: string; saved_plan_id: string | null; title: string; summary: string | null; origin?: PlanOrigin | null; days: { day_index: number; label: string | null; exercises: PlanExercise[] }[] };

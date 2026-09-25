@@ -111,7 +111,8 @@ def derive_conversation_title(content: str) -> str:
 
 
 def create_and_reserve_generation(
-    db: Session, profile: Profile, request_id: uuid.UUID, content: str, kind: str = "chat"
+    db: Session, profile: Profile, request_id: uuid.UUID, content: str, kind: str = "chat",
+    plan_context: dict | None = None,
 ) -> tuple[Conversation, CoachGeneration, bool]:
     """Serialize first sends on the owner row so ambiguous retries reuse one chat."""
     db.scalar(select(Profile.id).where(Profile.id == profile.id).with_for_update())
@@ -132,7 +133,7 @@ def create_and_reserve_generation(
         db.add(existing)
         db.flush()
     generation, created = reserve_generation(
-        db, profile, existing.id, request_id, content, kind=kind
+        db, profile, existing.id, request_id, content, kind=kind, plan_context=plan_context
     )
     return existing, generation, created
 
@@ -144,6 +145,7 @@ def reserve_generation(
     request_id: uuid.UUID,
     content: str,
     kind: str = "chat",
+    plan_context: dict | None = None,
 ) -> tuple[CoachGeneration, bool]:
     if kind not in {"chat", "plan"}:
         raise ValueError("Unknown generation kind.")
@@ -162,7 +164,7 @@ def reserve_generation(
     )
     if existing is not None:
         original = db.get(Message, existing.user_message_id)
-        if original.content != content or existing.kind != kind:
+        if original.content != content or existing.kind != kind or existing.plan_context != plan_context:
             raise ValueError("Request ID was used for another message.")
         return existing, False
     active = db.scalar(
@@ -215,7 +217,7 @@ def reserve_generation(
     usage = None
     if safety_reply is None and domain_reply is None:
         fingerprint = hashlib.sha256(
-            f"{conversation_id}:{kind}:{content}".encode()
+            f"{conversation_id}:{kind}:{content}:{json.dumps(plan_context, sort_keys=True)}".encode()
         ).hexdigest()
         usage = reserve_usage(
             db,
@@ -256,6 +258,7 @@ def reserve_generation(
         client_request_id=request_id,
         feature_usage_id=usage.id if usage else None,
         kind=kind,
+        plan_context=plan_context,
         status="completed" if safety_reply or domain_reply else "reserved",
     )
     db.add(generation)

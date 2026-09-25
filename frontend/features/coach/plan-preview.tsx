@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { getPlanPreview, savePlanPreview } from "./api";
 import type { PlanPreview } from "./types";
 
-export function PlanPreviewCard({ previewId }: { previewId: string }) {
+export function PlanPreviewCard({ previewId, onSaved }: { previewId: string; onSaved?: () => void }) {
   const [preview, setPreview] = useState<PlanPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -28,6 +28,7 @@ export function PlanPreviewCard({ previewId }: { previewId: string }) {
     try {
       const result = await savePlanPreview(previewId);
       setPreview(current => current ? { ...current, saved_plan_id: result.id } : current);
+      onSaved?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save plan. Review current readiness and try again.");
     } finally {
@@ -47,6 +48,10 @@ export function PlanPreviewCard({ previewId }: { previewId: string }) {
           <Button onClick={() => void save()} disabled={saving || Boolean(preview.saved_plan_id)} size="sm">{preview.saved_plan_id ? "Saved" : saving ? "Saving…" : "Save Plan"}</Button>
         </div>
         {preview.summary && <p className="mt-2 text-sm leading-6 text-foreground-soft">{preview.summary}</p>}
+        {preview.origin && <div className="mt-3 rounded-lg bg-background-alt/50 p-3 text-xs leading-5 text-foreground-soft">
+          <p className="font-semibold text-foreground">{preview.origin.mode === "profile" ? "Start from my profile" : preview.origin.mode === "goal" ? "Build toward a goal" : "Adapt to my progress"}{preview.origin.goal_name ? ` · ${preview.origin.goal_name}` : ""}</p>
+          <p>Based on: {preview.origin.based_on.join(" · ")}</p>
+        </div>}
         <div className="mt-4 space-y-3">
           {preview.days.map(day => <div key={day.day_index} className="rounded-lg border border-border/70 bg-background-alt/30 p-3">
             <h4 className="text-sm font-semibold text-foreground">Day {day.day_index}{day.label ? ` · ${day.label}` : ""}</h4>

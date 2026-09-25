@@ -10,7 +10,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -124,4 +124,5 @@ class CoachGeneration(TimestampMixin, Base):
     kind: Mapped[str] = mapped_column(
         Text, nullable=False, server_default=text("'chat'")
     )
+    plan_context: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error_code: Mapped[str | None] = mapped_column(Text, nullable=True)

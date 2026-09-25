@@ -56,6 +56,9 @@ def get_progress_summary(
     points: dict[tuple[uuid.UUID, str], list[ProgressTrendPoint]] = defaultdict(list)
 
     for workout_set, started_at in rows:
+        # SQLite test storage drops timezone information; PostgreSQL retains it.
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=UTC)
         if started_at >= week_start:
             weekly_session_ids.add(workout_set.session_id)
             weekly_days.add(started_at.astimezone(UTC).date())

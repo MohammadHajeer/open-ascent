@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -66,10 +66,18 @@ class PlanDay(_Candidate):
     exercises: list[PlanExercise] = Field(min_length=1, max_length=8)
 
 
+class PlanOrigin(_Candidate):
+    mode: Literal["profile", "goal", "progress"]
+    goal_name: ShortText | None = None
+    based_on: list[ShortText] = Field(min_length=1, max_length=5)
+    note: Notes | None = None
+
+
 class WeeklyPlanCandidate(_Candidate):
     title: Title
     summary: Summary | None = None
     days: list[PlanDay] = Field(min_length=1, max_length=7)
+    origin: PlanOrigin | None = None
 
     @model_validator(mode="after")
     def weekly_shape(self) -> WeeklyPlanCandidate:

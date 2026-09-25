@@ -7,7 +7,7 @@ import { SavedPlanLibrary } from "./saved-plan-library";
 import { SavedPlanDetail } from "./saved-plan-detail";
 import * as api from "./api";
 
-vi.mock("./api", () => ({ listSavedPlans: vi.fn(), getSavedPlan: vi.fn() }));
+vi.mock("./api", () => ({ listSavedPlans: vi.fn(), getSavedPlan: vi.fn(), getGenerationOptions: vi.fn(), startLibraryPlan: vi.fn() }));
 
 const summary = {
   id: "6a1380c8-69ec-49d2-8d5d-f10685fd7c78",
@@ -25,6 +25,7 @@ function renderQuery(ui: React.ReactNode) {
 
 beforeEach(() => {
   vi.mocked(api.listSavedPlans).mockResolvedValue([]);
+  vi.mocked(api.getGenerationOptions).mockResolvedValue({ goals: [], progress_available: false, plan_allowance: 1, plan_remaining: 1 });
   vi.mocked(api.getSavedPlan).mockResolvedValue({
     ...summary,
     days: [
@@ -43,7 +44,8 @@ describe("saved plan Library", () => {
     expect(screen.getByRole("status").textContent).toContain("Loading your plans");
     resolve([]);
     expect(await screen.findByText("No saved plans yet.")).toBeTruthy();
-    expect(screen.getAllByRole("link", { name: "Open AI Coach" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: "Generate new plan" }).length).toBeGreaterThan(0);
+    expect(screen.getByText("How should Open Ascent build this plan?")).toBeTruthy();
   });
 
   it("lists the current athlete's plans and links to detail", async () => {

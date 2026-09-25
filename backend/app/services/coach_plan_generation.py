@@ -27,6 +27,7 @@ from app.services.coach_tools import (
     openai_tools,
 )
 from app.services.movement_documentation import MovementDocumentationService
+from app.services.plan_modes import equipment_available, generation_context
 from app.services.readiness import ReadinessService
 from app.services.readiness_evidence import ReadinessEvidenceBuilder
 from app.services.training_plan import (
@@ -35,7 +36,7 @@ from app.services.training_plan import (
     complete_preview,
 )
 
-PLAN_INSTRUCTIONS = """Create a seven-day or shorter weekly calisthenics training plan for this athlete. Return only the typed plan proposal. Use only the eligible canonical movement IDs supplied in the current request. The backend independently verifies every movement and its readiness. Pick the correct prescription target: repetitions for repetitions movements and hold_seconds for duration movements; provide exactly one. Use integer sets, target, and rest_seconds. Keep the plan appropriately modest for the athlete's evidence and goal. Do not claim to have measured unprovided performance. Do not turn movement safety guidance into a readiness claim. The available tools only read athlete records and published guides; use them when useful. Do not write records or ask tools to do so. Do not include medical advice or pain-provoking activity."""
+PLAN_INSTRUCTIONS = """Create a seven-day or shorter weekly calisthenics training plan for this athlete. Return only the typed plan proposal. Use only the eligible canonical movement IDs supplied in the current request. The backend independently verifies every movement and its readiness. Pick the correct prescription target: repetitions for repetitions movements and hold_seconds for duration movements; provide exactly one. Use integer sets, target, and rest_seconds. Keep the plan appropriately modest for the athlete's evidence and goal. In profile mode, use self-reported onboarding only as provisional design context. In goal mode, the goal movement may be unready: identify the prerequisite gap and prescribe only eligible precursor exercises; never include the goal movement merely because it is the goal. In progress mode, use the supplied COACH-03 trends rather than inventing a fitness score. Explain in the summary why the selected exercises fit the request, including a prerequisite-first approach when applicable. Respect reported availability, equipment and movement avoidances. Do not claim to have measured unprovided performance. Do not turn movement safety guidance into a readiness claim. The available tools only read athlete records and published guides; use them when useful. Do not write records or ask tools to do so. Do not include medical advice or pain-provoking activity."""
 
 
 def _eligible_movements(db, user_id: uuid.UUID) -> list[dict]:
@@ -83,15 +84,22 @@ def run_plan_generation(
             if user is None or profile is None:
                 raise ValueError("Plan generation has no athlete context.")
             user_id = profile.id
-            evidence = build_coach_context(db, profile, user.content)
+            metadata = generation.plan_context
+            evidence = (generation_context(db, profile, metadata) if metadata
+                        else build_coach_context(db, profile, user.content))
             eligible = _eligible_movements(db, user_id)
+            if metadata:
+                slugs = {str(item.id): item.slug for item in db.scalars(select(Movement))}
+                eligible = [item for item in eligible if equipment_available(
+                    slugs.get(item["id"], ""), profile.coaching_context or {}
+                )]
             provider_conversation_id = conversation.openai_conversation_id
             athlete_request = user.content
         if not eligible:
             _set_state(
                 generation_id,
                 "failed",
-                content="There are no movements with verified readiness available for a plan yet.",
+                content="No movements currently pass your readiness and equipment checks. Log a suitable foundation workout or assessment, then try again. Your onboarding answers remain useful context but cannot prove readiness.",
                 error_code="no_ready_movements",
             )
             terminal_written = True
@@ -168,6 +176,17 @@ def run_plan_generation(
                 candidate = WeeklyPlanCandidate.model_validate(
                     response.output_parsed.model_dump()
                 )
+                if metadata:
+                    from app.schemas.training_plan import PlanOrigin
+                    basis = {
+                        "profile": ["onboarding (self-reported)", "equipment", "availability"],
+                        "goal": ["selected goal", "profile (self-reported)", "movement readiness"],
+                        "progress": ["recent self-attributed workouts", "COACH-03 trends", "movement readiness"],
+                    }[metadata["mode"]]
+                    candidate = candidate.model_copy(update={"origin": PlanOrigin(
+                        mode=metadata["mode"], goal_name=(metadata.get("goal") or {}).get("name"),
+                        based_on=basis, note=metadata.get("note"),
+                    )})
                 with SessionLocal() as db:
                     complete_preview(
                         db, generation_id=generation_id, user_id=user_id,

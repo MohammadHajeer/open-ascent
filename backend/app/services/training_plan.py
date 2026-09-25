@@ -10,12 +10,14 @@ from sqlalchemy.orm import Session
 
 from app.models.coach import CoachGeneration, Conversation, Message
 from app.models.movement import Movement
+from app.models.profile import Profile
 from app.models.training import TrainingPlan, TrainingPlanPreview
 from app.schemas.readiness import ReadinessStatus
 from app.schemas.training_plan import WeeklyPlanCandidate
 from app.services.feature_usage import consume_usage
 from app.services.movement import MovementService
 from app.services.movement_documentation import MovementDocumentationService
+from app.services.plan_modes import equipment_available
 from app.services.readiness import ReadinessService
 from app.services.readiness_evidence import ReadinessEvidenceBuilder
 
@@ -79,6 +81,22 @@ def validate_candidate(
                 )
 
 
+def validate_library_constraints(db: Session, user_id: uuid.UUID, candidate: WeeklyPlanCandidate, metadata: dict | None) -> None:
+    """Apply configured schedule and equipment to Library requests at preview/Save."""
+    if not metadata:
+        return
+    profile = db.get(Profile, user_id)
+    context = profile.coaching_context or {} if profile else {}
+    days = (context.get("availability") or {}).get("days_per_week")
+    if isinstance(days, int) and len(candidate.days) > days:
+        raise PlanValidationError("availability_exceeded", "The plan exceeds your available training days.")
+    for day in candidate.days:
+        for exercise in day.exercises:
+            movement = db.get(Movement, exercise.movement_id)
+            if movement and not equipment_available(movement.slug, context):
+                raise PlanValidationError("equipment_unavailable", f"{movement.name[:80]} needs equipment outside your profile.")
+
+
 def complete_preview(
     db: Session,
     *,
@@ -109,6 +127,7 @@ def complete_preview(
     if generation.status not in {"requesting", "streaming"}:
         raise PlanValidationError("stale_generation", "Plan generation is no longer active.")
     validate_candidate(db, user_id, candidate)
+    validate_library_constraints(db, user_id, candidate, generation.plan_context)
     preview = TrainingPlanPreview(
         user_id=user_id,
         coach_generation_id=generation_id,
@@ -162,6 +181,7 @@ def preview_read(db: Session, preview: TrainingPlanPreview) -> dict:
         "saved_plan_id": str(preview.saved_plan_id) if preview.saved_plan_id else None,
         "title": candidate.title,
         "summary": candidate.summary,
+        "origin": candidate.origin.model_dump(mode="json") if candidate.origin else None,
         "days": [
             {
                 "day_index": day.day_index,
@@ -218,6 +238,7 @@ def save_preview(
     except ValidationError as exc:
         raise PlanValidationError("invalid_preview", "Plan preview is invalid.") from exc
     validate_candidate(db, user_id, candidate)
+    validate_library_constraints(db, user_id, candidate, generation.plan_context)
     saved = TrainingPlan(
         user_id=user_id,
         title=candidate.title,
@@ -264,6 +285,7 @@ def saved_plan_summary(plan: TrainingPlan) -> dict:
         "id": str(plan.id),
         "title": plan.title,
         "summary": candidate.summary,
+        "origin": candidate.origin.model_dump(mode="json") if candidate.origin else None,
         "saved_at": plan.saved_at.isoformat(),
         "training_day_count": len(candidate.days),
         "movement_count": len({

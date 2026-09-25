@@ -12,8 +12,8 @@
 | 3:05–4:10 | Analyses `/dashboard/analyses` → completed detail | Open a prepared Vertical Pull result; show valid/partial/uncertain counts, form findings, and explanation if ready. | “A worker processes the private upload, then the athlete can inspect what was observed and what remains uncertain.” | Preloaded result |
 | 4:10–5:15 | Live Coach `/dashboard/train/live-coach` | Acknowledge safety, start camera, perform one or two controlled reps, show count, variant breakdown, cue, and stop. | “Pose inference stays in this browser. Completed Vertical Pull reps are counted automatically. Width and upper-torso height can yield partial labels when grip is uncertain; local voice clips deliver cues. Pro access is checked by the server.” | Live after device rehearsal; use a short prepared capture if camera is unreliable |
 | 5:15–6:10 | AI Coach `/dashboard/coach` | Ask about Yazan’s recent training or a specific movement. | “Coach can read this athlete’s records and published guides through limited read-only tools.” | Live with a prepared completed conversation fallback |
-| 6:10–7:25 | AI Coach plan action | Use **Generate weekly plan**; inspect the structured preview, then click **Save Plan** only after reviewing it. | “Generation proposes a plan. Saving is a separate athlete choice, and readiness is checked again.” | Live if provider is responsive; preloaded preview fallback |
-| 7:25–7:55 | Library `/dashboard/library` → saved plan | Follow **View saved plan in Library** or open Library, then show the saved plan’s days and rep/hold prescriptions. | “The saved plan is now part of the athlete’s Library, ready to review by day.” | Live |
+| 6:10–7:25 | Library `/dashboard/library` → Generate a new plan | Choose **Build toward a goal** → **Muscle-Up**. Explain that Yazan's current plan should build eligible pulling and support prerequisites instead of prescribing an unready full Muscle-Up. Generate and inspect the structured preview; click **Save Plan** only after reviewing it. | “The goal sets direction. Each prescribed exercise still passes readiness, and saving is a separate choice.” | Live if provider is responsive; preloaded preview fallback |
+| 7:25–7:55 | Library → saved plan | Open the newly saved plan from Library and show its days and rep/hold prescriptions. | “The saved plan is now in the athlete’s Library, ready to review by day.” | Live |
 | 7:55–8:45 | Admin `/admin` | Switch to Mohammad’s prepared admin session; show worker and queue health, then one management view. | “The admin workspace makes processing and recovery visible without exposing athlete controls to ordinary users.” | Preloaded admin tab |
 | 8:45–9:00 | Closing | Return to landing or summary slide. | “Open Ascent turns training, evidence, and guidance into a reviewable next step.” | Preloaded |
 
@@ -29,7 +29,7 @@ Keep signup **visual** unless email confirmation is known to work during the pre
 2. **Dashboard + progress (0:55):** show logged history and measured versus self-reported context.
 3. **Completed analysis (0:55):** show deterministic findings and uncertainty.
 4. **Live Coach (0:40):** show one rehearsed rep or a prepared capture with local inference and classification.
-5. **Coach plan (0:45):** show a prepared preview, explicit save if readiness allows, and the saved plan in Library.
+5. **Library plan (0:45):** select Muscle-Up as a goal, show a prerequisite-oriented preview, explicit Save, and the saved plan in Library.
 6. **Admin + close (0:15):** show worker health and close.
 
 ## Rehearsal checklist
