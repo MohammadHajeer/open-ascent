@@ -14,6 +14,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { assets } from "@/lib/assets";
 import {
+  deleteConversation,
   getConversation,
   listConversations,
   renameConversation,
@@ -60,6 +61,8 @@ export function CoachWorkspace() {
   const sending = useRef(false);
   const selectedRef = useRef<string | null>(null);
   const selectionRevision = useRef(0);
+  // A list refresh already in flight must not resurrect a deleted conversation.
+  const deletedIds = useRef(new Set<string>());
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -80,7 +83,8 @@ export function CoachWorkspace() {
   }, []);
 
   const refreshList = useCallback(async () => {
-    setConversations(await listConversations());
+    const items = await listConversations();
+    setConversations(items.filter((item) => !deletedIds.current.has(item.id)));
   }, []);
 
   useEffect(() => {
@@ -345,6 +349,20 @@ export function CoachWorkspace() {
     );
   }
 
+  async function remove(id: string) {
+    await deleteConversation(id);
+    deletedIds.current.add(id);
+    const index = conversations.findIndex((item) => item.id === id);
+    const remaining = conversations.filter((item) => item.id !== id);
+    setConversations((items) => items.filter((item) => item.id !== id));
+    if (selectedRef.current === id) {
+      // Open the neighbour that moved into its place, or the empty New chat.
+      selectConversation(
+        remaining[Math.min(index, remaining.length - 1)]?.id ?? null,
+      );
+    }
+  }
+
   const messages: DisplayMessage[] = savedMessages.map((message) =>
     activeSnapshot?.id === message.generation_id
       ? {
@@ -408,6 +426,7 @@ export function CoachWorkspace() {
       onSelect={selectConversation}
       onNew={() => selectConversation(null)}
       onRename={rename}
+      onDelete={remove}
       loading={initialLoading}
     />
   );

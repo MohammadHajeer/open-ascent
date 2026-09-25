@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pathlib
 import threading
 import time
 import uuid
@@ -31,7 +32,6 @@ from app.models.training import (
 )
 from app.services import coach
 from app.services.coach_context import build_coach_context
-from app.services.coach_domain import DOMAIN_REDIRECT, classify_coach_request
 from app.services.coach_live import live_hub
 from app.services.feature_usage import FeatureAccessDeniedError
 
@@ -158,90 +158,67 @@ def test_first_send_creates_one_titled_conversation_and_retries_safely(session_f
             coach.create_and_reserve_generation(db, owner, request_id, "Different")
 
 
-@pytest.mark.parametrize(
-    "question",
-    [
-        "How do I improve my Pull-Ups?",
-        "How much rest between heavy sets?",
-        "Are ring rows good for beginners?",
-        "How can I improve wrist mobility for handstands?",
-    ],
+IN_DOMAIN = (
+    "I now can do a one leg frontlever for about 25secs is it good ?",
+    "Is a 25-second one-leg Front Lever good?",
+    "How do I improve my Pull-Ups?",
+    "What is the difference between Pull-Up and Chin-Up?",
+    "I want to achieve a Muscle-Up.",
+    "How often should I train Front Lever?",
+    "What does a false grip mean?",
+    "How long should I hold an L-sit?",
+    "Should I eat more protein on training days?",
 )
-def test_domain_gate_allows_training_questions(question):
-    assert classify_coach_request(question) == "in_domain"
+CAPABILITY = ("Can Open Ascent analyze a Front Lever upload?",)
+UNRELATED = (
+    "Explain React Server Components.",
+    "Who won the World Cup?",
+    "What's the capital of Lebanon?",
+)
+AMBIGUOUS = ("so you can generate a plan for me ?", "dont be harsh", "What about that?")
+CONVERSATIONAL = ("Hello", "Thanks, that helps", "Make it shorter", "Why?")
 
 
 @pytest.mark.parametrize(
-    "question",
-    [
-        "What is freediving?",
-        "Explain Bitcoin.",
-        "Write Python code.",
-        "Who should I vote for?",
-    ],
+    "message", IN_DOMAIN + CAPABILITY + UNRELATED + AMBIGUOUS + CONVERSATIONAL
 )
-def test_domain_gate_redirects_without_answering_unrelated_topic(session_factory, question):
-    assert classify_coach_request(question) == "unrelated"
+def test_scope_is_decided_by_the_single_coach_response(session_factory, message):
+    """No local keyword gate: every non-safety message reaches one Luna request."""
     with session_factory() as db:
         owner = _profile(db)
         conversation, generation, created = coach.create_and_reserve_generation(
-            db, owner, uuid.uuid4(), question
-        )
-        assert created and generation.status == "completed"
-        assert generation.feature_usage_id is None
-        messages = coach.conversation_messages(db, conversation.id)
-        assert len(messages) == 2
-        assert messages[1].content == DOMAIN_REDIRECT
-        assert not any(word in messages[1].content.lower() for word in ("bitcoin", "python", "vote", "freediving"))
-
-
-def test_domain_gate_allows_contextual_and_explicit_training_connections():
-    assert classify_coach_request(
-        "What about wrist mobility?", ["How do I improve my handstand?"]
-    ) == "in_domain"
-    assert classify_coach_request(
-        "Could freediving breath-hold training help my calisthenics?"
-    ) == "adjacent_but_relevant"
-    assert classify_coach_request(
-        "What about that?", ["How do I improve my Pull-Ups?"]
-    ) == "adjacent_but_relevant"
-    assert classify_coach_request("What is freediving?", ["How do I improve my Pull-Ups?"]) == "unrelated"
-
-
-@pytest.mark.parametrize(
-    "message",
-    [
-        "Hello",
-        "Hello coach!",
-        "Hi!",
-        "Hey",
-        "Good morning",
-        "How are you?",
-        "Thanks",
-        "Thanks, that helps",
-        "Got it",
-        "Okay",
-        "Okay, thanks",
-        "That makes sense",
-        "Can you explain that again?",
-        "Make it shorter",
-        "Continue",
-        "Why?",
-    ],
-)
-def test_domain_gate_allows_ordinary_conversation(message):
-    assert classify_coach_request(message) == "in_domain"
-
-
-def test_greeting_reaches_coach_instead_of_domain_clarification(session_factory):
-    with session_factory() as db:
-        owner = _profile(db)
-        conversation, generation, created = coach.create_and_reserve_generation(
-            db, owner, uuid.uuid4(), "Hello"
+            db, owner, uuid.uuid4(), message
         )
         assert created and generation.status == "reserved"
-        assert coach.conversation_messages(db, conversation.id)[-1].content == ""
-    assert classify_coach_request("Hey, explain Bitcoin") == "unrelated"
+        assistant = coach.conversation_messages(db, conversation.id)[-1]
+        assert assistant.content == "" and assistant.status == "streaming"
+
+
+def test_no_canned_scope_reply_remains():
+    source = pathlib.Path(coach.__file__).read_text(encoding="utf-8")
+    assert "Is this about how it relates" not in source
+    assert "classify_coach_request" not in source
+    assert not (pathlib.Path(coach.__file__).parent / "coach_domain.py").exists()
+
+
+def test_coach_prompt_separates_domain_from_analyzer_support():
+    instructions = coach.COACH_INSTRUCTIONS
+    for guidance in (
+        "Front Lever",
+        "frontlever, FL",
+        "Never ask whether an obviously training-related message is about training",
+        "broader than Open Ascent's video analysis",
+        "never what you can discuss",
+        "answer honestly from that data",
+        "Word it naturally for the conversation instead of repeating a stock sentence",
+        "Do not answer, define, partly explain, or ask follow-up questions about the unrelated topic",
+        "Ask a clarifying question only when you genuinely cannot tell",
+        "Answer general questions directly without tools",
+        "Call read-only tools only when the answer depends on personal records",
+        "unrelated",
+    ):
+        assert guidance in instructions
+    assert "silently classify" not in instructions
 
 
 def test_coach_prompt_contract_for_tone_and_conversation():
@@ -801,10 +778,9 @@ def test_first_send_api_and_owner_only_rename(session_factory, monkeypatch):
                 f"/coach/conversations/{conversation_id}/messages",
                 json={"client_request_id": str(uuid.uuid4()), "content": "What is freediving?"},
             )
-            assert unrelated.status_code == 202
-            assert len(started) == 1
-            with session_factory() as db:
-                assert coach.conversation_messages(db, uuid.UUID(conversation_id))[-1].content == DOMAIN_REDIRECT
+            # Luna writes the boundary reply; there is no canned local answer.
+            assert unrelated.status_code == 202 and unrelated.json()["created"] is True
+            assert len(started) == 2
             renamed = client.patch(
                 f"/coach/conversations/{conversation_id}",
                 json={"title": "False Grip Practice"},
@@ -866,3 +842,372 @@ def test_live_sse_deltas_arrive_without_intermediate_database_writes(
             assert db_content_at_partial == [""]
     finally:
         app.dependency_overrides.pop(require_athlete, None)
+
+
+def _streaming_client(calls, events_for):
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            self.conversations = SimpleNamespace(
+                create=lambda: SimpleNamespace(id=f"conv_{uuid.uuid4().hex[:6]}")
+            )
+            self.responses = SimpleNamespace(create=self.create_response)
+
+        def create_response(self, **kwargs):
+            calls.append(kwargs)
+            return events_for(len(calls))
+
+    return FakeClient
+
+
+def test_first_delta_is_published_before_slow_streaming_saves(session_factory, monkeypatch):
+    """A slow database must not sit between the provider and the browser."""
+    published = []
+    real_set_state = coach._set_state
+
+    def slow_set_state(generation_id, status, **kwargs):
+        if status not in coach.TERMINAL:
+            time.sleep(0.4)
+        real_set_state(generation_id, status, **kwargs)
+
+    def events(_count):
+        response = SimpleNamespace(id="resp_fast", output_text="Nice hold.", output=[])
+        yield SimpleNamespace(type="response.created", response=response)
+        yield SimpleNamespace(type="response.output_text.delta", delta="Nice hold.")
+        yield SimpleNamespace(type="response.completed", response=response)
+
+    calls = []
+    monkeypatch.setattr(coach, "OpenAI", _streaming_client(calls, events))
+    monkeypatch.setattr(coach, "_set_state", slow_set_state)
+    real_publish = live_hub.publish
+
+    def recording_publish(generation_id, status, content, error_code=None):
+        published.append((time.monotonic(), status, content))
+        real_publish(generation_id, status, content, error_code)
+
+    monkeypatch.setattr(live_hub, "publish", recording_publish)
+    with session_factory() as db:
+        owner = _profile(db)
+        conversation = Conversation(
+            user_id=owner.id, title="New chat", openai_conversation_id="conv_ready"
+        )
+        db.add(conversation)
+        db.commit()
+        generation, _ = coach.reserve_generation(
+            db, owner, conversation.id, uuid.uuid4(), "Is a 25-second one-leg Front Lever good?"
+        )
+        started = time.monotonic()
+        coach.run_generation(generation.id)
+        first_text = next(at for at, _status, content in published if content)
+        assert first_text - started < 0.3
+        db.expire_all()
+        saved = db.get(CoachGeneration, generation.id)
+        assert saved.status == "completed" and saved.provider_response_id == "resp_fast"
+        assert db.get(Message, generation.assistant_message_id).content == "Nice hold."
+    assert calls[0]["reasoning"] == {"effort": "low"}
+    assert calls[0]["max_output_tokens"] == coach.COACH_MAX_OUTPUT_TOKENS
+    assert len(calls) == 1
+
+
+def test_late_streaming_save_never_overwrites_terminal_state(session_factory):
+    with session_factory() as db:
+        owner = _profile(db)
+        conversation = Conversation(user_id=owner.id, title="New chat")
+        db.add(conversation)
+        db.commit()
+        generation, _ = coach.reserve_generation(
+            db, owner, conversation.id, uuid.uuid4(), "How should I train?"
+        )
+    coach._set_state(generation.id, "failed", content="Partial", error_code="provider_failed")
+    coach._set_state(generation.id, "streaming", content="Older partial")
+    with session_factory() as db:
+        assert db.get(CoachGeneration, generation.id).status == "failed"
+        assert db.get(Message, generation.assistant_message_id).content == "Partial"
+
+
+def test_generation_runs_once_even_if_started_twice(session_factory, monkeypatch):
+    calls = []
+
+    def events(_count):
+        response = SimpleNamespace(id=f"resp_{uuid.uuid4().hex[:6]}", output_text="Ok", output=[])
+        yield SimpleNamespace(type="response.completed", response=response)
+
+    monkeypatch.setattr(coach, "OpenAI", _streaming_client(calls, events))
+    with session_factory() as db:
+        owner = _profile(db)
+        conversation = Conversation(user_id=owner.id, title="New chat")
+        db.add(conversation)
+        db.commit()
+        generation, _ = coach.reserve_generation(
+            db, owner, conversation.id, uuid.uuid4(), "What does a false grip mean?"
+        )
+    coach.run_generation(generation.id)
+    coach.run_generation(generation.id)
+    assert len(calls) == 1
+
+
+def test_timing_marks_stay_server_side(session_factory, monkeypatch):
+    from app.core.config import settings
+    from app.services import coach_timing
+
+    started = []
+    monkeypatch.setattr(
+        coach, "start_generation", lambda generation_id, _user_id: started.append(generation_id)
+    )
+    with session_factory() as db:
+        owner = _profile(db)
+
+    def database():
+        with session_factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = database
+    app.dependency_overrides[require_athlete] = lambda: owner
+    try:
+        with TestClient(app) as client:
+            sent = client.post(
+                "/coach/conversations/messages",
+                json={"client_request_id": str(uuid.uuid4()), "content": "What is a false grip?"},
+            )
+            assert sent.status_code == 202
+            assert set(sent.json()) == {"conversation", "generation_id", "created"}
+            assert "marks_ms" not in sent.text
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(require_athlete, None)
+    monkeypatch.setattr(settings, "app_env", "production")
+    monkeypatch.setattr(settings, "coach_timing_log", False)
+    assert coach_timing.enabled() is False
+    assert coach_timing.request_timeline() is None
+    monkeypatch.setattr(settings, "coach_timing_log", True)
+    assert coach_timing.enabled() is True
+
+
+def test_slow_durable_poll_does_not_hold_back_live_text(session_factory, monkeypatch):
+    monkeypatch.setattr(coach_api, "SessionLocal", session_factory)
+    monkeypatch.setattr(coach_api, "DURABLE_POLL_SECONDS", 0.05)
+    real_read = coach_api._read_generation
+    reads = []
+
+    def slow_read(*args):
+        reads.append(args)
+        if len(reads) > 1:
+            time.sleep(1.5)
+        return real_read(*args)
+
+    monkeypatch.setattr(coach_api, "_read_generation", slow_read)
+    with session_factory() as db:
+        owner = _profile(db)
+        conversation = Conversation(user_id=owner.id, title="New chat")
+        db.add(conversation)
+        db.commit()
+        generation, _ = coach.reserve_generation(
+            db, owner, conversation.id, uuid.uuid4(), "How should I train?"
+        )
+
+    def producer():
+        time.sleep(0.25)
+        live_hub.publish(generation.id, "streaming", "Live text")
+        time.sleep(0.05)
+        coach._set_state(generation.id, "completed", content="Live text done")
+
+    thread = threading.Thread(target=producer)
+    app.dependency_overrides[require_athlete] = lambda: owner
+    try:
+        with TestClient(app) as client:
+            thread.start()
+            started = time.monotonic()
+            response = client.get(
+                f"/coach/conversations/{conversation.id}/generations/{generation.id}/events"
+            )
+            elapsed = time.monotonic() - started
+            thread.join(timeout=2)
+            assert '"content": "Live text"' in response.text
+            assert '"content": "Live text done"' in response.text
+            assert len(reads) >= 2  # a slow durable poll was in flight
+            assert elapsed < 1.0
+    finally:
+        app.dependency_overrides.pop(require_athlete, None)
+
+
+def _delete_fixture(db: Session):
+    owner, stranger = _profile(db), _profile(db)
+    doomed = Conversation(
+        user_id=owner.id, title="Front Lever", openai_conversation_id="conv_doomed"
+    )
+    kept = Conversation(user_id=owner.id, title="Pull-Ups")
+    db.add_all((doomed, kept))
+    db.commit()
+    for conversation, question, response_id in (
+        (doomed, "Build me a plan", "resp_doomed"),
+        (kept, "Pull-Up tips", "resp_kept"),
+    ):
+        generation, _ = coach.reserve_generation(
+            db, owner, conversation.id, uuid.uuid4(), question
+        )
+        coach._set_state(
+            generation.id, "completed", provider_response_id=response_id, content="Done"
+        )
+    doomed_generation = db.scalar(
+        select(CoachGeneration).where(CoachGeneration.conversation_id == doomed.id)
+    )
+    saved_plan = TrainingPlan(user_id=owner.id, title="Saved", plan_document={"days": []})
+    db.add(saved_plan)
+    db.flush()
+    db.add(
+        TrainingPlanPreview(
+            user_id=owner.id,
+            coach_generation_id=doomed_generation.id,
+            plan_document={"days": []},
+            saved_plan_id=saved_plan.id,
+        )
+    )
+    db.commit()
+    return owner, stranger, doomed, kept, saved_plan
+
+
+def test_delete_conversation_is_owner_scoped_and_complete(session_factory, monkeypatch):
+    cleanups = []
+    monkeypatch.setattr(coach, "start_provider_cleanup", cleanups.append)
+    with session_factory() as db:
+        owner, stranger, doomed, kept, saved_plan = _delete_fixture(db)
+    identity = {"profile": stranger}
+
+    def database():
+        with session_factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = database
+    app.dependency_overrides[require_athlete] = lambda: identity["profile"]
+    try:
+        with TestClient(app) as client:
+            # Not-owned and missing look identical and delete nothing.
+            foreign = client.delete(f"/coach/conversations/{doomed.id}")
+            missing = client.delete(f"/coach/conversations/{uuid.uuid4()}")
+            assert foreign.status_code == missing.status_code == 404
+            assert foreign.json() == missing.json()
+            assert cleanups == []
+            with session_factory() as db:
+                assert db.get(Conversation, doomed.id) is not None
+
+            identity["profile"] = owner
+            deleted = client.delete(f"/coach/conversations/{doomed.id}")
+            assert deleted.status_code == 204 and deleted.content == b""
+            assert cleanups == [["conv_doomed", "resp_doomed"]]
+            # A repeat is a safe not-found, so retries are harmless.
+            assert client.delete(f"/coach/conversations/{doomed.id}").status_code == 404
+            assert client.get(f"/coach/conversations/{doomed.id}").status_code == 404
+            listed = client.get("/coach/conversations").json()
+            assert [item["id"] for item in listed] == [str(kept.id)]
+
+            with session_factory() as db:
+                for model, column in (
+                    (Message, Message.conversation_id),
+                    (CoachGeneration, CoachGeneration.conversation_id),
+                ):
+                    remaining = select(func.count()).select_from(model).where(column == doomed.id)
+                    assert db.scalar(remaining) == 0
+                assert db.scalar(select(func.count(TrainingPlanPreview.id))) == 0
+                assert db.get(TrainingPlan, saved_plan.id) is not None
+                assert len(coach.conversation_messages(db, kept.id)) == 2
+
+            # Rename and New Chat still work after a deletion.
+            renamed = client.patch(f"/coach/conversations/{kept.id}", json={"title": "Pull-Up Plan"})
+            assert renamed.json()["title"] == "Pull-Up Plan"
+            assert client.post("/coach/conversations").status_code == 201
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(require_athlete, None)
+
+
+def test_delete_waits_for_in_flight_generation(session_factory, monkeypatch):
+    with session_factory() as db:
+        owner = _profile(db)
+        conversation = Conversation(user_id=owner.id, title="New chat")
+        db.add(conversation)
+        db.commit()
+        generation, _ = coach.reserve_generation(
+            db, owner, conversation.id, uuid.uuid4(), "How should I train?"
+        )
+        ids = (owner.id, conversation.id, generation.id, generation.assistant_message_id)
+        with pytest.raises(RuntimeError):
+            coach.delete_conversation(db, ids[0], ids[1])
+    owner_id, conversation_id, generation_id, assistant_id = ids
+    with session_factory() as db:
+        # The reply keeps streaming into intact rows.
+        assert db.get(CoachGeneration, generation_id).status == "reserved"
+    coach._set_state(generation_id, "streaming", content="Partial")
+    coach._set_state(generation_id, "completed", provider_response_id="resp_1", content="Done")
+    with session_factory() as db:
+        assert db.get(Message, assistant_id).content == "Done"
+        assert coach.delete_conversation(db, owner_id, conversation_id) == ["resp_1"]
+
+
+def test_delete_api_reports_in_flight_conflict(session_factory, monkeypatch):
+    monkeypatch.setattr(coach, "start_generation", lambda *_args: None)
+    with session_factory() as db:
+        owner = _profile(db)
+
+    def database():
+        with session_factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = database
+    app.dependency_overrides[require_athlete] = lambda: owner
+    try:
+        with TestClient(app) as client:
+            sent = client.post(
+                "/coach/conversations/messages",
+                json={"client_request_id": str(uuid.uuid4()), "content": "Front Lever tips"},
+            ).json()
+            conversation_id = sent["conversation"]["id"]
+            conflict = client.delete(f"/coach/conversations/{conversation_id}")
+            assert conflict.status_code == 409
+            assert client.get(f"/coach/conversations/{conversation_id}").status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(require_athlete, None)
+
+
+def test_delete_recovers_a_lost_worker_first(session_factory, monkeypatch):
+    settled = []
+    monkeypatch.setattr(
+        coach, "release_usage", lambda _db, usage_id, **_kw: settled.append(usage_id)
+    )
+    with session_factory() as db:
+        owner = _profile(db)
+        conversation = Conversation(user_id=owner.id, title="New chat")
+        db.add(conversation)
+        db.commit()
+        generation, _ = coach.reserve_generation(
+            db, owner, conversation.id, uuid.uuid4(), "How should I train?"
+        )
+        usage_id = uuid.uuid4()
+        generation.feature_usage_id = usage_id
+        generation.updated_at = datetime.now(UTC) - timedelta(minutes=6)
+        db.commit()
+        assert coach.delete_conversation(db, owner.id, conversation.id) == []
+        assert settled == [usage_id]
+        assert db.get(Conversation, conversation.id) is None
+
+
+def test_provider_cleanup_deletes_conversation_and_responses(monkeypatch, caplog):
+    from openai import OpenAIError
+
+    deleted = []
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            self.conversations = SimpleNamespace(
+                delete=lambda cid: deleted.append(("conversation", cid))
+            )
+            self.responses = SimpleNamespace(delete=self.delete_response)
+
+        def delete_response(self, rid):
+            if rid == "resp_gone":
+                raise OpenAIError("not found")
+            deleted.append(("response", rid))
+
+    monkeypatch.setattr(coach, "OpenAI", FakeClient)
+    coach.delete_provider_records(["conv_1", "resp_gone", "resp_2"])
+    assert deleted == [("conversation", "conv_1"), ("response", "resp_2")]
+    assert "resp_gone" in caplog.text

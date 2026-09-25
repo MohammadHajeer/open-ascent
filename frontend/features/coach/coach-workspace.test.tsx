@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CoachWorkspace } from "./coach-workspace";
@@ -16,6 +16,7 @@ vi.mock("./api", () => ({
   sendFirstMessage: vi.fn(),
   sendMessage: vi.fn(),
   renameConversation: vi.fn(),
+  deleteConversation: vi.fn(),
   streamGeneration: vi.fn(),
   getPlanPreview: vi.fn(),
   savePlanPreview: vi.fn(),
@@ -41,6 +42,7 @@ beforeEach(() => {
   vi.mocked(api.sendFirstMessage).mockResolvedValue({ conversation: first, generation_id: "generation-1", created: true });
   vi.mocked(api.sendMessage).mockResolvedValue({ generation_id: "generation-1", created: true });
   vi.mocked(api.renameConversation).mockResolvedValue(first);
+  vi.mocked(api.deleteConversation).mockResolvedValue(undefined);
   vi.mocked(api.streamGeneration).mockImplementation(async () => {});
   vi.mocked(api.getPlanPreview).mockResolvedValue(planPreview);
   vi.mocked(api.savePlanPreview).mockResolvedValue({ id: "saved-1", title: "Weekly strength", saved_at: "2026-09-23" });
@@ -201,13 +203,92 @@ describe("Coach workspace", () => {
     const longTitle = "For a beginner learning ring rows, give a heading, five concise steps";
     expect(shortConversationTitle(longTitle)).toMatch(/^For a beginner learning ring rows.*…$/);
     expect(shortConversationTitle(longTitle).length).toBeLessThanOrEqual(48);
-    render(<ConversationSidebar conversations={[{ ...first, title: longTitle }]} selected="first" onSelect={vi.fn()} onNew={vi.fn()} onRename={onRename} />);
+    render(<ConversationSidebar conversations={[{ ...first, title: longTitle }]} selected="first" onSelect={vi.fn()} onNew={vi.fn()} onRename={onRename} onDelete={vi.fn()} />);
     expect(screen.getByText(/For a beginner learning ring rows/)).toBeTruthy();
     fireEvent.click(screen.getByLabelText(`Options for ${longTitle}`));
     fireEvent.click(await screen.findByText("Rename"));
     fireEvent.change(screen.getByLabelText("Conversation title"), { target: { value: "Ring Row Basics" } });
     fireEvent.click(screen.getByLabelText("Save title"));
     await waitFor(() => expect(onRename).toHaveBeenCalledWith("first", "Ring Row Basics"));
+  });
+
+it("requires explicit confirmation before deleting, and cancel keeps the conversation", async () => {
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    render(<ConversationSidebar conversations={[first, second]} selected="first" onSelect={vi.fn()} onNew={vi.fn()} onRename={vi.fn()} onDelete={onDelete} />);
+    fireEvent.click(screen.getByLabelText(`Options for ${second.title}`));
+    fireEvent.click(await screen.findByText("Delete"));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog.textContent).toContain("Delete this conversation?");
+    expect(dialog.textContent).toContain("removed from your Coach history");
+    expect(onDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(onDelete).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByLabelText(`Options for ${second.title}`));
+    fireEvent.click(await screen.findByText("Delete"));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(onDelete).toHaveBeenCalledWith("second"));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+  });
+
+  it("shows a loading state and keeps the dialog open with the error when deletion fails", async () => {
+    const attempt = deferred<void>();
+    const onDelete = vi.fn().mockReturnValue(attempt.promise);
+    render(<ConversationSidebar conversations={[first]} selected="first" onSelect={vi.fn()} onNew={vi.fn()} onRename={vi.fn()} onDelete={onDelete} />);
+    fireEvent.click(screen.getByLabelText(`Options for ${first.title}`));
+    fireEvent.click(await screen.findByText("Delete"));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }));
+    const busy = await screen.findByRole("button", { name: "Deleting…" });
+    expect(busy.hasAttribute("disabled")).toBe(true);
+    await act(async () => attempt.reject(new Error("This conversation still has a reply in progress. Try again when it finishes.")));
+    expect((await screen.findByRole("alert")).textContent).toContain("reply in progress");
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("deleting the active conversation removes it and opens the next one", async () => {
+    vi.mocked(api.listConversations).mockResolvedValue([first, second]);
+    vi.mocked(api.getConversation).mockImplementation(async id => ({ ...(id === first.id ? first : second), messages: [{ ...user, content: id === first.id ? "Help my Pull-Ups" : "Front lever holds" }] }));
+    render(<CoachWorkspace />);
+    await screen.findByText("Help my Pull-Ups");
+    fireEvent.click(screen.getByLabelText(`Options for ${first.title}`));
+    fireEvent.click(await screen.findByText("Delete"));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(api.deleteConversation).toHaveBeenCalledWith("first"));
+    expect(await screen.findByText("Front lever holds")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: first.title })).toBeNull();
+    expect(window.localStorage.getItem("open-ascent-coach-conversation")).toBe("second");
+  });
+
+  it("deleting the last conversation returns to the empty New chat state", async () => {
+    vi.mocked(api.listConversations).mockResolvedValue([first]);
+    vi.mocked(api.getConversation).mockResolvedValue({ ...first, messages: [user] });
+    render(<CoachWorkspace />);
+    await screen.findByText("Help my Pull-Ups");
+    fireEvent.click(screen.getByLabelText(`Options for ${first.title}`));
+    fireEvent.click(await screen.findByText("Delete"));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }));
+    expect(await screen.findByText("Ask your Open Ascent Coach")).toBeTruthy();
+    expect(screen.queryByText("Help my Pull-Ups")).toBeNull();
+    expect(window.localStorage.getItem("open-ascent-coach-conversation")).toBeNull();
+  });
+
+  it("deleting another conversation keeps the open one and a stale refresh cannot restore it", async () => {
+    vi.mocked(api.listConversations).mockResolvedValue([first, second]);
+    vi.mocked(api.getConversation).mockResolvedValue({ ...first, messages: [user] });
+    render(<CoachWorkspace />);
+    await screen.findByText("Help my Pull-Ups");
+    fireEvent.click(screen.getByLabelText(`Options for ${second.title}`));
+    fireEvent.click(await screen.findByText("Delete"));
+    fireEvent.click(within(await screen.findByRole("alertdialog")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: second.title })).toBeNull());
+    expect(screen.getByText("Help my Pull-Ups")).toBeTruthy();
+    // A send refreshes the list; a response computed before the delete still lists it.
+    vi.mocked(api.sendMessage).mockResolvedValue({ generation_id: "generation-2", created: true });
+    fireEvent.change(screen.getByLabelText("Message your coach"), { target: { value: "Next step?" } });
+    fireEvent.click(screen.getByLabelText("Send message"));
+    await waitFor(() => expect(api.listConversations).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("button", { name: second.title })).toBeNull();
   });
 
   it("does not force scroll to bottom after manual scroll-up", () => {

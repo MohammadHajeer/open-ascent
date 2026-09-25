@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from datetime import UTC, datetime, timedelta
-from typing import Literal
+from datetime import UTC, datetime
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sse_starlette.sse import EventSourceResponse
@@ -16,17 +16,22 @@ from app.db.database import DbSession, SessionLocal
 from app.models.coach import CoachGeneration, Conversation, Message
 from app.models.training import TrainingPlanPreview
 from app.services import coach as service
+from app.services import coach_timing as timing
 from app.services.coach_live import LiveSnapshot, live_hub
 from app.services.entitlements import UnconfiguredAllowanceError
 from app.services.feature_usage import (
     FeatureAccessDeniedError,
     QuotaExceededError,
-    consume_usage,
-    release_usage,
 )
 
 router = APIRouter(prefix="/coach/conversations", tags=["coach"])
 TERMINAL = ("completed", "failed", "interrupted")
+# Durable reads recover reconnects and other workers; while this process holds
+# a live snapshot they only guard against a lost worker, so they can be rare.
+DURABLE_POLL_SECONDS = 0.75
+DURABLE_POLL_WITH_LIVE_SECONDS = 5.0
+# Declared before the profile parameter so its clock starts ahead of auth.
+RequestTimeline = Annotated[timing.CoachTimeline | None, Depends(timing.request_timeline)]
 
 
 class SendInput(BaseModel):
@@ -90,7 +95,11 @@ def create_conversation(profile: AthleteProfile, db: DbSession) -> dict:
 
 
 @router.post("/messages", status_code=202)
-def send_first_message(payload: SendInput, profile: AthleteProfile, db: DbSession) -> dict:
+def send_first_message(
+    clock: RequestTimeline, payload: SendInput, profile: AthleteProfile, db: DbSession
+) -> dict:
+    timing.activate(clock)
+    timing.mark("auth_resolved")
     content = payload.content.strip()
     if not content:
         raise HTTPException(422, "Message cannot be blank.")
@@ -111,13 +120,25 @@ def send_first_message(payload: SendInput, profile: AthleteProfile, db: DbSessio
             if payload.kind == "plan"
             else "AI Coach requires an available Pro entitlement.",
         ) from exc
-    if created and generation.status == "reserved":
-        service.start_generation(generation.id, profile.id)
+    _start(generation, created, profile.id, clock)
     return {
         "conversation": _conversation(conversation),
         "generation_id": str(generation.id),
         "created": created,
     }
+
+
+def _start(
+    generation: CoachGeneration,
+    created: bool,
+    user_id: uuid.UUID,
+    clock: timing.CoachTimeline | None,
+) -> None:
+    if created and generation.status == "reserved":
+        timing.attach(generation.id, clock)
+        service.start_generation(generation.id, user_id)
+    else:
+        timing.finish()
 
 
 @router.get("/{conversation_id}")
@@ -184,13 +205,30 @@ def rename_conversation(
     return _conversation(conversation)
 
 
+@router.delete("/{conversation_id}", status_code=204)
+def delete_conversation(
+    conversation_id: uuid.UUID, profile: AthleteProfile, db: DbSession
+) -> None:
+    try:
+        provider_ids = service.delete_conversation(db, profile.id, conversation_id)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    if provider_ids is None:
+        # Same response for missing and not-owned conversations.
+        raise HTTPException(404, "Conversation not found.")
+    service.start_provider_cleanup(provider_ids)
+
+
 @router.post("/{conversation_id}/messages", status_code=202)
 def send_message(
+    clock: RequestTimeline,
     conversation_id: uuid.UUID,
     payload: SendInput,
     profile: AthleteProfile,
     db: DbSession,
 ) -> dict:
+    timing.activate(clock)
+    timing.mark("auth_resolved")
     try:
         generation, created = service.reserve_generation(
             db,
@@ -217,8 +255,7 @@ def send_message(
         ) from exc
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc
-    if created and generation.status == "reserved":
-        service.start_generation(generation.id, profile.id)
+    _start(generation, created, profile.id, clock)
     return {"generation_id": str(generation.id), "created": created}
 
 
@@ -237,22 +274,7 @@ def _read_generation(
         )
         if generation is None:
             return None
-        if generation.status in service.ACTIVE and generation.updated_at.replace(
-            tzinfo=UTC
-        ) < datetime.now(UTC) - timedelta(minutes=5):
-            prior_status = generation.status
-            generation.status = "interrupted"
-            generation.error_code = "worker_lost"
-            db.get(Message, generation.assistant_message_id).status = "interrupted"
-            if generation.feature_usage_id:
-                if prior_status == "reserved":
-                    release_usage(
-                        db,
-                        generation.feature_usage_id,
-                        reason="worker_lost_before_request",
-                    )
-                else:
-                    consume_usage(db, generation.feature_usage_id)
+        if service.recover_lost_generation(db, generation):
             db.commit()
         return _generation(generation, db.get(Message, generation.assistant_message_id))
 
@@ -274,6 +296,7 @@ async def generation_events(
     profile: AthleteProfile,
     request: Request,
 ) -> EventSourceResponse:
+    timing.mark_generation(generation_id, "sse_auth_resolved")
     durable = await asyncio.to_thread(
         _read_generation, profile.id, conversation_id, generation_id
     )
@@ -290,6 +313,10 @@ async def generation_events(
     async def events():
         previous = None
         current, queue = live_hub.subscribe(generation_id)
+        loop = asyncio.get_running_loop()
+        live = asyncio.ensure_future(queue.get())
+        refresh: asyncio.Future | None = None
+        refreshed_at = loop.time()
         try:
             value = prefer_live(durable, current)
             while not await request.is_disconnected():
@@ -297,21 +324,43 @@ async def generation_events(
                 if signature != previous:
                     yield {"event": "snapshot", "data": json.dumps(value)}
                     previous = signature
+                    if value["content"]:
+                        timing.mark_generation(generation_id, "first_sse_text_sent")
                 if value["status"] in TERMINAL:
                     return
-                try:
-                    # Same-process deltas arrive immediately. On another worker,
-                    # periodic durable reads still allow reconnect and recovery.
-                    latest = await asyncio.wait_for(queue.get(), timeout=0.75)
-                    value = latest.payload()
-                except TimeoutError:
-                    saved = await asyncio.to_thread(
-                        _read_generation, profile.id, conversation_id, generation_id
+                # Same-process deltas arrive immediately. The durable read runs
+                # beside the live queue rather than in front of it, so a slow
+                # database never holds back streamed text.
+                interval = (
+                    DURABLE_POLL_WITH_LIVE_SECONDS
+                    if live_hub.current(generation_id)
+                    else DURABLE_POLL_SECONDS
+                )
+                if refresh is None and loop.time() - refreshed_at >= interval:
+                    refresh = asyncio.ensure_future(
+                        asyncio.to_thread(
+                            _read_generation, profile.id, conversation_id, generation_id
+                        )
                     )
+                done, _ = await asyncio.wait(
+                    {live, refresh} - {None},
+                    timeout=interval,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if live in done:
+                    value = live.result().payload()
+                    live = asyncio.ensure_future(queue.get())
+                if refresh is not None and refresh in done:
+                    saved = refresh.result()
+                    refresh = None
+                    refreshed_at = loop.time()
                     if saved is None:
                         return
                     value = prefer_live(saved, live_hub.current(generation_id))
         finally:
+            live.cancel()
+            if refresh is not None:
+                refresh.cancel()
             live_hub.unsubscribe(generation_id, queue)
 
     return EventSourceResponse(

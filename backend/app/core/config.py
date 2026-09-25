@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     openai_api_key: str
     openai_model: str
     openai_coach_model: str = "gpt-6-luna"
+    # Chat replies only; plan generation keeps the provider default. "low" roughly
+    # halves time to first token versus the provider default ("medium").
+    openai_coach_reasoning_effort: Literal["none", "low", "medium", "high"] = "low"
+    # Coach latency marks are always logged outside production; opt in there.
+    coach_timing_log: bool = False
     openai_visual_classifier_enabled: bool = True
     openai_visual_classifier_model: str = "gpt-6-luna"
     openai_visual_classifier_timeout_seconds: float = 30.0

@@ -1,7 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Check, MoreHorizontal, Pencil, Plus, X } from "lucide-react";
+import { Check, MoreHorizontal, Pencil, Plus, Trash2, X } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -19,6 +28,7 @@ export function ConversationSidebar({
   onSelect,
   onNew,
   onRename,
+  onDelete,
   loading = false,
 }: {
   conversations: Conversation[];
@@ -26,11 +36,29 @@ export function ConversationSidebar({
   onSelect: (id: string) => void;
   onNew: () => void;
   onRename: (id: string, title: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
   loading?: boolean;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<Conversation | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function confirmDelete() {
+    if (!confirming || deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await onDelete(confirming.id);
+      setConfirming(null);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Could not delete the conversation.");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function saveTitle() {
     if (!editing || !title.trim()) return;
@@ -79,12 +107,30 @@ export function ConversationSidebar({
               <DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" aria-label={`Options for ${item.title}`} className="mr-1 text-foreground-faint opacity-100 md:opacity-0 md:focus:opacity-100 md:group-hover:opacity-100 data-popup-open:opacity-100" />}><MoreHorizontal className="size-3.5" /></DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-36">
                 <DropdownMenuItem onClick={() => { setTitle(item.title); setEditing(item.id); setRenameError(null); }}><Pencil className="size-3.5" />Rename</DropdownMenuItem>
+                <DropdownMenuItem variant="destructive" onClick={() => { setConfirming(item); setDeleteError(null); }}><Trash2 className="size-3.5" />Delete</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         ))}
         {!loading && !conversations.length && <p className="px-2 py-4 text-sm leading-6 text-foreground-faint">Start a conversation to keep your coaching notes together.</p>}
       </nav>
+      <AlertDialog open={confirming !== null} onOpenChange={open => { if (!open && !deleting) setConfirming(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this conversation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              “{shortConversationTitle(confirming?.title ?? "")}” and its messages will be removed from your Coach history. This can’t be undone. Training plans you already saved are kept.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {deleteError && <p role="alert" className="text-sm text-destructive">{deleteError}</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <Button variant="destructive" disabled={deleting} onClick={() => void confirmDelete()}>
+              {deleting ? "Deleting…" : "Delete"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

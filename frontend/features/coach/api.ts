@@ -53,6 +53,21 @@ export const renameConversation = (id: string, title: string) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ title }),
   });
+export async function deleteConversation(id: string): Promise<void> {
+  const response = await authApiRequest(`/coach/conversations/${id}`, {
+    method: "DELETE",
+  });
+  // 404 means it is already gone, which is the outcome the athlete asked for.
+  if (response.ok || response.status === 404) return;
+  if (response.status === 409)
+    throw new Error(
+      "This conversation still has a reply in progress. Try again when it finishes.",
+    );
+  const body = (await response.json().catch(() => null)) as {
+    error?: { message?: string };
+  } | null;
+  throw new Error(body?.error?.message ?? "Could not delete the conversation.");
+}
 export const getPlanPreview = (id: string) =>
   authApiFetch<PlanPreview>(`/coach/plans/previews/${id}`, {
     cache: "no-store",

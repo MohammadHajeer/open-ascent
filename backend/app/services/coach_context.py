@@ -112,6 +112,11 @@ def build_coach_context(db: Session, profile: Profile, question: str) -> str:
 
     # Exact movement name matching keeps unrelated evidence out of model input.
     movements = list(db.scalars(select(Movement).order_by(Movement.name)))
+    # Product capability, not athlete evidence: what the analyzer can measure today.
+    result["open_ascent_analysis_support"] = {
+        "upload": [m.name for m in movements if getattr(m, "upload_analysis_supported", False)],
+        "live_coach": [m.name for m in movements if getattr(m, "live_coach_supported", False)],
+    }
     avoided = {str(value) for value in context.get("avoid_movement_ids", [])}
     avoided_names = [m.name for m in movements if str(m.id) in avoided][:12]
     if avoided_names:
