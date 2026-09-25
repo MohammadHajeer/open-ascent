@@ -38,7 +38,7 @@ In Supabase **Authentication → Hooks → Custom Access Token**, enable the Pos
 
 ## Run locally
 
-From the repository root, `pnpm dev` starts Next.js (`localhost:3000`), FastAPI (`localhost:8000`), the analysis/explanation/cleanup worker group, and Stripe CLI forwarding. First install and authenticate the Stripe CLI, obtain a local webhook signing secret with `stripe listen --print-secret`, put it in the ignored `backend/.env`, and restart the backend after changing it.
+From the repository root, `pnpm dev` starts Next.js (`localhost:3000`), FastAPI (`localhost:8000`), the analysis/explanation/cleanup worker group, and Stripe CLI forwarding. Stripe forwarding is optional for general development: if the listener fails, the other processes keep running and the terminal prints a diagnostic. A backend or worker failure still stops the dev process group. For local subscription testing, install and authenticate the Stripe CLI (`stripe login`), obtain a local webhook signing secret with `stripe listen --print-secret`, put it in the ignored `backend/.env`, and restart the backend after changing it. Run `pnpm dev:stripe` separately to see the CLI error and exit status when forwarding fails.
 
 Run components separately when useful:
 

@@ -5,7 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import Column, Integer, String, create_engine, func, select
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import Session, declarative_base
+from sqlalchemy.pool import StaticPool
 
 from app.api.admin_management import _safe_error, management_summary
 from app.api.dependencies.auth import get_current_profile, get_current_user_id
@@ -81,11 +84,27 @@ def test_effective_tier_batch_query_uses_shared_provider_predicate() -> None:
 
 
 def test_management_summary_uses_aggregate_counts_and_current_usage() -> None:
+    base = declarative_base()
+
+    class RoleRow(base):
+        __tablename__ = "role_rows"
+        id = Column(Integer, primary_key=True)
+        role = Column(String, nullable=False)
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool
+    )
+    base.metadata.create_all(engine)
+    session = Session(engine)
+    session.add_all(
+        [RoleRow(role=role) for role, count in (("athlete", 8), ("admin", 2)) for _ in range(count)]
+    )
+    session.commit()
+
     class Db:
         def __init__(self):
             self.rows = iter(
                 [
-                    [("athlete", 8), ("admin", 2)],
                     [
                         ("video_analysis", "consumed", 12),
                         ("video_analysis", "reserved", 3),
@@ -93,8 +112,16 @@ def test_management_summary_uses_aggregate_counts_and_current_usage() -> None:
                 ]
             )
             self.values = iter([6, 3, 5, 2])
+            self.first_execute = True
 
         def execute(self, _statement):
+            if self.first_execute:
+                self.first_execute = False
+                result = session.execute(
+                    select(RoleRow.role, func.count()).group_by(RoleRow.role)
+                )
+                assert type(result).__name__ == "ChunkedIteratorResult"
+                return result
             return next(self.rows)
 
         def scalar(self, _statement):
@@ -110,6 +137,22 @@ def test_management_summary_uses_aggregate_counts_and_current_usage() -> None:
     assert result["tiers"] == {"pro_athletes": 3, "free_athletes": 5}
     assert result["usage"]["video_analysis"] == {"consumed": 12, "reserved": 3}
     assert result["plans"] == {"total": 5, "saved_30d": 2}
+
+    app.dependency_overrides[get_db] = Db
+    app.dependency_overrides[get_current_user_id] = lambda: uuid.uuid4()
+    app.dependency_overrides[get_current_profile] = lambda: SimpleNamespace(
+        app_role="admin"
+    )
+    try:
+        with TestClient(app) as client:
+            response = client.get("/admin/management/summary")
+        assert response.status_code == 200
+        assert response.json()["users"] == result["users"]
+        assert response.json()["tiers"] == result["tiers"]
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+        engine.dispose()
 
 
 def test_unfiltered_pro_tier_aggregate_keeps_provider_predicate() -> None:

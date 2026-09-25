@@ -72,6 +72,8 @@ def management_summary(db: DbSession, _admin: AdminProfile):
     start, end = calendar_month_window(now)
     roles = dict(
         db.execute(select(Profile.app_role, func.count()).group_by(Profile.app_role))
+        .tuples()
+        .all()
     )
     onboarded = (
         db.scalar(
