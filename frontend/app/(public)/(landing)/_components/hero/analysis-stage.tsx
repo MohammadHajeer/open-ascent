@@ -194,6 +194,9 @@ export function AnalysisStage() {
           />
         </svg>
 
+        {/* The bar and the floor continue across the canvas as its two horizontals. */}
+        <div className={styles.barLine} />
+        <div className={styles.floorLine} />
         <div className={styles.floor} />
 
         <Image

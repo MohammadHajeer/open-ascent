@@ -19,28 +19,72 @@
 
 .lighting {
   position: absolute;
-  inset: -12% -38% -6%;
+  inset: -16% -70% -8%;
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 34% 40% at 50% 36%, color-mix(in srgb, #fffdf7 88%, transparent), transparent 72%),
-    radial-gradient(ellipse 48% 44% at 50% 42%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 74%);
+    radial-gradient(ellipse 22% 38% at 50% 38%, color-mix(in srgb, #fffdf7 90%, transparent), transparent 74%),
+    radial-gradient(ellipse 40% 46% at 50% 44%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 76%);
   animation: fade 1.6s var(--ease-out) both;
 }
 
 :global(html.dark) .lighting {
-  inset: -22% -42% -6%;
+  inset: -24% -60% -8%;
   background:
     /* Overhead beam, as if the bar sits under a single gym light. */
-    conic-gradient(from 180deg at 50% -6%, transparent 164deg, rgba(244, 241, 234, 0.07) 173deg, rgba(244, 241, 234, 0.085) 180deg, rgba(244, 241, 234, 0.07) 187deg, transparent 196deg),
-    radial-gradient(ellipse 22% 30% at 50% 44%, rgba(244, 241, 234, 0.13), transparent 74%),
-    radial-gradient(ellipse 46% 44% at 50% 46%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 72%);
+    conic-gradient(from 180deg at 50% -4%, transparent 166deg, rgba(244, 241, 234, 0.065) 174deg, rgba(244, 241, 234, 0.08) 180deg, rgba(244, 241, 234, 0.065) 186deg, transparent 194deg),
+    radial-gradient(ellipse 16% 30% at 50% 45%, rgba(244, 241, 234, 0.13), transparent 74%),
+    radial-gradient(ellipse 38% 46% at 50% 47%, color-mix(in srgb, var(--primary) 15%, transparent), transparent 74%);
   mask-image: linear-gradient(to bottom, black 30%, transparent 96%);
 }
 
 .rig {
   position: relative;
   aspect-ratio: 1024 / 1536;
+}
+
+/* Canvas horizontals: centred on the rig, so they draw outward from the athlete. */
+.barLine,
+.floorLine {
+  position: absolute;
+  left: -100vw;
+  right: -100vw;
+  height: 1px;
+  pointer-events: none;
+  animation: extend 1.8s var(--ease-out) 250ms both;
+}
+
+.barLine {
+  top: 13.48%;
+  background: color-mix(in srgb, var(--foreground) 13%, transparent);
+}
+
+.floorLine {
+  top: 97.2%;
+  background: var(--border);
+}
+
+.floorLine::before,
+.floorLine::after {
+  content: "";
+  position: absolute;
+  inset: 1px 0 auto;
+  background-position: center top;
+}
+
+.floorLine::before {
+  height: 4px;
+  background-image: repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px 24px);
+}
+
+.floorLine::after {
+  height: 9px;
+  background-image: repeating-linear-gradient(to right, var(--foreground-faint) 0 1px, transparent 1px 120px);
+  opacity: 0.45;
+}
+
+:global(html.dark) .barLine {
+  background: color-mix(in srgb, var(--foreground) 11%, transparent);
 }
 
 .floor {
@@ -330,10 +374,10 @@
 
 .traceLine {
   stroke: var(--stage-ink);
-  stroke-width: 1.75;
+  stroke-width: 1.6;
   stroke-linecap: round;
+  /* No non-scaling-stroke here: it breaks the pathLength-based draw-in. */
   stroke-dasharray: 1;
-  vector-effect: non-scaling-stroke;
   animation: draw 1.6s var(--ease-out) 1600ms both;
 }
 
@@ -452,6 +496,10 @@
   to { stroke-dashoffset: 0; }
 }
 
+@keyframes extend {
+  from { opacity: 0; transform: scaleX(0.04); }
+}
+
 @keyframes pop {
   from { opacity: 0; transform: scale(0.2); }
 }
@@ -488,7 +536,7 @@
 @media (max-width: 1279px) {
   .cue {
     top: 54%;
-    right: calc(100% - 40%);
+    right: calc(100% - 36%);
     width: 216px;
     padding: 12px 14px 13px;
   }

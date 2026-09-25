@@ -31,7 +31,7 @@ export function Hero() {
 
           <h1
             id="hero-title"
-            className="mt-6 text-[clamp(3rem,15.4vw,5rem)] leading-[0.92] font-semibold tracking-[-0.068em] text-foreground sm:mt-7 sm:text-[clamp(4.5rem,10.6vw,6.6rem)] lg:text-[clamp(4.4rem,6.3vw,7.3rem)]"
+            className="mt-6 text-[clamp(3rem,15.4vw,5rem)] leading-[0.92] font-semibold tracking-[-0.068em] text-foreground sm:mt-7 sm:text-[clamp(4.5rem,10.6vw,6.6rem)] lg:text-[clamp(4.6rem,6.6vw,7.6rem)]"
           >
             Calisthenics,
             <span className="block pb-[0.06em] font-[440] text-primary">
