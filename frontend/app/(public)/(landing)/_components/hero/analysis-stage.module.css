@@ -1,0 +1,532 @@
+/*
+  Analysis stage: approved athlete cut-out + pose overlay + one coaching cue.
+  All positioned children use percentages of the 1024 × 1536 illustration.
+*/
+
+.stage {
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --stage-ink: var(--primary);
+  --stage-joint-fill: var(--background);
+  --stage-hud-surface: color-mix(in srgb, var(--popover) 82%, transparent);
+
+  position: relative;
+  width: 100%;
+  max-width: var(--rig-width, 460px);
+  margin-inline: auto;
+}
+
+/* ---------- Lighting ---------- */
+
+.lighting {
+  position: absolute;
+  inset: -12% -38% -6%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 34% 40% at 50% 36%, color-mix(in srgb, #fffdf7 88%, transparent), transparent 72%),
+    radial-gradient(ellipse 48% 44% at 50% 42%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 74%);
+  animation: fade 1.6s var(--ease-out) both;
+}
+
+:global(html.dark) .lighting {
+  inset: -22% -42% -6%;
+  background:
+    /* Overhead beam, as if the bar sits under a single gym light. */
+    conic-gradient(from 180deg at 50% -6%, transparent 164deg, rgba(244, 241, 234, 0.07) 173deg, rgba(244, 241, 234, 0.085) 180deg, rgba(244, 241, 234, 0.07) 187deg, transparent 196deg),
+    radial-gradient(ellipse 22% 30% at 50% 44%, rgba(244, 241, 234, 0.13), transparent 74%),
+    radial-gradient(ellipse 46% 44% at 50% 46%, color-mix(in srgb, var(--primary) 16%, transparent), transparent 72%);
+  mask-image: linear-gradient(to bottom, black 30%, transparent 96%);
+}
+
+.rig {
+  position: relative;
+  aspect-ratio: 1024 / 1536;
+}
+
+.floor {
+  position: absolute;
+  left: -6%;
+  right: -6%;
+  bottom: 1.4%;
+  height: 4%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--foreground) 15%, transparent), transparent);
+  filter: blur(6px);
+}
+
+:global(html.dark) .floor {
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--primary) 26%, transparent), transparent);
+}
+
+.athlete {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 18px 26px rgba(60, 48, 30, 0.12));
+  animation: settle 1.4s var(--ease-out) 120ms both;
+}
+
+/* Warm rim light keeps the charcoal outfit separated from the dark page. */
+:global(html.dark) .athlete {
+  filter:
+    drop-shadow(0 0 1px rgba(244, 241, 234, 0.4))
+    drop-shadow(0 0 22px rgba(244, 241, 234, 0.12));
+}
+
+/* ---------- Goniometer dial ---------- */
+
+.dial,
+.overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.dialRing {
+  stroke: var(--border);
+  stroke-width: 2;
+}
+
+.dialInner {
+  stroke: var(--border);
+  stroke-width: 1.5;
+  stroke-dasharray: 2 12;
+  opacity: 0.8;
+}
+
+.dialTicks {
+  stroke: var(--foreground-faint);
+  stroke-width: 2;
+  opacity: 0.4;
+}
+
+.dialMajor {
+  stroke: var(--foreground-soft);
+  stroke-width: 2.5;
+}
+
+.dialArc {
+  stroke: var(--stage-ink);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  opacity: 0.55;
+  animation: draw 2.2s var(--ease-out) 900ms both;
+}
+
+.dial {
+  mask-image: linear-gradient(to bottom, black 38%, transparent 76%);
+  animation: fade 1.8s var(--ease-out) 200ms both;
+}
+
+:global(html.dark) .dialRing,
+:global(html.dark) .dialInner {
+  stroke: color-mix(in srgb, var(--foreground) 16%, transparent);
+}
+
+/* ---------- Pose overlay ---------- */
+
+.brackets {
+  stroke: var(--foreground-mid);
+  stroke-width: 3;
+  opacity: 0.55;
+  animation: fade 900ms var(--ease-out) 500ms both;
+}
+
+.bones line {
+  stroke: var(--stage-ink);
+  stroke-width: 4.5;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  opacity: 0.9;
+  animation: draw 800ms var(--ease-out) both;
+}
+
+.joints circle {
+  fill: var(--stage-joint-fill);
+  stroke: var(--stage-ink);
+  stroke-width: 4.5;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pop 520ms var(--ease-out) both;
+}
+
+.joints .trackedJoint {
+  fill: var(--stage-ink);
+  stroke: var(--stage-joint-fill);
+  stroke-width: 5;
+}
+
+.angle path {
+  stroke: var(--stage-ink);
+  stroke-width: 4;
+  stroke-linecap: round;
+  animation: fade 700ms var(--ease-out) 1700ms both;
+}
+
+.angle .angleWedge {
+  fill: var(--stage-ink);
+  stroke: none;
+  opacity: 0.22;
+}
+
+.angle .leader {
+  stroke-width: 2;
+  stroke-dasharray: 5 6;
+}
+
+.pulse circle {
+  fill: var(--stage-ink);
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pulse 3.2s ease-out 2.4s infinite;
+}
+
+:global(html.dark) .stage {
+  --stage-ink: #a3b28a;
+  --stage-joint-fill: #111111;
+}
+
+/* ---------- Scan line ---------- */
+
+.scan {
+  position: absolute;
+  left: 27.5%;
+  right: 27.5%;
+  top: 1.8%;
+  bottom: 25.1%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.scan span {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom,
+    transparent 86%,
+    color-mix(in srgb, var(--stage-ink) 7%, transparent) 99.5%,
+    color-mix(in srgb, var(--stage-ink) 65%, transparent) 99.5%
+  );
+  mask-image: linear-gradient(to right, transparent, black 18%, black 82%, transparent);
+  transform: translateY(-100%);
+  opacity: 0;
+  animation: scan 7.5s cubic-bezier(0.45, 0, 0.3, 1) 2.2s infinite;
+}
+
+/* ---------- HUD ---------- */
+
+.hudTop,
+.readout,
+.scrubber,
+.cueHead {
+  font-family: var(--font-geist-mono), monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.hudTop {
+  position: absolute;
+  left: 27.5%;
+  right: 27.5%;
+  top: 1.8%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 9.5px;
+  line-height: 1;
+  color: var(--foreground-soft);
+  white-space: nowrap;
+  transform: translateY(calc(-100% - 20px));
+  animation: rise 800ms var(--ease-out) 600ms both;
+}
+
+.hudLive {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.hudLive i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 4px var(--primary-light);
+}
+
+.readout {
+  position: absolute;
+  left: 79.3%;
+  top: 32.9%;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 5px 9px 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--stage-ink) 38%, var(--border));
+  border-radius: 999px;
+  background: var(--stage-hud-surface);
+  backdrop-filter: blur(8px);
+  font-size: 9px;
+  color: var(--foreground-soft);
+  white-space: nowrap;
+  transform: translateY(-50%);
+  box-shadow: 0 6px 18px -8px rgba(28, 28, 26, 0.25);
+  animation: fade 700ms var(--ease-out) 1900ms both;
+}
+
+.readout strong {
+  font-family: var(--font-geist-sans), sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--foreground);
+}
+
+/* ---------- Rep scrubber (between the posts, below the athlete) ---------- */
+
+.scrubber {
+  position: absolute;
+  left: 19%;
+  right: 19%;
+  top: 78.4%;
+  font-size: 8.5px;
+  color: var(--foreground-faint);
+  animation: rise 900ms var(--ease-out) 1400ms both;
+}
+
+.scrubberHead {
+  display: flex;
+  justify-content: space-between;
+  color: var(--foreground-soft);
+}
+
+.scrubberPhase {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.trace {
+  display: block;
+  width: 100%;
+  height: clamp(26px, 3.4vw, 40px);
+  margin-top: 8px;
+  overflow: visible;
+}
+
+.traceBase {
+  stroke: var(--border);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.traceLine {
+  stroke: var(--stage-ink);
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  vector-effect: non-scaling-stroke;
+  animation: draw 1.6s var(--ease-out) 1600ms both;
+}
+
+.playhead {
+  stroke: var(--stage-ink);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  vector-effect: non-scaling-stroke;
+  opacity: 0.7;
+}
+
+.playheadDot {
+  fill: var(--stage-ink);
+}
+
+.phases {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.phases li {
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.phases li:last-child {
+  text-align: right;
+}
+
+.phases li[data-active] {
+  border-top-color: var(--primary);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ---------- AI coach cue ---------- */
+
+.cue {
+  position: absolute;
+  top: 52%;
+  right: calc(100% - 13%);
+  width: 250px;
+  padding: 14px 16px 15px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) * 1.4);
+  background: var(--card);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+    0 24px 48px -24px rgba(60, 48, 30, 0.35),
+    0 2px 6px -2px rgba(60, 48, 30, 0.08);
+  animation: cue 900ms var(--ease-out) 2000ms both;
+}
+
+:global(html.dark) .cue {
+  background: color-mix(in srgb, #20201d 88%, transparent);
+  border-color: #33332f;
+  box-shadow:
+    0 1px 0 rgba(244, 241, 234, 0.05) inset,
+    0 28px 60px -24px rgba(0, 0, 0, 0.8),
+    0 0 0 1px rgba(139, 155, 114, 0.06);
+}
+
+.cueHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.cueIcon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.cueTime {
+  margin-left: auto;
+  font-weight: 400;
+  color: var(--foreground-faint);
+}
+
+.cue p {
+  margin: 10px 0 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+}
+
+/* ---------- Motion ---------- */
+
+@keyframes fade {
+  from { opacity: 0; }
+}
+
+@keyframes rise {
+  from { opacity: 0; translate: 0 10px; }
+}
+
+@keyframes settle {
+  from { opacity: 0; transform: scale(1.035); }
+}
+
+@keyframes draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes pop {
+  from { opacity: 0; transform: scale(0.2); }
+}
+
+@keyframes cue {
+  from { opacity: 0; translate: 0 14px; scale: 0.98; }
+}
+
+@keyframes pulse {
+  0% { opacity: 0.32; transform: scale(0.45); }
+  70%, 100% { opacity: 0; transform: scale(1.5); }
+}
+
+@keyframes scan {
+  0% { transform: translateY(-100%); opacity: 0; }
+  6% { opacity: 1; }
+  52% { transform: translateY(0%); opacity: 1; }
+  60%, 100% { transform: translateY(0%); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage *,
+  .stage {
+    animation: none !important;
+  }
+
+  .scan {
+    display: none;
+  }
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 1279px) {
+  .cue {
+    top: 54%;
+    right: calc(100% - 40%);
+    width: 216px;
+    padding: 12px 14px 13px;
+  }
+
+  .cue p {
+    font-size: 12.5px;
+  }
+}
+
+@media (max-width: 639px) {
+  .hudTop {
+    left: 22%;
+    right: 22%;
+    font-size: 8.5px;
+  }
+
+  .readout {
+    left: 76%;
+    padding: 4px 7px;
+  }
+
+  .readout span {
+    display: none;
+  }
+
+  .scrubber {
+    left: 17%;
+    right: 17%;
+    font-size: 7.5px;
+  }
+
+  /* The cue becomes a caption under the rig instead of overhanging it. */
+  .cue {
+    position: relative;
+    top: auto;
+    right: auto;
+    width: auto;
+    max-width: 340px;
+    margin: -4% auto 0;
+  }
+}

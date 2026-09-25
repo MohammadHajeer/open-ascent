@@ -96,4 +96,12 @@ export const assets = {
     repCadence: themed("status/rep-cadence", 64, 64),
     measurementTraverse: themed("status/measurement-traverse", 64, 64),
   },
+  hero: {
+    /** Transparent cut-out of the approved pull-up illustration; sits on either theme. */
+    pullUpAthlete: {
+      src: `${ROOT}/hero/pull-up-athlete.webp`,
+      width: 1024,
+      height: 1536,
+    },
+  },
 } as const;
