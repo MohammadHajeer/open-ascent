@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { dashboardKeys } from "@/features/dashboard/queries";
+import { libraryKeys } from "@/features/library/queries";
+import { invalidatePrivateQueries } from "@/lib/private-state";
 import { getPlanPreview, savePlanPreview } from "./api";
 import type { PlanPreview } from "./types";
 
@@ -29,6 +32,8 @@ export function PlanPreviewCard({ previewId, onSaved }: { previewId: string; onS
     try {
       const result = await savePlanPreview(previewId);
       setPreview(current => current ? { ...current, saved_plan_id: result.id } : current);
+      // A saved plan changes the Library and the overview's latest plan.
+      invalidatePrivateQueries(libraryKeys.all, dashboardKeys.context);
       onSaved?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save plan. Review current readiness and try again.");

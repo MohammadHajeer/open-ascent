@@ -62,10 +62,10 @@ test("start, set logging, finish and discard update the single active value", ()
 
 test("layout placement is scoped to athlete pages and Analyze requires authentication", () => {
   const shell = readFileSync(new URL("../../components/dashboard/dashboard-shell.tsx", import.meta.url), "utf8");
-  const analyze = readFileSync(new URL("../../app/(public)/analyze/page.tsx", import.meta.url), "utf8");
+  const analyze = readFileSync(new URL("../../components/analyze/analyze-view.tsx", import.meta.url), "utf8");
   const indicator = readFileSync(new URL("./active-workout-indicator.tsx", import.meta.url), "utf8");
   assert.match(shell, /mode === "user" \? <ActiveWorkoutIndicator/);
-  assert.match(analyze, /authenticated \? <ActiveWorkoutIndicator surface="analyze"/);
+  assert.match(analyze, /session === "authenticated" \? <ActiveWorkoutIndicator surface="analyze"/);
   assert.match(indicator, /grid-cols-\[minmax\(0,1fr\)_auto\]/);
   assert.match(indicator, /aria-label=\{presentation\.actionLabel\}/);
 });

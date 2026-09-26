@@ -13,6 +13,13 @@ export function connectPrivateQueryClient(queryClient: QueryClient) {
   };
 }
 
+/** Marks cached private queries stale from code that has no React context. */
+export function invalidatePrivateQueries(...queryKeys: readonly (readonly unknown[])[]) {
+  for (const queryKey of queryKeys) {
+    void activeQueryClient?.invalidateQueries({ queryKey });
+  }
+}
+
 export function registerPrivateStreamCleanup(cleanup: PrivateStreamCleanup) {
   privateStreamCleanups.add(cleanup);
 

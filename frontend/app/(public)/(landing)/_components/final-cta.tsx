@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
-import { apiFetch } from "@/lib/api";
+import { publicApiFetchOr } from "@/lib/public-api";
 import { cn } from "@/lib/utils";
 
 type MovementListItem = {
@@ -18,9 +18,7 @@ type MovementListItem = {
 };
 
 export async function FinalCTA() {
-  const movements = await apiFetch<MovementListItem[]>("/movements", {
-    cache: "no-store",
-  });
+  const movements = await publicApiFetchOr<MovementListItem[], MovementListItem[]>("/movements", []);
 
   const featuredMovement =
     movements.find((movement) => movement.upload_analysis_supported) ??

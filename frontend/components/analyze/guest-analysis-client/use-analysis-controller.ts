@@ -10,6 +10,7 @@ import {
   streamAuthenticatedAnalysis,
   uploadAuthenticatedVideo,
 } from "@/features/analysis/api";
+import { analysisKeys } from "@/features/analysis/keys";
 import type { AuthenticatedAnalysisAccess } from "@/features/analysis/types";
 import { ApiError } from "@/lib/api";
 import {
@@ -35,6 +36,7 @@ import {
   removeGuestAnalysisSession,
   saveGuestAnalysisSession,
 } from "@/lib/guest-analysis-session";
+import { invalidatePrivateQueries } from "@/lib/private-state";
 
 import type {
   AnalysisAccess,
@@ -286,6 +288,12 @@ export function useAnalysisController({
 
       setStatus(nextStatus);
 
+      // The saved history is cached across navigation; a finished analysis
+      // changes it.
+      if (authenticated && ["completed", "failed", "expired"].includes(nextStatus)) {
+        invalidatePrivateQueries(analysisKeys.all);
+      }
+
       if (nextStatus === "completed") {
         const completed = await resultFor(access!, authenticated);
 
@@ -535,6 +543,7 @@ export function useAnalysisController({
             );
 
         setAccess(currentAccess);
+        if (authenticated) invalidatePrivateQueries(analysisKeys.all);
 
         if (
           !authenticated &&

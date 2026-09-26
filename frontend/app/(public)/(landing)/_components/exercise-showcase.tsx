@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { apiFetch } from "@/lib/api";
+import { publicApiFetchOr } from "@/lib/public-api";
 import { cn } from "@/lib/utils";
 
 type MovementListItem = {
@@ -78,9 +78,7 @@ function ExerciseMeta({
 }
 
 export async function ExerciseShowcase() {
-  const movements = await apiFetch<MovementListItem[]>("/movements", {
-    cache: "no-store",
-  });
+  const movements = await publicApiFetchOr<MovementListItem[], MovementListItem[]>("/movements", []);
 
   const featuredMovements = featuredSlugs
     .map((slug) => movements.find((movement) => movement.slug === slug))

@@ -2,14 +2,12 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { beginProCheckout, cancelProSubscription, fetchLiveCoachAccess, fetchSubscriptionStatus, resumeProSubscription } from "./api";
+import { beginProCheckout, cancelProSubscription, fetchLiveCoachAccess, resumeProSubscription } from "./api";
 import { subscriptionKeys } from "./keys";
+import { subscriptionStatusQuery } from "./queries";
 
 export function useSubscriptionStatus() {
-  return useQuery({
-    queryKey: subscriptionKeys.status(),
-    queryFn: fetchSubscriptionStatus,
-  });
+  return useQuery(subscriptionStatusQuery());
 }
 
 export function useLiveCoachAccess() {

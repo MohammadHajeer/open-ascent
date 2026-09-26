@@ -5,8 +5,7 @@ import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-heade
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
 import { ThemeToggle } from "@/components/shared/theme-toggle";
 import { buttonVariants } from "@/components/ui/button";
-import { PlanBilling } from "@/features/subscription/plan-billing";
-import type { CheckoutReturnState } from "@/features/subscription/presentation";
+import { PlanBillingRoute } from "@/features/subscription/plan-billing-route";
 import { SettingsTourAction } from "@/components/tour/settings-tour-action";
 
 function SettingRow({
@@ -23,7 +22,7 @@ function SettingRow({
   return (
     <div className="flex flex-wrap items-center gap-4 px-5 py-6 sm:flex-nowrap sm:px-7">
       <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-primary-light text-primary">
-        <Icon className="size-[1.125rem]" aria-hidden="true" />
+        <Icon className="size-4.5" aria-hidden="true" />
       </span>
       <div className="min-w-0 flex-1 basis-56">
         <h3 className="text-sm font-medium">{title}</h3>
@@ -34,15 +33,7 @@ function SettingRow({
   );
 }
 
-export default async function SettingsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ checkout?: string | string[] }>;
-}) {
-  const checkout = (await searchParams).checkout;
-  const checkoutReturn: CheckoutReturnState =
-    checkout === "success" || checkout === "cancelled" ? checkout : null;
-
+export default function SettingsPage() {
   return (
     <div className="space-y-8">
       <DashboardPageHeader
@@ -51,7 +42,7 @@ export default async function SettingsPage({
         description="Review your plan, profile, and workspace preferences."
       />
 
-      <PlanBilling checkoutReturn={checkoutReturn} />
+      <PlanBillingRoute />
 
       <div className="grid gap-5 xl:grid-cols-2">
         <DashboardSection eyebrow="Guided tour" title="Explore your workspace">

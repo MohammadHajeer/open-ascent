@@ -2,7 +2,7 @@ import Image from "next/image";
 import { ArrowDownRight } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { apiFetch } from "@/lib/api";
+import { publicApiFetchOr } from "@/lib/public-api";
 
 type MovementGuide = {
   id: string;
@@ -71,12 +71,12 @@ function formatFamilyLabel(familyKey: string) {
 }
 
 export async function Difference() {
-  const movement = await apiFetch<MovementGuide>(
+  const movement = await publicApiFetchOr<MovementGuide, null>(
     "/movements/inverted-deadlift",
-    {
-      cache: "no-store",
-    },
+    null,
   );
+
+  if (!movement) return null;
 
   return (
     <section className="bg-background" aria-labelledby="difference-title">

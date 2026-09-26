@@ -13,9 +13,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { PlanPreviewCard } from "@/features/coach/plan-preview";
 import { getConversation, streamGeneration } from "@/features/coach/api";
 import {
-  getGenerationOptions, preflightLibraryPlan, startLibraryPlan, submitReadinessCheck,
+  preflightLibraryPlan, startLibraryPlan, submitReadinessCheck,
   type LibraryPlanRequest, type PlanMode, type ReadinessQuestion,
 } from "./api";
+import { generationOptionsQuery, libraryKeys } from "./queries";
 
 const modes: { id: PlanMode; title: string; description: string }[] = [
   { id: "profile", title: "Start from my profile", description: "A conservative start from your onboarding, equipment and schedule." },
@@ -26,7 +27,7 @@ type Answer = "able" | "not_yet" | "avoid";
 
 export function PlanGenerator() {
   const queryClient = useQueryClient();
-  const options = useQuery({ queryKey: ["library", "generation-options"], queryFn: getGenerationOptions });
+  const options = useQuery(generationOptionsQuery());
   const [mode, setMode] = useState<PlanMode | null>(null);
   const [goal, setGoal] = useState("");
   const [note, setNote] = useState("");
@@ -48,7 +49,7 @@ export function PlanGenerator() {
       if (snapshot.status === "failed" || snapshot.status === "interrupted") {
         setError(snapshot.content || "The plan request could not be completed.");
         if (snapshot.status === "failed") requestId.current = null;
-        void queryClient.invalidateQueries({ queryKey: ["library", "generation-options"] });
+        void queryClient.invalidateQueries({ queryKey: libraryKeys.generationOptions });
         setActive(null);
       } else if (snapshot.status === "completed") {
         try {
@@ -61,7 +62,7 @@ export function PlanGenerator() {
           setPreviewId(reply.plan_preview_id);
           setActive(null);
           requestId.current = null;
-          void queryClient.invalidateQueries({ queryKey: ["library", "generation-options"] });
+          void queryClient.invalidateQueries({ queryKey: libraryKeys.generationOptions });
         } catch (cause) {
           setError(cause instanceof Error ? cause.message : "Could not load the preview.");
           setActive(null);
@@ -138,7 +139,7 @@ export function PlanGenerator() {
   return <div className="p-5 sm:p-7">
     {previewId ? <>
       <div className="flex items-center justify-between gap-3"><p className="text-sm text-foreground-soft">Review the structured plan before saving it.</p><Button variant="outline" onClick={reset}>New plan</Button></div>
-      <PlanPreviewCard previewId={previewId} onSaved={() => void queryClient.invalidateQueries({ queryKey: ["library", "plans"] })} />
+      <PlanPreviewCard previewId={previewId} />
     </> : !mode ? <>
       <h3 className="text-lg font-medium tracking-tight">How should Open Ascent build this plan?</h3>
       {options.data && <p className="mt-1 text-xs text-foreground-faint">{options.data.plan_remaining === null ? "Plan generation is available under your current plan." : `${options.data.plan_remaining} of ${options.data.plan_allowance} plan generations remaining this month.`}</p>}

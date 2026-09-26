@@ -25,6 +25,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { usePrefetchDashboardRoute } from "@/features/dashboard/route-prefetch";
 import { cn } from "@/lib/utils";
 
 import {
@@ -53,6 +54,7 @@ const iconMap = {
 
 export function DashboardRail({ mode }: { mode: DashboardMode }) {
   const pathname = usePathname();
+  const prefetchRoute = usePrefetchDashboardRoute();
   const navigation = getNavigation(mode);
 
   const mainItems =
@@ -112,6 +114,8 @@ export function DashboardRail({ mode }: { mode: DashboardMode }) {
                   render={
                     <Link
                       href={item.href}
+                      onPointerEnter={() => prefetchRoute(item.href)}
+                      onFocus={() => prefetchRoute(item.href)}
                       aria-label={item.label}
                       aria-current={active ? "page" : undefined}
                       className={cn(
@@ -163,6 +167,8 @@ export function DashboardRail({ mode }: { mode: DashboardMode }) {
                       render={
                         <Link
                           href={item.href}
+                          onPointerEnter={() => prefetchRoute(item.href)}
+                          onFocus={() => prefetchRoute(item.href)}
                           aria-label={item.label}
                           aria-current={active ? "page" : undefined}
                           className={cn(

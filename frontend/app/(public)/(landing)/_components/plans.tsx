@@ -5,7 +5,7 @@ import { ArrowUpRight, Check, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { apiFetch } from "@/lib/api";
+import { publicApiFetch } from "@/lib/public-api";
 
 const freeFeatures = [
   "Persistent authenticated analysis history",
@@ -42,8 +42,8 @@ function PlanList({ features }: { features: string[] }) {
 async function ProPrice() {
   let display: string | null = null;
   try {
-    const price = await apiFetch<{ unit_amount: number; currency: string; interval: string }>(
-      "/subscriptions/pro-price", { cache: "no-store" },
+    const price = await publicApiFetch<{ unit_amount: number; currency: string; interval: string }>(
+      "/subscriptions/pro-price",
     );
     const amount = new Intl.NumberFormat("en-US", { style: "currency", currency: price.currency }).format(price.unit_amount / 100);
     display = `${amount} / ${price.interval}`;

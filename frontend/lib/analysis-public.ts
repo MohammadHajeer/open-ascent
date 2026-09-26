@@ -1,16 +1,36 @@
-import "server-only";
+import { queryOptions } from "@tanstack/react-query";
 
 import { apiFetch } from "@/lib/api";
 import type { GuestConfig, Movement, MovementGuide } from "@/lib/analysis";
 
-// Public catalog/config changes should appear soon without a frontend deploy.
-const publicFetchOptions = { next: { revalidate: 60 } };
+// Public catalog/config is the same for every visitor and changes rarely, so
+// it is cached in the browser for a minute and reused across navigations.
+const staleTime = 60_000;
 
-export const getAnalysisMovements = () =>
-  apiFetch<Movement[]>("/movements", publicFetchOptions);
+export const analysisPublicKeys = {
+  movements: ["analysis-public", "movements"] as const,
+  guestConfig: ["analysis-public", "guest-config"] as const,
+  guide: (slug: string) => ["analysis-public", "guide", slug] as const,
+};
 
-export const getAnalysisMovementGuide = (slug: string) =>
-  apiFetch<MovementGuide>(`/movements/${encodeURIComponent(slug)}`, publicFetchOptions);
+export const analysisMovementsQuery = () =>
+  queryOptions({
+    queryKey: analysisPublicKeys.movements,
+    queryFn: () => apiFetch<Movement[]>("/movements"),
+    staleTime,
+  });
 
-export const getAnalysisGuestConfig = () =>
-  apiFetch<GuestConfig>("/analyses/guest/config", publicFetchOptions);
+export const analysisGuestConfigQuery = () =>
+  queryOptions({
+    queryKey: analysisPublicKeys.guestConfig,
+    queryFn: () => apiFetch<GuestConfig>("/analyses/guest/config"),
+    staleTime,
+  });
+
+export const analysisMovementGuideQuery = (slug: string) =>
+  queryOptions({
+    queryKey: analysisPublicKeys.guide(slug),
+    queryFn: () =>
+      apiFetch<MovementGuide>(`/movements/${encodeURIComponent(slug)}`),
+    staleTime,
+  });

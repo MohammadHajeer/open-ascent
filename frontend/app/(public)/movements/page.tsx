@@ -15,8 +15,6 @@ export const metadata: Metadata = {
     "Explore published calisthenics movement guides, difficulty levels, safety guidance, prerequisites, and technique information.",
 };
 
-export const dynamic = "force-dynamic";
-
 export default function MovementsPage() {
   return (
     <>

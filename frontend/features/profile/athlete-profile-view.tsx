@@ -10,7 +10,6 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { authApiFetch } from "@/lib/auth-api";
 import { cn } from "@/lib/utils";
 
 import {
@@ -21,10 +20,8 @@ import {
   startingValue,
   trainingDays,
 } from "./presentation";
+import { athleteProfileQuery } from "./queries";
 import type { AthleteProfile, Capability } from "./types";
-
-const fetchProfile = () =>
-  authApiFetch<AthleteProfile>("/athlete-profile/me", { cache: "no-store" });
 
 const rowPadding = "px-5 sm:px-7";
 
@@ -273,7 +270,7 @@ function ProfileContent({ profile }: { profile: AthleteProfile }) {
 }
 
 export function AthleteProfileView() {
-  const query = useQuery({ queryKey: ["athlete-profile", "me"], queryFn: fetchProfile });
+  const query = useQuery(athleteProfileQuery());
 
   return (
     <div className="space-y-6 sm:space-y-8">

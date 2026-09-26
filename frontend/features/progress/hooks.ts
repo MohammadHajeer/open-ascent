@@ -2,8 +2,6 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import { fetchProgressSummary } from "./api";
-import { progressKeys } from "./keys";
+import { progressSummaryQuery } from "./queries";
 
-export const useProgressSummary = () =>
-  useQuery({ queryKey: progressKeys.summary, queryFn: fetchProgressSummary });
+export const useProgressSummary = () => useQuery(progressSummaryQuery());

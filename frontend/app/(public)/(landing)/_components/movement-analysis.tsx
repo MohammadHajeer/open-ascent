@@ -2,7 +2,7 @@ import Image from "next/image";
 import { Check, ScanLine } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { apiFetch } from "@/lib/api";
+import { publicApiFetchOr } from "@/lib/public-api";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type MovementGuide = {
@@ -57,9 +57,9 @@ function formatFamilyLabel(familyKey: string) {
 }
 
 export async function MovementAnalysis() {
-  const movement = await apiFetch<MovementGuide>("/movements/pull-up", {
-    cache: "no-store",
-  });
+  const movement = await publicApiFetchOr<MovementGuide, null>("/movements/pull-up", null);
+
+  if (!movement) return null;
 
   return (
     <section

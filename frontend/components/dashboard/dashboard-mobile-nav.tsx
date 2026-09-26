@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { usePrefetchDashboardRoute } from "@/features/dashboard/route-prefetch";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -53,6 +54,7 @@ const iconMap = {
 export function DashboardMobileNav({ mode }: { mode: DashboardMode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const prefetchRoute = usePrefetchDashboardRoute();
   const [moreOpen, setMoreOpen] = useState(false);
   const navigation = getNavigation(mode);
   const primary = mode === "admin"
@@ -84,6 +86,7 @@ export function DashboardMobileNav({ mode }: { mode: DashboardMode }) {
             <Link
               key={item.href}
               href={item.href}
+              onPointerDown={() => prefetchRoute(item.href)}
               aria-current={active ? "page" : undefined}
               className={cn(
                 mode === "admin"
@@ -117,7 +120,7 @@ export function DashboardMobileNav({ mode }: { mode: DashboardMode }) {
                 {athleteMore.map(item => {
                   const Icon = iconMap[item.icon];
                   const active = isNavigationItemActive(pathname, item);
-                  return <Link key={item.href} href={item.href} onClick={() => setMoreOpen(false)} aria-current={active ? "page" : undefined} className={cn("flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-medium text-foreground-soft outline-none hover:bg-primary-light focus-visible:ring-2 focus-visible:ring-ring", active && "bg-primary-light text-primary")}><Icon className="size-5 shrink-0" aria-hidden="true" />{item.label}</Link>;
+                  return <Link key={item.href} href={item.href} onPointerDown={() => prefetchRoute(item.href)} onClick={() => setMoreOpen(false)} aria-current={active ? "page" : undefined} className={cn("flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-medium text-foreground-soft outline-none hover:bg-primary-light focus-visible:ring-2 focus-visible:ring-ring", active && "bg-primary-light text-primary")}><Icon className="size-5 shrink-0" aria-hidden="true" />{item.label}</Link>;
                 })}
               </div>
             </SheetContent>

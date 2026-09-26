@@ -10,7 +10,8 @@ import { DashboardSection } from "@/components/dashboard/dashboard-section";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 
-import { getSavedPlan, type SavedPlanExercise } from "./api";
+import type { SavedPlanExercise } from "./api";
+import { savedPlanQuery } from "./queries";
 
 export function Prescription({ exercise }: { exercise: SavedPlanExercise }) {
   const target = exercise.reps !== null ? `${exercise.reps} reps` : `${exercise.hold_seconds} sec hold`;
@@ -18,7 +19,7 @@ export function Prescription({ exercise }: { exercise: SavedPlanExercise }) {
 }
 
 export function SavedPlanDetail({ planId }: { planId: string }) {
-  const plan = useQuery({ queryKey: ["library", "plan", planId], queryFn: () => getSavedPlan(planId) });
+  const plan = useQuery(savedPlanQuery(planId));
   const back = <Link href="/dashboard/library" className={`${buttonVariants({ variant: "outline" })} gap-2`}><ArrowLeft className="size-4" aria-hidden="true" />All saved plans</Link>;
 
   if (plan.isPending) return <div className="space-y-8"><DashboardPageHeader eyebrow="Library" title="Saved plan" action={back} /><div role="status" className="flex min-h-48 items-center justify-center gap-2 text-sm text-foreground-soft"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" />Loading plan…</div></div>;

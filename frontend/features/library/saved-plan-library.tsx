@@ -11,14 +11,14 @@ import { ThemedAsset } from "@/components/shared/themed-asset";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { assets } from "@/lib/assets";
 
-import { listSavedPlans } from "./api";
 import { PlanGenerator } from "./plan-generator";
+import { savedPlansQuery } from "./queries";
 
 const formatDate = (value: string) =>
   new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(value));
 
 export function SavedPlanLibrary() {
-  const plans = useQuery({ queryKey: ["library", "plans"], queryFn: listSavedPlans });
+  const plans = useQuery(savedPlansQuery());
   const coachAction = <a href="#generate-plan" className={buttonVariants({ variant: "brand" })}>Generate new plan</a>;
 
   return <div className="space-y-8">

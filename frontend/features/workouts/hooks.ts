@@ -2,29 +2,28 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { progressKeys } from "@/features/progress/keys";
+
 import {
   addWorkoutSet,
   createWorkoutSession,
   discardWorkoutSession,
-  fetchActiveWorkoutSession,
-  fetchWorkoutMovements,
   fetchWorkoutSession,
-  fetchWorkoutSessions,
   finishWorkoutSession,
 } from "./api";
 import { clearActiveWorkout, incrementActiveSetCount } from "./active-cache";
 import { workoutKeys } from "./keys";
+import { activeWorkoutQuery, workoutMovementsQuery, workoutSessionsQuery } from "./queries";
 import type {
   WorkoutSession,
   WorkoutSessionDetail,
   WorkoutSetInput,
 } from "./types";
 
-export const useWorkoutSessions = () =>
-  useQuery({ queryKey: workoutKeys.all, queryFn: fetchWorkoutSessions });
+export const useWorkoutSessions = () => useQuery(workoutSessionsQuery());
 
 export const useActiveWorkoutSession = (enabled = true) =>
-  useQuery({ queryKey: workoutKeys.active, queryFn: fetchActiveWorkoutSession, enabled });
+  useQuery({ ...activeWorkoutQuery(), enabled });
 
 export const useWorkoutSession = (sessionId: string | null) =>
   useQuery({
@@ -33,8 +32,11 @@ export const useWorkoutSession = (sessionId: string | null) =>
     enabled: Boolean(sessionId),
   });
 
-export const useWorkoutMovements = () =>
-  useQuery({ queryKey: workoutKeys.movements, queryFn: fetchWorkoutMovements });
+export const useWorkoutMovements = () => useQuery(workoutMovementsQuery());
+
+// Logged sets feed the progress summary, which is otherwise reused from cache.
+const invalidateProgress = (queryClient: ReturnType<typeof useQueryClient>) =>
+  queryClient.invalidateQueries({ queryKey: progressKeys.summary });
 
 export function useCreateWorkoutSession() {
   const queryClient = useQueryClient();
@@ -70,6 +72,7 @@ export function useAddWorkoutSet(sessionId: string | null) {
         void queryClient.invalidateQueries({
           queryKey: workoutKeys.detail(sessionId),
         });
+        void invalidateProgress(queryClient);
       }
     },
   });
@@ -89,6 +92,7 @@ export function useFinishWorkoutSession(sessionId: string | null) {
         current?.map((item) => (item.id === session.id ? session : item)),
       );
       void queryClient.invalidateQueries({ queryKey: workoutKeys.all });
+      void invalidateProgress(queryClient);
     },
   });
 }
@@ -106,6 +110,7 @@ export function useDiscardWorkoutSession(sessionId: string | null) {
         current?.filter((item) => item.id !== sessionId),
       );
       void queryClient.invalidateQueries({ queryKey: workoutKeys.all });
+      void invalidateProgress(queryClient);
     },
   });
 }

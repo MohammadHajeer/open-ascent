@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
-import { ApiError } from "@/lib/api";
+import { ApiError, apiFetch } from "@/lib/api";
 
 import { CautionsSection } from "./_components/cautions-section";
 import { MovementCapabilities } from "./_components/movement-capabilities";
@@ -15,7 +15,19 @@ type MovementPageProps = {
   params: Promise<{ slug: string }>;
 };
 
-export const dynamic = "force-dynamic";
+// Published guides are prerendered at build time and revalidated in the
+// background. A guide published after the build, or every guide when the API
+// is unreachable during the build, renders on its first visit instead.
+export async function generateStaticParams() {
+  try {
+    const movements = await apiFetch<{ slug: string }[]>("/movements", {
+      cache: "no-store",
+    });
+    return movements.map(({ slug }) => ({ slug }));
+  } catch {
+    return [];
+  }
+}
 
 export async function generateMetadata({
   params,

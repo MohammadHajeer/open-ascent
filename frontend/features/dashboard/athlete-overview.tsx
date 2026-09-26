@@ -15,7 +15,7 @@ import { useWorkoutSessions } from "@/features/workouts/hooks";
 import { assets } from "@/lib/assets";
 import { cn } from "@/lib/utils";
 
-import { fetchDashboardContext } from "./api";
+import { dashboardContextQuery } from "./queries";
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 const goals: Record<string, string> = { strength: "Build strength", skill: "Develop a skill", technique: "Improve technique", consistency: "Train consistently" };
@@ -35,7 +35,7 @@ function Message({ text, href, action, visual }: { text: string; href?: string; 
 }
 
 export function AthleteOverview() {
-  const context = useQuery({ queryKey: ["dashboard", "context"], queryFn: fetchDashboardContext });
+  const context = useQuery(dashboardContextQuery());
   const workouts = useWorkoutSessions();
   const progress = useProgressSummary();
   const analyses = useAnalysisHistory(5);

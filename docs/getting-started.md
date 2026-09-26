@@ -62,6 +62,8 @@ pnpm start
 
 `pnpm build` runs `next build` for the frontend (the backend has no build step). `pnpm start` runs `next start`, plain uvicorn without the file watcher, and the worker group; it never rebuilds. Rebuild after frontend code or `NEXT_PUBLIC_*` changes, because those values are baked in at build time. Stop `pnpm dev` first: both use ports 3000 and 8000, and `pnpm build` rewrites `frontend/.next`.
 
+The public pages (`/`, `/movements`, `/movements/[slug]`) are prerendered from the published movement catalog and revalidated every minute, so movements published after a build appear within about a minute without a rebuild. Build with the API running to bake real content into those pages. If the API is unreachable during `pnpm build`, the build still succeeds: the catalog pages are prerendered empty and regenerate from the live API on the first request after the one-minute window, and `/movements/[slug]` pages render on their first visit. `/analyze` and the dashboard are static shells that load their data in the browser, so they never need the API at build time.
+
 Stripe CLI forwarding is not part of `pnpm start`. It is a local testing tool; deployed environments should point Stripe at a real webhook URL. To test subscriptions against the built stack locally, run `pnpm dev:stripe` in a separate terminal. Individual pieces are available as `pnpm start:frontend`, `pnpm start:backend`, and `pnpm start:worker`.
 
 ## Development commands

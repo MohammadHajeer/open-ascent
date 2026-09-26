@@ -3,13 +3,11 @@ import {
   MovementListItem,
 } from "@/components/exercises/exercise-card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { apiFetch } from "@/lib/api";
+import { publicApiFetchOr } from "@/lib/public-api";
 import { BookOpen, ScanLine } from "lucide-react";
 
 async function MovementsCatalog() {
-  const movements = await apiFetch<MovementListItem[]>("/movements", {
-    cache: "no-store",
-  });
+  const movements = await publicApiFetchOr<MovementListItem[], MovementListItem[]>("/movements", []);
 
   if (movements.length === 0) {
     return (

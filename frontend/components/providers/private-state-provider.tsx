@@ -10,7 +10,15 @@ import {
 } from "@/lib/private-state";
 
 export function PrivateStateProvider({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(() => new QueryClient());
+  // One client for the whole app so cached data survives route changes. A short
+  // default staleTime avoids refetching on quick back-and-forth navigation;
+  // queries whose data changes outside this tab set staleTime: 0 themselves,
+  // and admin consoles (operations, moderation) always revalidate.
+  const [queryClient] = useState(() => {
+    const client = new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } });
+    client.setQueryDefaults(["admin"], { staleTime: 0 });
+    return client;
+  });
 
   useEffect(() => {
     const supabase = createClient();

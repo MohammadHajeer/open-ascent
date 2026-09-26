@@ -1,10 +1,13 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 
 import {
-  getAnalysisGuestConfig,
-  getAnalysisMovementGuide,
-  getAnalysisMovements,
+  analysisGuestConfigQuery,
+  analysisMovementGuideQuery,
+  analysisMovementsQuery,
 } from "@/lib/analysis-public";
 import type { Movement } from "@/lib/analysis";
 import {
@@ -12,6 +15,7 @@ import {
   movementFamilyLabel,
   type MovementGroup,
 } from "@/lib/analysis-movement-groups";
+import { AnalyzeSectionSkeleton } from "./analyze-section-skeleton";
 import { AnalyzeSteps } from "./analyze-steps";
 import { GuestAnalysisClient } from "./guest-analysis-client";
 import { SafetyGuidance } from "./safety-guidance";
@@ -69,7 +73,7 @@ function MovementSelector({ groups }: { groups: MovementGroup<Movement>[] }) {
   );
 }
 
-export async function AnalyzeMovementSection({
+export function AnalyzeMovementSection({
   selectedSlug,
   invalidSelection,
   analysisId,
@@ -80,21 +84,29 @@ export async function AnalyzeMovementSection({
   analysisId: string | null;
   authenticated?: boolean;
 }) {
-  const [movementsState, configState, guideState] = await Promise.allSettled([
-    getAnalysisMovements(),
-    getAnalysisGuestConfig(),
-    selectedSlug ? getAnalysisMovementGuide(selectedSlug === "any-vertical-pull" ? "pull-up" : selectedSlug) : Promise.resolve(null),
-  ]);
+  const guideSlug = selectedSlug === "any-vertical-pull" ? "pull-up" : selectedSlug;
+  const movementsState = useQuery({ ...analysisMovementsQuery(), retry: 1 });
+  const configState = useQuery({ ...analysisGuestConfigQuery(), retry: 1 });
+  const guideState = useQuery({
+    ...analysisMovementGuideQuery(guideSlug ?? ""),
+    enabled: Boolean(guideSlug) && !invalidSelection,
+    retry: 1,
+  });
 
-  if (movementsState.status === "rejected" || configState.status === "rejected") {
-    return <SectionNotice title="Analysis options are unavailable." detail="The movement list or upload requirements could not be loaded. Please try again shortly." />;
-  }
-
-  const groups = groupSupportedMovements(movementsState.value);
-  const available = groups.flatMap((group) => group.movements);
   if (invalidSelection) {
     return <SectionNotice title="Movement unavailable." detail="Choose an available movement to start an analysis." />;
   }
+  // Decide on data first: a failed background refetch must not replace an
+  // analysis flow that already has everything it needs.
+  if (!movementsState.data || !configState.data) {
+    if (movementsState.isError || configState.isError) {
+      return <SectionNotice title="Analysis options are unavailable." detail="The movement list or upload requirements could not be loaded. Please try again shortly." />;
+    }
+    return <AnalyzeSectionSkeleton selected={selectedSlug !== null} />;
+  }
+
+  const groups = groupSupportedMovements(movementsState.data);
+  const available = groups.flatMap((group) => group.movements);
   if (!selectedSlug) return <MovementSelector groups={groups} />;
 
   const familyMode = selectedSlug === "any-vertical-pull";
@@ -103,15 +115,17 @@ export async function AnalyzeMovementSection({
     return <SectionNotice title="Movement unavailable." detail="This movement is not currently available for video analysis." />;
   }
 
-  if (guideState.status === "rejected" || !guideState.value || guideState.value.id !== selected.id || !guideState.value.upload_analysis_supported) {
+  if (!guideState.data && !guideState.isError) {
+    return <AnalyzeSectionSkeleton selected />;
+  }
+  if (!guideState.data || guideState.data.id !== selected.id || !guideState.data.upload_analysis_supported) {
     return <SectionNotice title="Movement guide unavailable." detail="The published movement guidance could not be loaded. Analysis cannot start without it." />;
   }
 
-  const guide = guideState.value;
-  const config = configState.value;
+  const guide = guideState.data;
+  const config = configState.data;
   return (
     <GuestAnalysisClient
-      key={`${selectedSlug}:${analysisId ?? "new"}`}
       analysisId={analysisId}
       authenticated={authenticated}
       movement={{
