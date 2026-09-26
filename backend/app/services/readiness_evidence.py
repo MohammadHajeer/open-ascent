@@ -19,7 +19,10 @@ from app.models.readiness_self_report import ReadinessSelfReport
 from app.models.training import WorkoutSession, WorkoutSet
 from app.schemas.movement_safety import MovementPerformanceRule, MovementSafetyContent
 from app.schemas.readiness import ReadinessEvidence
-from app.services.foundation_readiness import permits_structured_self_report
+from app.services.foundation_readiness import (
+    ONBOARDING_SELF_REPORT,
+    permits_structured_self_report,
+)
 from app.services.movement_documentation import MovementDocumentationService
 
 ASSESSMENT_REP_KEYS = {
@@ -40,6 +43,25 @@ class _Observation:
 
 def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+
+def _onboarding_rep_answer(
+    profile: Profile, slug: str, cutoff: datetime, now: datetime
+) -> tuple[int, datetime] | None:
+    """A recent onboarding max-clean-reps answer; unanswered means unknown."""
+    key = ASSESSMENT_REP_KEYS.get(slug)
+    assessment = profile.initial_assessment or {}
+    reported = (assessment.get("answers") or {}).get("max_clean_reps") or {}
+    value = reported.get(key) if key else None
+    if type(value) is not int or value < 0:
+        return None
+    try:
+        submitted_at = _utc(datetime.fromisoformat(assessment.get("submitted_at")))
+    except (TypeError, ValueError):
+        return None
+    if not cutoff <= submitted_at <= now:
+        return None
+    return value, submitted_at
 
 
 def _target_matched_rep_count(analysis: Analysis) -> int | None:
@@ -152,7 +174,11 @@ class ReadinessEvidenceBuilder:
             return ReadinessEvidence(requirement=requirement)
 
         report = None
-        if "structured_self_report" in accepted and permits_structured_self_report(target_movement, safety, rule):
+        onboarding: tuple[int, datetime] | None = None
+        allows_self_report = "structured_self_report" in accepted and permits_structured_self_report(
+            target_movement, safety, rule
+        )
+        if allows_self_report:
             report = db.scalar(
                 select(ReadinessSelfReport)
                 .where(
@@ -166,6 +192,13 @@ class ReadinessEvidenceBuilder:
                 .order_by(ReadinessSelfReport.reported_at.desc(), ReadinessSelfReport.id.desc())
                 .limit(1)
             )
+            # The onboarding max-clean-reps answer is the same structured
+            # question asked earlier. It is used only for reviewed foundation
+            # rules, never as measurement, and only while no Quick readiness
+            # answer exists. A rule that explicitly accepts initial_assessment
+            # already reads it as an observation below.
+            if report is None and "initial_assessment" not in accepted:
+                onboarding = _onboarding_rep_answer(profile, source_movement.slug, cutoff, now)
 
         if "initial_assessment" in accepted and rule.metric == "reps":
             assessment = profile.initial_assessment or {}
@@ -276,6 +309,17 @@ class ReadinessEvidenceBuilder:
                     source="structured_self_report", observed_at=reported_at,
                     reference_id=report.id, observed_value=rule.value,
                 )
+        elif onboarding is not None and not observations:
+            reported_reps, reported_at = onboarding
+            satisfied = reported_reps >= rule.value
+            # Like a Quick readiness "able", a passing answer credits only the
+            # rule threshold, which keeps provisional prescriptions conservative.
+            return ReadinessEvidence(
+                requirement=requirement, satisfied=satisfied,
+                source=ONBOARDING_SELF_REPORT, observed_at=reported_at,
+                reference_id=profile.id,
+                observed_value=rule.value if satisfied else Decimal(reported_reps),
+            )
 
         # The live_coach workout source is currently user-writable and has no
         # verified session measurement relation. It cannot prove readiness.

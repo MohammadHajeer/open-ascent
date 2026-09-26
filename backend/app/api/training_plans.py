@@ -93,7 +93,11 @@ def start_library_generation(payload: LibraryPlanRequest, profile: AthleteProfil
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     except (FeatureAccessDeniedError, QuotaExceededError, UnconfiguredAllowanceError) as exc:
-        raise HTTPException(403, "Training plan generation is unavailable or its monthly allowance is exhausted.") from exc
+        db.rollback()
+        raise HTTPException(403, {
+            "code": "plan_generation_quota_exhausted" if isinstance(exc, QuotaExceededError) else "plan_generation_unavailable",
+            "message": "Training plan generation is unavailable or its monthly allowance is exhausted.",
+        }) from exc
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc
     if created and generation.status == "reserved":

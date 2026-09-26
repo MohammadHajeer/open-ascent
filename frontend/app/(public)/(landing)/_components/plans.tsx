@@ -5,6 +5,7 @@ import { ArrowUpRight, Check, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { FREE_COACH_DAILY_MESSAGES } from "@/features/subscription/presentation";
 import { publicApiFetch } from "@/lib/public-api";
 
 const freeFeatures = [
@@ -12,13 +13,14 @@ const freeFeatures = [
   "Basic progress tracking",
   "Limited uploaded video analyses",
   "One weekly plan generation each month",
+  `AI Coach with ${FREE_COACH_DAILY_MESSAGES} messages a day`,
   "Movement library and documentation",
   "Training plan capability within plan limits",
 ];
 
 const proFeatures = [
   "Higher uploaded-analysis allowance",
-  "Higher AI Coach allowance",
+  "Full AI Coach access",
   "Live Coach",
   "Adaptive training plans",
   "Advanced progress insights",

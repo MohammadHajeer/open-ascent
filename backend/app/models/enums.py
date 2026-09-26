@@ -101,6 +101,7 @@ class EntitlementType(StrEnum):
 
 class ResetPolicy(StrEnum):
     CALENDAR_MONTH_UTC = "calendar_month_utc"
+    CALENDAR_DAY_UTC = "calendar_day_utc"
 
 
 class FeatureUsageStatus(StrEnum):

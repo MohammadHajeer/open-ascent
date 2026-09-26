@@ -807,3 +807,75 @@ def test_malformed_provider_plan_cannot_create_preview(plan_db, monkeypatch):
         assert updated.error_code == "invalid_plan"
         assert db.scalar(select(func.count(TrainingPlanPreview.id))) == 0
         assert db.scalar(select(func.count(TrainingPlan.id))) == 0
+
+
+def test_new_athlete_generates_starter_plan_from_onboarding_and_save_is_unmetered(plan_db, monkeypatch):
+    factory, owner, _stranger, _movement = plan_db
+    with factory() as db:
+        for slug in ("push-up", "pull-up"):
+            seed_movement(db, next(item for item in MOVEMENTS if item["slug"] == slug))
+        profile = db.get(Profile, owner.id)
+        profile.coaching_context = {"primary_goal": "strength", "equipment": ["pull_up_bar"],
+                                    "availability": {"days_per_week": 3, "minutes_per_session": 45}}
+        profile.initial_assessment = {
+            "submitted_at": datetime.now(UTC).isoformat(),
+            "answers": {"training_experience": "some",
+                        "max_clean_reps": {"pull_up": 20, "push_up": 40, "dips": None}},
+        }
+        db.commit()
+        ids = {item.slug: item.id for item in db.scalars(select(Movement))}
+    metering = []
+    usage_id = uuid.uuid4()
+    monkeypatch.setattr(coach, "reserve_usage", lambda _db, **kwargs: metering.append(
+        ("reserve", kwargs["feature_key"])) or SimpleNamespace(id=usage_id))
+    monkeypatch.setattr(training_plan, "consume_usage", lambda *_args, **_kwargs: metering.append(("consume", None)))
+    monkeypatch.setattr(coach, "consume_usage", lambda *_args, **_kwargs: metering.append(("consume", None)))
+    monkeypatch.setattr(coach, "release_usage", lambda *_args, **_kwargs: metering.append(("release", None)))
+    monkeypatch.setattr(plan_generation, "SessionLocal", factory)
+    provider_inputs = []
+    proposal = plan_generation.WeeklyPlanProposal.model_validate({
+        "title": "Starter strength", "summary": "Conservative foundations.",
+        "days": [{"day_index": index, "label": "Foundations", "exercises": [
+            {"movement_id": str(ids["push-up"]), "sets": 3, "reps": 5, "hold_seconds": None, "rest_seconds": 90, "notes": None},
+            {"movement_id": str(ids["pull-up"]), "sets": 3, "reps": 1, "hold_seconds": None, "rest_seconds": 120, "notes": None},
+        ]} for index in (1, 3, 5)],
+    })
+
+    class FakeOpenAI:
+        def __init__(self, **_kwargs):
+            self.conversations = SimpleNamespace(create=lambda: SimpleNamespace(id="conv_starter"))
+            self.responses = SimpleNamespace(parse=lambda **kwargs: provider_inputs.append(kwargs["input"]) or SimpleNamespace(
+                id="resp_starter", status="completed", output=[], output_parsed=proposal))
+
+    monkeypatch.setattr(plan_generation, "OpenAI", FakeOpenAI)
+    monkeypatch.setattr(coach, "start_generation", lambda generation_id, user_id: coach.run_generation(generation_id, user_id))
+
+    def database():
+        with factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = database
+    app.dependency_overrides[require_athlete] = lambda: owner
+    try:
+        with TestClient(app) as client:
+            request = {"client_request_id": str(uuid.uuid4()), "mode": "profile"}
+            assert client.post("/coach/plans/preflight", json=request).json() == {"status": "ready", "questions": []}
+            started = client.post("/coach/plans/generations", json=request)
+            assert started.status_code == 202
+            assert metering == [("reserve", FeatureKey.TRAINING_PLAN_GENERATION), ("consume", None)]
+            eligible = provider_inputs[0].split("Eligible canonical movements (only these may be prescribed): ")[1]
+            assert '"provisional_limits": {"max_sets": 3, "max_reps_per_set": 1}' in eligible
+            assert "muscle" not in eligible.lower()
+            conversation = client.get(f"/coach/conversations/{started.json()['conversation_id']}").json()
+            preview_id = conversation["messages"][-1]["plan_preview_id"]
+            preview = client.get(f"/coach/plans/previews/{preview_id}").json()
+            assert preview["provisional_readiness"] is True
+            assert preview["origin"]["mode"] == "profile"
+            saved = client.post(f"/coach/plans/previews/{preview_id}/save", json={})
+            assert saved.status_code == 200
+            assert client.post(f"/coach/plans/previews/{preview_id}/save", json={}).json()["id"] == saved.json()["id"]
+            # Preview and explicit Save use exactly the one reserved unit.
+            assert metering == [("reserve", FeatureKey.TRAINING_PLAN_GENERATION), ("consume", None)]
+            assert len(client.get("/coach/plans").json()) == 1
+    finally:
+        app.dependency_overrides.clear()

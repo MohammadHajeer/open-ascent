@@ -2,6 +2,10 @@ import type { EffectivePlan } from "./types";
 
 export type CheckoutReturnState = "success" | "cancelled" | null;
 
+// Marketing copy only. The backend entitlement is authoritative for access,
+// and the Coach page shows the live allowance it reports.
+export const FREE_COACH_DAILY_MESSAGES = 5;
+
 export function canUpgrade(plan: EffectivePlan | undefined) {
   return plan === "free";
 }

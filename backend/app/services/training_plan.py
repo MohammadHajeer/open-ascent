@@ -15,6 +15,11 @@ from app.models.training import TrainingPlan, TrainingPlanPreview
 from app.schemas.readiness import ReadinessStatus
 from app.schemas.training_plan import WeeklyPlanCandidate
 from app.services.feature_usage import consume_usage
+from app.services.foundation_readiness import (
+    PROVISIONAL_MAX_SETS,
+    PROVISIONAL_MAX_TRAINING_DAYS,
+    is_provisional_pass,
+)
 from app.services.movement import MovementService
 from app.services.movement_documentation import MovementDocumentationService
 from app.services.plan_modes import equipment_available
@@ -80,21 +85,20 @@ def validate_candidate(
                     f"{movement.name[:80]} cannot be prescribed yet: "
                     + "; ".join(item[:180] for item in detail),
                 )
-            if any(item.source == "structured_self_report" and item.satisfied is True for item in evidence):
+            if any(is_provisional_pass(item) for item in evidence):
                 provisional_movements.add(movement.id)
                 provisional_cap = min(
-                    int(item.observed_value) for item in evidence
-                    if item.source == "structured_self_report" and item.satisfied is True
+                    int(item.observed_value) for item in evidence if is_provisional_pass(item)
                 )
                 prescriptions = [entry for planned_day in candidate.days for entry in planned_day.exercises
                                  if entry.movement_id == movement.id]
-                if any(entry.sets > 3 or entry.reps is None or entry.reps > provisional_cap
+                if any(entry.sets > PROVISIONAL_MAX_SETS or entry.reps is None or entry.reps > provisional_cap
                        for entry in prescriptions):
                     raise PlanValidationError(
                         "provisional_volume_exceeded",
                         f"{movement.name[:80]} needs a conservative target until training evidence is logged.",
                     )
-    if checked and checked == provisional_movements and len(candidate.days) > 3:
+    if checked and checked == provisional_movements and len(candidate.days) > PROVISIONAL_MAX_TRAINING_DAYS:
         raise PlanValidationError(
             "provisional_volume_exceeded",
             "A starter plan based only on self-reported readiness should use at most three training days.",
@@ -119,7 +123,7 @@ def validate_library_constraints(db: Session, user_id: uuid.UUID, candidate: Wee
 
 def uses_provisional_readiness(db: Session, user_id: uuid.UUID, candidate: WeeklyPlanCandidate) -> bool:
     return any(
-        item.source == "structured_self_report" and item.satisfied is True
+        is_provisional_pass(item)
         for movement_id in {exercise.movement_id for day in candidate.days for exercise in day.exercises}
         for item in ReadinessEvidenceBuilder.build(db, user_id=user_id, movement_id=movement_id)
     )

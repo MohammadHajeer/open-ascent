@@ -26,15 +26,18 @@ async def http_exception_handler(
     request: Request,
     exc: HTTPException,
 ):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": {
-                "code": "http_error",
-                "message": str(exc.detail),
-            }
-        },
-    )
+    # A structured detail carries a stable machine-readable code so clients
+    # never parse message text.
+    if isinstance(exc.detail, dict) and "code" in exc.detail:
+        error = {
+            "code": str(exc.detail["code"]),
+            "message": str(exc.detail.get("message", "")),
+        }
+        if "details" in exc.detail:
+            error["details"] = exc.detail["details"]
+    else:
+        error = {"code": "http_error", "message": str(exc.detail)}
+    return JSONResponse(status_code=exc.status_code, content={"error": error})
 
 
 @app.exception_handler(RequestValidationError)

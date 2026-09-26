@@ -274,15 +274,17 @@ def publish_foundation_readiness(db, admin, movements):
             db, movement.id, admin.id
         )
         prerequisites = list(published.content["prerequisites"])
+        # Match seed_movements: foundation rules accept a provisional
+        # structured self-report so new athletes can reach a starter plan.
         prerequisites.append(
-            f"At least {threshold} self-performed {movement.name} repetition{'s' if threshold != 1 else ''} logged in the last 90 days"
+            f"At least {threshold} controlled {movement.name} repetition{'s' if threshold != 1 else ''}, supported by recent training or a structured self-report"
         )
         rule = {
             "code": code, "type": "movement_performance",
             "prerequisite_index": len(prerequisites) - 1,
             "movement_id": movement.id, "metric": "reps", "operator": ">=",
             "value": threshold, "max_age_days": 90,
-            "accepted_sources": ["manual", "uploaded_analysis"],
+            "accepted_sources": ["manual", "uploaded_analysis", "structured_self_report"],
         }
         updated = MovementDocumentationService.update_draft(
             db, draft.id,

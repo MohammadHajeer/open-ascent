@@ -77,7 +77,7 @@ class PlanEntitlement(TimestampMixin, Base):
             (entitlement_type = 'metered'
                 AND enabled
                 AND (allowance_units IS NULL OR allowance_units >= 0)
-                AND reset_policy = 'calendar_month_utc')
+                AND reset_policy IN ('calendar_month_utc', 'calendar_day_utc'))
             OR
             (entitlement_type = 'unlimited'
                 AND enabled

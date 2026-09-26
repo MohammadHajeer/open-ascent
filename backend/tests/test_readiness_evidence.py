@@ -827,3 +827,130 @@ def test_invalid_rule_content_is_rejected(change):
             "stop_conditions": ["Stop for pain"],
             "readiness_rules": [entry],
         })
+
+
+def onboarded_athlete(db, reps: dict, *, submitted_at=None, equipment=("pull_up_bar",)) -> Profile:
+    profile = athlete(db, assessment={
+        "submitted_at": (submitted_at or datetime.now(UTC)).isoformat(),
+        "answers": {"training_experience": "some", "max_clean_reps": reps},
+    })
+    profile.coaching_context = {"equipment": list(equipment),
+                                "availability": {"days_per_week": 3, "minutes_per_session": 45}}
+    db.flush()
+    return profile
+
+
+def test_onboarding_answers_let_a_new_athlete_reach_a_conservative_starter_plan(db):
+    for seed in MOVEMENTS:
+        seed_movement(db, seed)
+    profile = onboarded_athlete(db, {"pull_up": 20, "push_up": 40, "dips": None})
+    request = LibraryPlanRequest(client_request_id=uuid.uuid4(), mode="profile")
+    # Onboarding already answered the foundation question: no extra check.
+    assert preflight(db, profile.id, request) == {"status": "ready", "questions": []}
+    assert db.query(ReadinessSelfReport).filter_by(user_id=profile.id).count() == 0
+    pull_up = db.query(Movement).filter_by(slug="pull-up").one()
+    push_up = db.query(Movement).filter_by(slug="push-up").one()
+    for target, threshold in ((pull_up, 1), (push_up, 5)):
+        evidence, decision = result(db, profile, target)
+        assert decision.status is ReadinessStatus.PASS
+        # Provisional, labelled, and credited only at the rule threshold.
+        assert evidence[0].source == "onboarding_self_report"
+        assert evidence[0].observed_value == threshold
+    dips = db.query(Movement).filter_by(slug="dips").one()
+    assert result(db, profile, dips)[1].status is ReadinessStatus.UNKNOWN
+    for slug in ("muscle-up", "high-pull-up", "close-grip-pull-up"):
+        advanced = db.query(Movement).filter_by(slug=slug).one()
+        assert result(db, profile, advanced)[1].status is ReadinessStatus.UNKNOWN
+    assert profile.athlete_state == {}
+    assert db.query(Analysis).filter_by(user_id=profile.id).count() == 0
+
+    proposal = {"title": "Starter", "days": [{"day_index": 1, "exercises": [
+        {"movement_id": pull_up.id, "sets": 3, "reps": 1, "rest_seconds": 120},
+        {"movement_id": push_up.id, "sets": 3, "reps": 5, "rest_seconds": 90},
+    ]}]}
+    validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
+    proposal["days"][0]["exercises"][0]["reps"] = 8
+    with pytest.raises(PlanValidationError, match="conservative target"):
+        validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
+    proposal["days"][0]["exercises"][0].update(reps=1, sets=4)
+    with pytest.raises(PlanValidationError, match="conservative target"):
+        validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
+    proposal["days"][0]["exercises"][0].update(sets=3)
+    proposal["days"] = [{**proposal["days"][0], "day_index": index} for index in range(1, 5)]
+    with pytest.raises(PlanValidationError, match="at most three training days"):
+        validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
+    muscle_up = db.query(Movement).filter_by(slug="muscle-up").one()
+    blocked = {"title": "Too soon", "days": [{"day_index": 1, "exercises": [
+        {"movement_id": muscle_up.id, "sets": 1, "reps": 1, "rest_seconds": 120}]}]}
+    with pytest.raises(PlanValidationError, match="cannot be prescribed yet"):
+        validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(blocked))
+
+    # Logged training supersedes the onboarding answer.
+    logged_set(db, profile, pull_up, source="manual", reps=3)
+    assert result(db, profile, pull_up)[0][0].source == "manual"
+
+
+def test_onboarding_below_threshold_fails_until_a_quick_readiness_answer_supersedes(db):
+    for seed in MOVEMENTS:
+        seed_movement(db, seed)
+    profile = onboarded_athlete(db, {"pull_up": 0, "push_up": 3, "dips": None},
+                                submitted_at=datetime.now(UTC) - timedelta(days=1))
+    push_up = db.query(Movement).filter_by(slug="push-up").one()
+    evidence, decision = result(db, profile, push_up)
+    assert decision.status is ReadinessStatus.FAIL
+    assert (evidence[0].source, evidence[0].observed_value) == ("onboarding_self_report", 3)
+    request = LibraryPlanRequest(client_request_id=uuid.uuid4(), mode="profile")
+    check = preflight(db, profile.id, request)
+    assert check["status"] == "unavailable"
+    assert {item["rule_code"] for item in check["questions"]} == {
+        "recent_logged_push_up", "recent_logged_pull_up"
+    }
+    retry = next(item for item in check["questions"] if item["rule_code"] == "recent_logged_push_up")
+    store_answers(db, profile.id, ReadinessAnswersInput.model_validate({"answers": [{
+        **{key: retry[key] for key in ("movement_id", "documentation_id", "rule_code")},
+        "response": "able",
+    }]}))
+    assert preflight(db, profile.id, request)["status"] == "ready"
+    assert result(db, profile, push_up)[0][0].source == "structured_self_report"
+
+
+@pytest.mark.parametrize("reps,age_days", [
+    ({"pull_up": None, "push_up": None, "dips": None}, 0),
+    ({"pull_up": 10, "push_up": 30, "dips": 10}, 91),
+])
+def test_unanswered_or_stale_onboarding_still_uses_quick_readiness(db, reps, age_days):
+    for seed in MOVEMENTS:
+        seed_movement(db, seed)
+    profile = onboarded_athlete(db, reps, submitted_at=datetime.now(UTC) - timedelta(days=age_days))
+    check = preflight(db, profile.id, LibraryPlanRequest(client_request_id=uuid.uuid4(), mode="profile"))
+    assert check["status"] == "check_required"
+    assert {item["rule_code"] for item in check["questions"]} == {
+        "recent_logged_push_up", "recent_logged_pull_up"
+    }
+
+
+def test_seeded_foundation_opt_in_migration_matches_only_exact_demo_seed_rules(db):
+    path = Path(__file__).parents[1] / "alembic" / "versions" / (
+        "e9f0a1b2c3d4_opt_in_seeded_foundation_self_report.py"
+    )
+    spec = spec_from_file_location("seeded_foundation_migration", path)
+    assert spec is not None and spec.loader is not None
+    migration = module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    assert migration.FOUNDATIONS == FOUNDATION_READINESS_RULES
+    for seed in MOVEMENTS:
+        seed_movement(db, seed)
+    for slug, (code, threshold) in FOUNDATION_READINESS_RULES.items():
+        target = db.query(Movement).filter_by(slug=slug).one()
+        current = MovementDocumentationService.get_published(db, target.id).content
+        index = current["readiness_rules"][0]["prerequisite_index"]
+        # The migrated wording is exactly what seed_movements publishes today.
+        assert current["prerequisites"][index] == migration._opted_in_prerequisite(target.name, threshold)
+        legacy = {**current, "prerequisites": [
+            *current["prerequisites"][:index], migration._seeded_prerequisite(target.name, threshold),
+        ], "readiness_rules": [{**current["readiness_rules"][0],
+                                "accepted_sources": ["manual", "uploaded_analysis"]}]}
+        assert migration._is_legacy_seed_rule(legacy, target.id, target.name, code, threshold)
+        edited = {**legacy, "prerequisites": [*legacy["prerequisites"][:-1], "Admin wording"]}
+        assert not migration._is_legacy_seed_rule(edited, target.id, target.name, code, threshold)
+        assert not migration._is_legacy_seed_rule(current, target.id, target.name, code, threshold)

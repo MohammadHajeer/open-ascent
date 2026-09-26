@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.models.enums import EntitlementType, FeatureKey, FeatureUsageStatus, PlanCode
+from app.models.enums import (
+    EntitlementType,
+    FeatureKey,
+    FeatureUsageStatus,
+    PlanCode,
+    ResetPolicy,
+)
 from app.models.subscription import (
     FeatureUsage,
     PlanEntitlement,
@@ -16,6 +23,7 @@ from app.models.subscription import (
 )
 from app.services.entitlements import (
     UnconfiguredAllowanceError,
+    get_user_entitlement,
     resolve_effective_plan,
 )
 
@@ -51,6 +59,114 @@ def calendar_month_window(at: datetime) -> tuple[datetime, datetime]:
     else:
         end = datetime(at.year, at.month + 1, 1, tzinfo=UTC)
     return start, end
+
+
+def calendar_day_window(at: datetime) -> tuple[datetime, datetime]:
+    """Return deterministic half-open UTC calendar-day boundaries."""
+    if at.tzinfo is None:
+        at = at.replace(tzinfo=UTC)
+    at = at.astimezone(UTC)
+    start = datetime(at.year, at.month, at.day, tzinfo=UTC)
+    return start, start + timedelta(days=1)
+
+
+RESET_WINDOWS = {
+    ResetPolicy.CALENDAR_MONTH_UTC: calendar_month_window,
+    ResetPolicy.CALENDAR_DAY_UTC: calendar_day_window,
+}
+RESET_PERIODS = {
+    ResetPolicy.CALENDAR_MONTH_UTC: "month",
+    ResetPolicy.CALENDAR_DAY_UTC: "day",
+}
+
+
+def usage_window(reset_policy: str | None, at: datetime) -> tuple[datetime, datetime]:
+    try:
+        return RESET_WINDOWS[ResetPolicy(reset_policy)](at)
+    except (KeyError, ValueError) as exc:
+        raise RuntimeError(f"Unsupported reset policy: {reset_policy!r}.") from exc
+
+
+def _admitted_units(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    feature_key: FeatureKey,
+    window: tuple[datetime, datetime],
+) -> int:
+    return int(
+        db.scalar(
+            select(func.coalesce(func.sum(FeatureUsage.units), 0)).where(
+                FeatureUsage.user_id == user_id,
+                FeatureUsage.feature_key == feature_key.value,
+                FeatureUsage.window_start == window[0],
+                FeatureUsage.window_end == window[1],
+                FeatureUsage.status.in_(
+                    (
+                        FeatureUsageStatus.RESERVED.value,
+                        FeatureUsageStatus.CONSUMED.value,
+                    )
+                ),
+            )
+        )
+        or 0
+    )
+
+
+@dataclass(frozen=True)
+class UsageSummary:
+    """Read-only view of one feature's allowance for display, never admission."""
+
+    tier: PlanCode
+    allowed: bool
+    unlimited: bool
+    limit: int | None
+    used: int
+    remaining: int | None
+    period: str | None
+    resets_at: datetime | None
+
+    def as_dict(self) -> dict:
+        return {
+            "tier": self.tier.value,
+            "allowed": self.allowed,
+            "unlimited": self.unlimited,
+            "limit": self.limit,
+            "used": self.used,
+            "remaining": self.remaining,
+            "period": self.period,
+            "resets_at": self.resets_at.isoformat() if self.resets_at else None,
+        }
+
+
+def usage_summary(
+    db: Session,
+    user_id: uuid.UUID,
+    feature_key: FeatureKey,
+    *,
+    as_of: datetime | None = None,
+) -> UsageSummary:
+    evaluated_at = as_of or datetime.now(UTC)
+    entitlement = get_user_entitlement(db, user_id, feature_key)
+    tier = entitlement.plan_code if entitlement else resolve_effective_plan(db, user_id)
+    if entitlement is None or not entitlement.enabled:
+        return UsageSummary(tier, False, False, 0, 0, 0, None, None)
+    if entitlement.entitlement_type is not EntitlementType.METERED:
+        return UsageSummary(tier, True, True, None, 0, None, None, None)
+    window = usage_window(entitlement.reset_policy, evaluated_at)
+    used = _admitted_units(db, user_id=user_id, feature_key=feature_key, window=window)
+    limit = entitlement.allowance_units
+    remaining = None if limit is None else max(0, limit - used)
+    return UsageSummary(
+        tier,
+        limit is not None and remaining > 0,
+        False,
+        limit,
+        used,
+        remaining,
+        RESET_PERIODS[ResetPolicy(entitlement.reset_policy)],
+        window[1],
+    )
 
 
 def _signed_int32(value: bytes) -> int:
@@ -190,28 +306,11 @@ def reserve_usage(
         raise UnconfiguredAllowanceError(
             f"No allowance has been configured for {feature_key.value}."
         )
-    if entitlement.reset_policy != "calendar_month_utc":
-        raise RuntimeError(
-            f"Unsupported reset policy for {feature_key.value}: "
-            f"{entitlement.reset_policy!r}."
-        )
-
-    window_start, window_end = calendar_month_window(evaluated_at)
-    admitted_units = db.scalar(
-        select(func.coalesce(func.sum(FeatureUsage.units), 0)).where(
-            FeatureUsage.user_id == user_id,
-            FeatureUsage.feature_key == feature_key.value,
-            FeatureUsage.window_start == window_start,
-            FeatureUsage.window_end == window_end,
-            FeatureUsage.status.in_(
-                (
-                    FeatureUsageStatus.RESERVED.value,
-                    FeatureUsageStatus.CONSUMED.value,
-                )
-            ),
-        )
+    window_start, window_end = usage_window(entitlement.reset_policy, evaluated_at)
+    admitted_units = _admitted_units(
+        db, user_id=user_id, feature_key=feature_key, window=(window_start, window_end)
     )
-    if int(admitted_units or 0) + units > entitlement.allowance_units:
+    if admitted_units + units > entitlement.allowance_units:
         raise QuotaExceededError(f"{feature_key.value} allowance is exhausted.")
 
     usage = FeatureUsage(

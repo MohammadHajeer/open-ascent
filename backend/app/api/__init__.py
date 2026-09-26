@@ -6,6 +6,7 @@ from app.api.analysis import router as analysis_router
 from app.api.analysis_stream import router as analysis_stream_router
 from app.api.athlete_profile import router as athlete_profile_router
 from app.api.coach import router as coach_router
+from app.api.coach import usage_router as coach_usage_router
 from app.api.dashboard import router as dashboard_router
 from app.api.dashboard_tour import router as dashboard_tour_router
 from app.api.movement_documentation import router as movement_documentation_router
@@ -37,5 +38,6 @@ api_router.include_router(subscriptions_router)
 api_router.include_router(analysis_router)
 api_router.include_router(analysis_stream_router)
 api_router.include_router(coach_router)
+api_router.include_router(coach_usage_router)
 api_router.include_router(training_plans_router)
 api_router.include_router(workouts_router)

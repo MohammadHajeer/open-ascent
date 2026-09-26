@@ -9,8 +9,11 @@ import { ConversationSidebar, shortConversationTitle } from "./conversation-side
 import { MessageList } from "./message-list";
 import { useCoachReveal } from "./use-coach-reveal";
 import * as api from "./api";
+import { ApiError } from "@/lib/api";
+import { limitedAllowance } from "./coach-composer";
 
 vi.mock("./api", () => ({
+  getCoachUsage: vi.fn(),
   listConversations: vi.fn(),
   getConversation: vi.fn(),
   sendFirstMessage: vi.fn(),
@@ -28,6 +31,9 @@ const user = { id: "user-1", role: "user" as const, content: "Help my Pull-Ups",
 const assistant = { id: "assistant-1", role: "assistant" as const, content: "", status: "streaming" as const, created_at: "2026-09-23", generation_id: "generation-1" };
 const planPreview = { id: "preview-1", saved_plan_id: null, title: "Weekly strength", summary: "A modest week.", days: [{ day_index: 1, label: "Strength", exercises: [{ movement_id: "movement-1", movement_name: "Pull-Up", movement_slug: "pull-up", sets: 3, reps: 5, hold_seconds: null, rest_seconds: 90, notes: null }] }] };
 
+const proUsage = { tier: "pro" as const, allowed: true, unlimited: true, limit: null, used: 0, remaining: null, period: null, resets_at: null };
+const freeUsage = (remaining: number) => ({ tier: "free" as const, allowed: remaining > 0, unlimited: false, limit: 5, used: 5 - remaining, remaining, period: "day" as const, resets_at: "2026-09-27T00:00:00+00:00" });
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;
@@ -37,6 +43,7 @@ function deferred<T>() {
 
 beforeEach(() => {
   window.localStorage.clear();
+  vi.mocked(api.getCoachUsage).mockResolvedValue(proUsage);
   vi.mocked(api.listConversations).mockResolvedValue([]);
   vi.mocked(api.getConversation).mockResolvedValue({ ...first, messages: [] });
   vi.mocked(api.sendFirstMessage).mockResolvedValue({ conversation: first, generation_id: "generation-1", created: true });
@@ -354,5 +361,56 @@ it("requires explicit confirmation before deleting, and cancel keeps the convers
     expect(html).toContain("<table");
     expect(html).toContain("<code");
     expect(html).not.toContain("<script");
+  });
+});
+
+describe("Free AI Coach allowance", () => {
+  it("renders the normal Free Coach experience with a subtle remaining-message indicator", async () => {
+    vi.mocked(api.getCoachUsage).mockResolvedValue(freeUsage(3));
+    render(<CoachWorkspace />);
+    expect(await screen.findByText("3 of 5 messages remaining today")).toBeTruthy();
+    expect(screen.getByText("Ask your Open Ascent Coach")).toBeTruthy();
+    expect((screen.getByLabelText("Message your coach") as HTMLTextAreaElement).disabled).toBe(false);
+    expect(screen.queryByRole("link", { name: "View Pro" })).toBeNull();
+  });
+
+  it("refreshes the indicator after an accepted send", async () => {
+    vi.mocked(api.getCoachUsage).mockResolvedValueOnce(freeUsage(1)).mockResolvedValue(freeUsage(0));
+    render(<CoachWorkspace />);
+    await screen.findByText("1 of 5 messages remaining today");
+    fireEvent.change(screen.getByLabelText("Message your coach"), { target: { value: "Last question today" } });
+    fireEvent.click(screen.getByLabelText("Send message"));
+    expect(await screen.findByText("0 of 5 messages remaining today")).toBeTruthy();
+    expect(api.sendFirstMessage).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Today's AI Coach messages are used")).toBeTruthy();
+  });
+
+  it("keeps the typed message and explains the exhausted allowance without an error or failed bubble", async () => {
+    vi.mocked(api.listConversations).mockResolvedValue([first]);
+    vi.mocked(api.getConversation).mockResolvedValue({ ...first, messages: [user] });
+    vi.mocked(api.getCoachUsage).mockResolvedValue(freeUsage(1));
+    vi.mocked(api.sendMessage).mockRejectedValue(new ApiError(429, "coach_daily_quota_exhausted", "Today's AI Coach message allowance has been used.", freeUsage(0)));
+    render(<CoachWorkspace />);
+    await screen.findByText("Help my Pull-Ups");
+    fireEvent.change(screen.getByLabelText("Message your coach"), { target: { value: "What about dips?" } });
+    fireEvent.click(screen.getByLabelText("Send message"));
+    expect(await screen.findByText("Today's AI Coach messages are used")).toBeTruthy();
+    expect((screen.getByLabelText("Message your coach") as HTMLTextAreaElement).value).toBe("What about dips?");
+    expect(screen.getByText(/You've used today's 5 AI Coach messages/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View Pro" }).getAttribute("href")).toBe("/dashboard/settings");
+    expect(screen.getByText("0 of 5 messages remaining today")).toBeTruthy();
+    expect(screen.queryByText("Today's AI Coach message allowance has been used.")).toBeNull();
+    expect(screen.getByText("Help my Pull-Ups")).toBeTruthy();
+    expect(screen.queryAllByText("What about dips?").filter(node => node.tagName !== "TEXTAREA")).toHaveLength(0);
+  });
+
+  it("never shows Pro as limited", async () => {
+    render(<CoachWorkspace />);
+    await waitFor(() => expect(api.getCoachUsage).toHaveBeenCalled());
+    await screen.findByText("Ask your Open Ascent Coach");
+    expect(screen.queryByTestId("coach-allowance")).toBeNull();
+    expect(screen.queryByRole("link", { name: "View Pro" })).toBeNull();
+    expect(limitedAllowance(proUsage)).toBeNull();
+    expect(limitedAllowance(freeUsage(2))).toEqual({ limit: 5, remaining: 2, resetsAt: "2026-09-27T00:00:00+00:00" });
   });
 });

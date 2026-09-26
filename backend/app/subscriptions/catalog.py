@@ -29,13 +29,14 @@ class EntitlementDefinition:
         feature_key: FeatureKey,
         *,
         allowance_units: int | None,
+        reset_policy: ResetPolicy = ResetPolicy.CALENDAR_MONTH_UTC,
     ) -> EntitlementDefinition:
         return cls(
             feature_key=feature_key,
             entitlement_type=EntitlementType.METERED,
             enabled=True,
             allowance_units=allowance_units,
-            reset_policy=ResetPolicy.CALENDAR_MONTH_UTC,
+            reset_policy=reset_policy,
         )
 
     @classmethod
@@ -54,6 +55,9 @@ class PlanDefinition:
     entitlements: tuple[EntitlementDefinition, ...]
 
 
+# Accepted Free AI Coach turns per UTC calendar day. Pro Coach is unlimited.
+FREE_AI_COACH_DAILY_MESSAGES = 5
+
 # Video-analysis quotas remain pending product configuration. Null metered
 # allowances fail closed; unlimited access always uses the distinct type.
 PLAN_CATALOG = (
@@ -65,7 +69,11 @@ PLAN_CATALOG = (
                 FeatureKey.VIDEO_ANALYSIS,
                 allowance_units=None,
             ),
-            EntitlementDefinition.boolean(FeatureKey.AI_COACH_REPLY, enabled=False),
+            EntitlementDefinition.metered(
+                FeatureKey.AI_COACH_REPLY,
+                allowance_units=FREE_AI_COACH_DAILY_MESSAGES,
+                reset_policy=ResetPolicy.CALENDAR_DAY_UTC,
+            ),
             EntitlementDefinition.metered(
                 FeatureKey.TRAINING_PLAN_GENERATION,
                 allowance_units=1,

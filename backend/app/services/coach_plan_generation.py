@@ -26,6 +26,10 @@ from app.services.coach_tools import (
     execute_tool,
     openai_tools,
 )
+from app.services.foundation_readiness import (
+    PROVISIONAL_MAX_SETS,
+    is_provisional_pass,
+)
 from app.services.movement_documentation import MovementDocumentationService
 from app.services.plan_modes import equipment_available, generation_context
 from app.services.readiness import ReadinessService
@@ -36,7 +40,7 @@ from app.services.training_plan import (
     complete_preview,
 )
 
-PLAN_INSTRUCTIONS = """Create a seven-day or shorter weekly calisthenics training plan for this athlete. Return only the typed plan proposal. Use only the eligible canonical movement IDs supplied in the current request. The backend independently verifies every movement and its readiness. Pick the correct prescription target: repetitions for repetitions movements and hold_seconds for duration movements; provide exactly one. Use integer sets, target, and rest_seconds. Keep the plan appropriately modest for the athlete's evidence and goal. For a movement with provisional_structured_self_report readiness, prescribe at most three sets and no more repetitions per set than its documented foundation threshold: Pull-Up one, Push-Up five, Dips one. Prefer at most three training days when only provisional movements are available, with no aggressive progression. In profile mode, use self-reported onboarding only as provisional design context. In goal mode, the goal movement may be unready: identify the prerequisite gap and prescribe only eligible precursor exercises; never include the goal movement merely because it is the goal. In progress mode, use the supplied COACH-03 trends rather than inventing a fitness score. Explain in the summary why the selected exercises fit the request, including a prerequisite-first approach when applicable. Respect reported availability, equipment and movement avoidances. Do not claim to have measured unprovided performance. Do not turn movement safety guidance into a readiness claim. The available tools only read athlete records and published guides; use them when useful. Do not write records or ask tools to do so. Do not include medical advice or pain-provoking activity."""
+PLAN_INSTRUCTIONS = """Create a seven-day or shorter weekly calisthenics training plan for this athlete. Return only the typed plan proposal. Use only the eligible canonical movement IDs supplied in the current request. The backend independently verifies every movement and its readiness. Pick the correct prescription target: repetitions for repetitions movements and hold_seconds for duration movements; provide exactly one. Use integer sets, target, and rest_seconds. Keep the plan appropriately modest for the athlete's evidence and goal. For a movement with provisional_structured_self_report readiness (a Quick readiness or onboarding self-report, never a measurement), stay within its provisional_limits: at most max_sets sets and at most max_reps_per_set repetitions per set. Prefer at most three training days when only provisional movements are available, with no aggressive progression. In profile mode, use self-reported onboarding only as provisional design context. In goal mode, the goal movement may be unready: identify the prerequisite gap and prescribe only eligible precursor exercises; never include the goal movement merely because it is the goal. In progress mode, use the supplied COACH-03 trends rather than inventing a fitness score. Explain in the summary why the selected exercises fit the request, including a prerequisite-first approach when applicable. Respect reported availability, equipment and movement avoidances. Do not claim to have measured unprovided performance. Do not turn movement safety guidance into a readiness claim. The available tools only read athlete records and published guides; use them when useful. Do not write records or ask tools to do so. Do not include medical advice or pain-provoking activity."""
 
 
 def _eligible_movements(db, user_id: uuid.UUID) -> list[dict]:
@@ -48,17 +52,22 @@ def _eligible_movements(db, user_id: uuid.UUID) -> list[dict]:
             db, user_id=user_id, movement_id=movement.id
         )
         if ReadinessService.evaluate(evidence).status is ReadinessStatus.PASS:
-            eligible.append(
-                {
-                    "id": str(movement.id),
-                    "name": movement.name,
-                    "prescription_type": movement.prescription_type,
-                    "readiness_basis": "provisional_structured_self_report" if any(
-                        item.source == "structured_self_report" and item.satisfied is True
-                        for item in evidence
-                    ) else "recorded_evidence",
+            provisional = [item for item in evidence if is_provisional_pass(item)]
+            entry = {
+                "id": str(movement.id),
+                "name": movement.name,
+                "prescription_type": movement.prescription_type,
+                "readiness_basis": "provisional_structured_self_report"
+                if provisional else "recorded_evidence",
+            }
+            if provisional:
+                # The same limits validate_candidate enforces, stated explicitly
+                # so a conservative proposal is not rejected after generation.
+                entry["provisional_limits"] = {
+                    "max_sets": PROVISIONAL_MAX_SETS,
+                    "max_reps_per_set": min(int(item.observed_value) for item in provisional),
                 }
-            )
+            eligible.append(entry)
     return eligible
 
 

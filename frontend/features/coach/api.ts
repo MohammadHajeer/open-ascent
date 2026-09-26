@@ -1,12 +1,15 @@
 import { authApiFetch, authApiRequest } from "@/lib/auth-api";
 import { SseParser } from "@/lib/sse-parser";
 import type {
+  CoachUsage,
   Conversation,
   ConversationDetail,
   Generation,
   PlanPreview,
 } from "./types";
 
+export const getCoachUsage = () =>
+  authApiFetch<CoachUsage>("/coach/usage", { cache: "no-store" });
 export const listConversations = () =>
   authApiFetch<Conversation[]>("/coach/conversations", { cache: "no-store" });
 export const createConversation = () =>

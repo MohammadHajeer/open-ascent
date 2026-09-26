@@ -99,4 +99,27 @@ describe("Library plan generator", () => {
     expect(screen.getByRole("button", { name: "Update readiness answers" })).toBeTruthy();
     expect(libraryApi.startLibraryPlan).not.toHaveBeenCalled();
   });
+
+  it("lets a newly onboarded Free athlete go straight from profile to a starter-plan preview", async () => {
+    vi.mocked(libraryApi.getGenerationOptions)
+      .mockResolvedValueOnce({ goals: [], progress_available: false, plan_allowance: 1, plan_remaining: 1 })
+      .mockResolvedValue({ goals: [], progress_available: false, plan_allowance: 1, plan_remaining: 0 });
+    vi.mocked(libraryApi.startLibraryPlan).mockResolvedValue({ conversation_id: "conversation", generation_id: "generation", created: true });
+    vi.mocked(coachApi.getConversation).mockResolvedValue({ id: "conversation", title: "Starter", created_at: "", updated_at: "", messages: [
+      { id: "reply", role: "assistant", content: "Ready", status: "completed", created_at: "", generation_id: "generation", plan_preview_id: "starter" },
+    ] });
+    vi.mocked(coachApi.streamGeneration).mockImplementation(async (_conversation, _generation, onSnapshot) => {
+      onSnapshot({ id: "generation", status: "completed", content: "Ready", error_code: null });
+    });
+    mount();
+    expect(await screen.findByText("1 of 1 plan generations remaining this month.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Start from my profile/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Generate plan" }));
+    expect(await screen.findByText("Preview starter")).toBeTruthy();
+    expect(screen.queryByText("Quick readiness check")).toBeNull();
+    expect(libraryApi.submitReadinessCheck).not.toHaveBeenCalled();
+    expect(libraryApi.startLibraryPlan).toHaveBeenCalledTimes(1);
+    expect(libraryApi.startLibraryPlan).toHaveBeenCalledWith(expect.objectContaining({ mode: "profile" }));
+    await waitFor(() => expect(libraryApi.getGenerationOptions).toHaveBeenCalledTimes(2));
+  });
 });

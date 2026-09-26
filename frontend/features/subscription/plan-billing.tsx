@@ -11,11 +11,13 @@ import { Button } from "@/components/ui/button";
 import { useBeginProCheckout, useCancelProSubscription, useResumeProSubscription, useSubscriptionStatus } from "./hooks";
 import {
   canUpgrade,
+  FREE_COACH_DAILY_MESSAGES,
   getCheckoutReturnMessage,
   type CheckoutReturnState,
 } from "./presentation";
 
 const freeAccess = [
+  `AI Coach with ${FREE_COACH_DAILY_MESSAGES} messages a day`,
   "Uploaded video analysis with plan limits",
   "Persistent analysis history and basic progress tracking",
   "Movement library and documentation",
@@ -23,7 +25,7 @@ const freeAccess = [
 ];
 
 const proAccess = [
-  "Higher uploaded-analysis and AI Coach allowances",
+  "Full AI Coach access and a higher uploaded-analysis allowance",
   "Live Coach when available",
   "Adaptive training plans and advanced progress insights",
   "Safety guidance on every plan",
@@ -150,8 +152,8 @@ export function PlanBilling({
             </div>
 
             <div className="grid gap-3 rounded-xl border border-border p-4 text-sm sm:grid-cols-2">
-              <div><p className="font-medium">Free</p><p className="mt-1 text-foreground-soft">Workout history, progress, movement guides, and safety guidance.</p></div>
-              <div><p className="font-medium">Pro · {formattedPrice ?? "monthly"}</p><p className="mt-1 text-foreground-soft">Higher Coach and analysis allowances, adaptive plans, and Live Coach access.</p></div>
+              <div><p className="font-medium">Free</p><p className="mt-1 text-foreground-soft">Workout history, progress, movement guides, limited daily AI Coach, and safety guidance.</p></div>
+              <div><p className="font-medium">Pro · {formattedPrice ?? "monthly"}</p><p className="mt-1 text-foreground-soft">Full AI Coach access, higher analysis allowances, adaptive plans, and Live Coach access.</p></div>
             </div>
 
             <ul className="grid gap-3 sm:grid-cols-2">

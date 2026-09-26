@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sse_starlette.sse import EventSourceResponse
@@ -14,6 +14,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.api.dependencies.auth import AthleteProfile
 from app.db.database import DbSession, SessionLocal
 from app.models.coach import CoachGeneration, Conversation, Message
+from app.models.enums import FeatureKey
 from app.models.training import TrainingPlanPreview
 from app.services import coach as service
 from app.services import coach_timing as timing
@@ -22,9 +23,11 @@ from app.services.entitlements import UnconfiguredAllowanceError
 from app.services.feature_usage import (
     FeatureAccessDeniedError,
     QuotaExceededError,
+    usage_summary,
 )
 
 router = APIRouter(prefix="/coach/conversations", tags=["coach"])
+usage_router = APIRouter(prefix="/coach", tags=["coach"])
 TERMINAL = ("completed", "failed", "interrupted")
 # Durable reads recover reconnects and other workers; while this process holds
 # a live snapshot they only guard against a lost worker, so they can be rare.
@@ -42,6 +45,38 @@ class SendInput(BaseModel):
 
 class TitleInput(BaseModel):
     title: str = Field(min_length=1, max_length=80)
+
+
+def _admission_error(
+    db, user_id: uuid.UUID, kind: str, exc: Exception
+) -> HTTPException:
+    """Map a refused admission to a stable, machine-readable error."""
+    # Nothing from the refused send may be committed, including a new chat.
+    db.rollback()
+    if kind == "plan":
+        return HTTPException(403, {
+            "code": "plan_generation_quota_exhausted"
+            if isinstance(exc, QuotaExceededError)
+            else "plan_generation_unavailable",
+            "message": "Training plan generation is unavailable or its monthly allowance is exhausted.",
+        })
+    if isinstance(exc, QuotaExceededError):
+        return HTTPException(429, {
+            "code": "coach_daily_quota_exhausted",
+            "message": "Today's AI Coach message allowance has been used.",
+            "details": usage_summary(db, user_id, FeatureKey.AI_COACH_REPLY).as_dict(),
+        })
+    return HTTPException(403, {
+        "code": "coach_unavailable",
+        "message": "AI Coach is not available on your current plan.",
+    })
+
+
+@usage_router.get("/usage")
+def coach_usage(profile: AthleteProfile, db: DbSession, response: Response) -> dict:
+    """Authoritative Coach message allowance for display; admission stays server-side."""
+    response.headers["Cache-Control"] = "no-store"
+    return usage_summary(db, profile.id, FeatureKey.AI_COACH_REPLY).as_dict()
 
 
 def _conversation(conversation: Conversation) -> dict:
@@ -114,12 +149,7 @@ def send_first_message(
         QuotaExceededError,
         UnconfiguredAllowanceError,
     ) as exc:
-        raise HTTPException(
-            403,
-            "Training plan generation is unavailable or its monthly allowance is exhausted."
-            if payload.kind == "plan"
-            else "AI Coach requires an available Pro entitlement.",
-        ) from exc
+        raise _admission_error(db, profile.id, payload.kind, exc) from exc
     _start(generation, created, profile.id, clock)
     return {
         "conversation": _conversation(conversation),
@@ -247,12 +277,7 @@ def send_message(
         QuotaExceededError,
         UnconfiguredAllowanceError,
     ) as exc:
-        raise HTTPException(
-            403,
-            "Training plan generation is unavailable or its monthly allowance is exhausted."
-            if payload.kind == "plan"
-            else "AI Coach requires an available Pro entitlement.",
-        ) from exc
+        raise _admission_error(db, profile.id, payload.kind, exc) from exc
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc
     _start(generation, created, profile.id, clock)

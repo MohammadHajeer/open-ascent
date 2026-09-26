@@ -12,9 +12,11 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ApiError } from "@/lib/api";
 import { assets } from "@/lib/assets";
 import {
   deleteConversation,
+  getCoachUsage,
   getConversation,
   listConversations,
   renameConversation,
@@ -27,7 +29,13 @@ import { CoachHistoryLoading } from "./coach-loading";
 import type { DisplayMessage } from "./coach-message";
 import { ConversationSidebar } from "./conversation-sidebar";
 import { MessageList } from "./message-list";
-import type { Conversation, ConversationDetail, Generation } from "./types";
+import {
+  COACH_QUOTA_EXHAUSTED,
+  type CoachUsage,
+  type Conversation,
+  type ConversationDetail,
+  type Generation,
+} from "./types";
 import { useCoachReveal } from "./use-coach-reveal";
 
 const suggestions = [
@@ -58,6 +66,7 @@ export function CoachWorkspace() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
   const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
+  const [usage, setUsage] = useState<CoachUsage | null>(null);
   const sending = useRef(false);
   const selectedRef = useRef<string | null>(null);
   const selectionRevision = useRef(0);
@@ -81,6 +90,17 @@ export function CoachWorkspace() {
       document.documentElement.style.removeProperty("--coach-viewport-height");
     };
   }, []);
+
+  // Display only: the backend admits or refuses every send.
+  const refreshUsage = useCallback(() => {
+    getCoachUsage()
+      .then(setUsage)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshUsage();
+  }, [refreshUsage]);
 
   const refreshList = useCallback(async () => {
     const items = await listConversations();
@@ -202,6 +222,7 @@ export function CoachWorkspace() {
               );
               setStreamSnapshot(null);
               void refreshList();
+              refreshUsage();
             })
             .catch((cause) =>
               setError(
@@ -226,7 +247,7 @@ export function CoachWorkspace() {
       }
     });
     return () => controller.abort();
-  }, [selected, activeGeneration, refreshList]);
+  }, [selected, activeGeneration, refreshList, refreshUsage]);
 
   async function submit(
     value = draft,
@@ -322,8 +343,16 @@ export function CoachWorkspace() {
           );
       }
       void refreshList();
+      refreshUsage();
     } catch (cause) {
-      if (
+      if (cause instanceof ApiError && cause.code === COACH_QUOTA_EXHAUSTED) {
+        // Nothing was accepted: keep the typed message and the conversation.
+        setPending(null);
+        setDraft((current) => current || content);
+        const details = cause.details as CoachUsage | undefined;
+        if (details && typeof details.remaining === "number") setUsage(details);
+        else refreshUsage();
+      } else if (
         selectionRevision.current === revision &&
         selectedRef.current === originalId
       ) {
@@ -530,6 +559,7 @@ export function CoachWorkspace() {
           onGeneratePlan={() => void submit(draft, undefined, "plan")}
           sendBlocked={sendBlocked}
           error={error}
+          usage={usage}
         />
       </div>
     </section>
