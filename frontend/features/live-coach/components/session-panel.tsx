@@ -25,6 +25,10 @@ const PHASE_LABELS: Record<PullUpPhase, string> = {
   lowering: "Lowering",
 };
 
+const PUSH_UP_PHASE_LABELS: Record<PullUpPhase, string> = {
+  ...PHASE_LABELS, bottom: "Bottom", rising: "Pressing up",
+};
+
 const VARIANTS = [...LIVE_VERTICAL_PULL_MOVEMENTS, ...PARTIAL_VERTICAL_PULL_VARIANTS];
 
 function attributeLabel(value: string) {
@@ -43,8 +47,9 @@ export function SessionPanel({ session }: Props) {
     status, snapshot, cue, errorMessage, hasLiveCoachAccess, access,
     safetyAcknowledged, setSafetyAcknowledged, isActive, voiceEnabled,
     toggleVoice, devices, selectedDeviceId, setSelectedDeviceId,
-    startSession, stopSession,
+    startSession, stopSession, movement, selectMovement,
   } = session;
+  const isPushUp = movement === "push-up";
   const breakdown = [
     ...VARIANTS.filter((variant) => snapshot.variantBreakdown[variant.slug] > 0),
     ...(snapshot.variantBreakdown.unknown > 0 ? [{ slug: "unknown" as const, label: "Unclassified" }] : []),
@@ -57,23 +62,32 @@ export function SessionPanel({ session }: Props) {
         <Label htmlFor="live-coach-movement" className="font-mono text-[0.56rem] font-semibold tracking-[0.14em] text-primary uppercase">
           Movement family
         </Label>
-        <Select defaultValue="vertical-pull">
+        <Select value={movement} onValueChange={(value) => {
+          if (value === "vertical-pull" || value === "push-up") selectMovement(value);
+        }}>
           <SelectTrigger id="live-coach-movement" className="mt-2 h-11 w-full rounded-xl bg-background/70">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent><SelectItem value="vertical-pull">Vertical Pull</SelectItem></SelectContent>
+          <SelectContent>
+            <SelectItem value="vertical-pull">Vertical Pull (Pull-Up)</SelectItem>
+            <SelectItem value="push-up">Push-Up</SelectItem>
+          </SelectContent>
         </Select>
         <p className="mt-2 text-xs leading-5 text-foreground-faint">
-          Counts pull-ups, chin-ups, and their width and height variations. The camera can&apos;t reliably see which way your palms face, so reps are labeled by hand width and pull height.
+          {isPushUp
+            ? "Use a side or mostly-side view with your shoulder, elbow, wrist, hip, and ankle visible. Begin with extended arms. Changing movement stops the session and resets the count."
+            : "Counts pull-ups, chin-ups, and their width and height variations. The camera can't reliably see which way your palms face, so reps are labeled by hand width and pull height. Changing movement stops the session and resets the count."}
         </p>
       </div>
 
       <div className="grid grid-cols-2 border-b border-border">
         <Metric label="Completed reps" value={String(snapshot.validRepCount)} />
-        <Metric label="Current phase" value={PHASE_LABELS[snapshot.phase]} />
+        <Metric label="Current phase" value={isPushUp
+          ? PUSH_UP_PHASE_LABELS[snapshot.phase]
+          : PHASE_LABELS[snapshot.phase]} />
       </div>
 
-      <div className="border-b border-border px-5 py-4 sm:px-6">
+      {!isPushUp ? <div className="border-b border-border px-5 py-4 sm:px-6">
         <p className="font-mono text-[0.56rem] font-semibold tracking-[0.14em] text-primary uppercase">
           Rep breakdown
         </p>
@@ -97,7 +111,7 @@ export function SessionPanel({ session }: Props) {
             {latestValidRep.classification ? <p>{lastRepDetail(latestValidRep.classification)}</p> : null}
           </div>
         ) : null}
-      </div>
+      </div> : null}
 
       <div className="flex-1 p-5 sm:p-6">
         <p className="font-mono text-[0.56rem] font-semibold tracking-[0.14em] text-primary uppercase">
@@ -174,7 +188,9 @@ export function SessionPanel({ session }: Props) {
           />
           <div>
             <Label htmlFor="live-coach-safety" className="cursor-pointer text-sm leading-5 font-normal">
-              I checked the bar and space, can hang comfortably, and will stop if grip or body control breaks down.
+              {isPushUp
+                ? "I checked the floor and space, can support myself comfortably, and will stop if body control breaks down."
+                : "I checked the bar and space, can hang comfortably, and will stop if grip or body control breaks down."}
             </Label>
             <a href="#live-coach-safety-guidance" className="mt-1 inline-block text-xs font-medium text-primary underline underline-offset-4">Read safety guidance</a>
           </div>
@@ -216,7 +232,7 @@ export function SessionPanel({ session }: Props) {
           </div>
         ) : (
           <p className="text-xs leading-5 text-foreground-faint">
-            Camera choices appear after first permission. Place the selected camera in front of the bar.
+            Camera choices appear after first permission. {isPushUp ? "Place the selected camera beside you." : "Place the selected camera in front of the bar."}
           </p>
         )}
 

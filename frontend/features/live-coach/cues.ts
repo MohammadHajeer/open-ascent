@@ -1,4 +1,4 @@
-import type { LiveCoachCue, PullUpSnapshot } from "./types.ts";
+import type { LiveCoachCue, PullUpSnapshot, PushUpSnapshot } from "./types.ts";
 
 const cues = {
   noPose: {
@@ -110,5 +110,41 @@ export function selectPrioritizedCue(
   if (snapshot.phase === "rising") candidates.push(cues.rising);
   if (snapshot.phase === "bottom") candidates.push(cues.ready);
 
-  return candidates.sort((left, right) => right.priority - left.priority)[0] ?? cues.noPose;
+  return highestPriority(candidates, cues.noPose);
+}
+
+function highestPriority(candidates: LiveCoachCue[], fallback: LiveCoachCue) {
+  return candidates.sort((left, right) => right.priority - left.priority)[0] ?? fallback;
+}
+
+const pushUpCues = {
+  frame: { id: "push-frame-body", priority: 100, tone: "attention", title: "Frame your full body from the side", detail: "Keep shoulder, elbow, wrist, hip, and ankle visible in good light." },
+  setup: { id: "push-set-position", priority: 90, tone: "attention", title: "Set a side-view plank position", detail: "Place the camera beside you and keep your hands below your shoulders." },
+  start: { id: "push-hold-start", priority: 60, tone: "neutral", title: "Hold the top position", detail: "Begin with extended arms and hold briefly before descending." },
+  depth: { id: "go-lower", priority: 75, tone: "attention", title: "Go lower", detail: "Bend your elbows to reach the bottom before pressing back up." },
+  extension: { id: "extend-arms", priority: 75, tone: "attention", title: "Extend your arms", detail: "Finish pressing to the top to complete the rep." },
+  body: { id: "body-straight", priority: 72, tone: "attention", title: "Keep your body straight", detail: "Keep shoulders, hips, and ankles in a steady line." },
+  complete: { id: "push-rep-complete", priority: 65, tone: "positive", title: "Rep complete", detail: "Begin another controlled descent when ready." },
+  ready: { id: "push-ready", priority: 5, tone: "positive", title: "Ready for a controlled rep", detail: "Lower, then return to extended arms." },
+  bottom: { id: "push-bottom", priority: 20, tone: "positive", title: "Bottom confirmed", detail: "Press back to the top to complete the rep." },
+  lowering: { id: "push-lowering", priority: 15, tone: "neutral", title: "Lowering", detail: "Lower with control." },
+  rising: { id: "push-rising", priority: 10, tone: "neutral", title: "Pressing up", detail: "Return to extended arms." },
+} satisfies Record<string, LiveCoachCue>;
+
+export function selectPushUpCue(snapshot: PushUpSnapshot, timestampMs: number): LiveCoachCue {
+  const candidates: LiveCoachCue[] = [];
+  if (!snapshot.poseReady) candidates.push(pushUpCues.frame);
+  else if (!snapshot.setupReady) candidates.push(pushUpCues.setup);
+  else if (!snapshot.startingPositionReady) candidates.push(pushUpCues.start);
+  if (snapshot.formFault === "go-lower") candidates.push(pushUpCues.depth);
+  if (snapshot.formFault === "extend-arms") candidates.push(pushUpCues.extension);
+  if (snapshot.formFault === "body-straight") candidates.push(pushUpCues.body);
+  if (snapshot.phase === "top") {
+    candidates.push(pushUpCues.ready);
+    if (snapshot.latestRep?.outcome === "valid" && timestampMs - snapshot.latestRep.endMs <= 2500) candidates.push(pushUpCues.complete);
+  }
+  if (snapshot.phase === "bottom") candidates.push(pushUpCues.bottom);
+  if (snapshot.phase === "lowering") candidates.push(pushUpCues.lowering);
+  if (snapshot.phase === "rising") candidates.push(pushUpCues.rising);
+  return highestPriority(candidates, pushUpCues.frame);
 }

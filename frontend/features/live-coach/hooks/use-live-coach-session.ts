@@ -3,16 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 
 import { LiveCoachCameraSession, LiveCoachSessionError, type LiveFrame } from "../camera-session.ts";
-import { selectPrioritizedCue } from "../cues.ts";
 import { createMediaPipePoseRuntime } from "../mediapipe-pose.ts";
-import { LiveVerticalPullAnalyzer } from "../vertical-pull-analyzer.ts";
-import { measurePullUpPose } from "../pull-up-semantics.ts";
-import { CAMERA_OFF_CUE, INITIAL_SNAPSHOT, type DeviceOption, type SessionStatus } from "../session-state.ts";
+import { LiveCoachAnalyzer } from "../live-analyzer.ts";
+import { CAMERA_OFF_CUE, cameraOffCue, INITIAL_SNAPSHOT, type DeviceOption, type SessionStatus } from "../session-state.ts";
 import { drawPose, clearCanvas } from "../utils/pose-canvas.ts";
 import { normalizeSessionError, sessionErrorMessage } from "../utils/session-errors.ts";
 import { LiveCoachVoice } from "../voice.ts";
 import { createWebAudioVoiceOutput } from "../voice-output.ts";
-import type { LiveCoachCue } from "../types.ts";
+import type { LiveCoachCue, LiveCoachMovement, LiveCoachSnapshot } from "../types.ts";
 import { useScreenWakeLock } from "./use-screen-wake-lock.ts";
 import { fetchLiveCoachAccess } from "@/features/subscription/api";
 import { useLiveCoachAccess } from "@/features/subscription/hooks";
@@ -22,14 +20,15 @@ export function useLiveCoachSession() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sessionRef = useRef<LiveCoachCameraSession | null>(null);
-  const [analyzer] = useState(() => new LiveVerticalPullAnalyzer());
+  const [analyzer] = useState(() => new LiveCoachAnalyzer());
+  const [movement, setMovement] = useState<LiveCoachMovement>("vertical-pull");
   const lastLoggedRepRef = useRef(0);
   const voiceRef = useRef<LiveCoachVoice | null>(null);
   const startGenerationRef = useRef(0);
 
   const [status, setStatus] = useState<SessionStatus>("idle");
   const [safetyAcknowledged, setSafetyAcknowledged] = useState(false);
-  const [snapshot, setSnapshot] = useState(INITIAL_SNAPSHOT);
+  const [snapshot, setSnapshot] = useState<LiveCoachSnapshot>(INITIAL_SNAPSHOT);
   const [cue, setCue] = useState<LiveCoachCue>(CAMERA_OFF_CUE);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [devices, setDevices] = useState<DeviceOption[]>([]);
@@ -111,7 +110,9 @@ export function useLiveCoachSession() {
       priority: 0,
       tone: "neutral",
       title: "Starting camera and pose tracking",
-      detail: "Stand where your wrists, shoulders, and hips can stay in view.",
+      detail: analyzer.movement === "push-up"
+        ? "Place the camera beside you with your full body in view."
+        : "Stand where your wrists, shoulders, and hips can stay in view.",
     });
     setFps(0);
     setInferenceMs(0);
@@ -173,23 +174,20 @@ export function useLiveCoachSession() {
     if (status === "running") voiceRef.current?.finish(snapshot);
     else voiceRef.current?.stop();
     setStatus("stopped");
-    setCue(CAMERA_OFF_CUE);
+    setCue(cameraOffCue(analyzer.movement));
     setDelegate(null);
     clearCanvas(canvasRef.current);
   }
 
   function handleFrame(frame: LiveFrame) {
     drawPose(canvasRef.current, videoRef.current, frame.landmarks);
-    const observation = frame.landmarks
-      ? measurePullUpPose(frame.landmarks, frame.timestampMs)
-      : null;
-    const nextSnapshot = analyzer.update(
-      observation,
+    const video = videoRef.current;
+    const { snapshot: nextSnapshot, cue: nextCue } = analyzer.update(
+      frame.landmarks,
       frame.timestampMs,
-      frame.landmarks !== null,
+      video?.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 1,
     );
-    const nextCue = selectPrioritizedCue(nextSnapshot, frame.timestampMs);
-    if (process.env.NODE_ENV === "development" &&
+    if (analyzer.movement === "vertical-pull" && process.env.NODE_ENV === "development" &&
       nextSnapshot.latestRep?.outcome === "valid" &&
       nextSnapshot.latestRep.index !== lastLoggedRepRef.current) {
       lastLoggedRepRef.current = nextSnapshot.latestRep.index;
@@ -211,7 +209,7 @@ export function useLiveCoachSession() {
     sessionRef.current = null;
     voiceRef.current?.stop();
     setStatus("error");
-    setCue(CAMERA_OFF_CUE);
+    setCue(cameraOffCue(analyzer.movement));
     setDelegate(null);
     setErrorMessage(sessionErrorMessage(error));
     clearCanvas(canvasRef.current);
@@ -239,6 +237,23 @@ export function useLiveCoachSession() {
     voiceRef.current?.setEnabled(enabled);
   }
 
+  function selectMovement(nextMovement: LiveCoachMovement) {
+    if (nextMovement === analyzer.movement) return;
+    // Switching must also release queued audio and reset voice count/cooldowns.
+    voiceRef.current?.stop();
+    stopSession();
+    voiceRef.current = null;
+    setSnapshot(analyzer.selectMovement(nextMovement));
+    setMovement(nextMovement);
+    lastLoggedRepRef.current = 0;
+    setSafetyAcknowledged(false);
+    setErrorMessage(null);
+    setCue(cameraOffCue(nextMovement));
+    setFps(0);
+    setInferenceMs(0);
+    setInitializationMs(null);
+  }
+
   return {
     videoRef,
     canvasRef,
@@ -249,6 +264,8 @@ export function useLiveCoachSession() {
     safetyAcknowledged,
     setSafetyAcknowledged,
     snapshot,
+    movement,
+    selectMovement,
     cue,
     errorMessage,
     devices,

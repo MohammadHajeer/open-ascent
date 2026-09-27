@@ -1,4 +1,4 @@
-import type { LiveCoachCue, PullUpSnapshot } from "./types.ts";
+import type { LiveCoachCue, LiveCoachMovement, PullUpSnapshot } from "./types.ts";
 import { emptyVariantBreakdown } from "./vertical-pull-config.ts";
 
 export type SessionStatus =
@@ -32,3 +32,10 @@ export const CAMERA_OFF_CUE: LiveCoachCue = {
   title: "Camera is off",
   detail: "Review safety, then start Live Coach when your bar and camera are ready.",
 };
+
+export function cameraOffCue(movement: LiveCoachMovement): LiveCoachCue {
+  return movement === "push-up" ? {
+    ...CAMERA_OFF_CUE,
+    detail: "Review safety, then start with a side-view camera and clear floor space.",
+  } : CAMERA_OFF_CUE;
+}

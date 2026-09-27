@@ -7,7 +7,8 @@ import type { useLiveCoachSession } from "../hooks/use-live-coach-session.ts";
 type Props = { session: ReturnType<typeof useLiveCoachSession> };
 
 export function CameraPreview({ session }: Props) {
-  const { videoRef, canvasRef, mirrorPreview, isActive, status, snapshot, cue, stopSession } = session;
+  const { videoRef, canvasRef, mirrorPreview, isActive, status, snapshot, cue, stopSession, movement } = session;
+  const isPushUp = movement === "push-up";
   const setComplete = status === "stopped" && snapshot.validRepCount > 0;
   return (
     <div className="relative h-[min(58dvh,34rem)] min-h-72 overflow-hidden bg-visual-surface lg:sticky lg:top-24 lg:h-[min(calc(100dvh-8rem),46rem)] lg:min-h-120 lg:self-start">
@@ -53,7 +54,9 @@ export function CameraPreview({ session }: Props) {
                 ? `${snapshot.partialRepCount > 0
                   ? `${snapshot.partialRepCount} partial ${snapshot.partialRepCount === 1 ? "attempt" : "attempts"} not counted. `
                   : ""}Restarting begins a new count.`
-                : "Place the camera in front of the bar with your wrists, shoulders, and hips visible through the full rep."}
+                : isPushUp
+                  ? "Place the camera beside you with your shoulder, elbow, wrist, hip, and ankle visible through the full rep."
+                  : "Place the camera in front of the bar with your wrists, shoulders, and hips visible through the full rep."}
             </p>
           </div>
         </div>
@@ -83,10 +86,10 @@ export function CameraPreview({ session }: Props) {
               : !snapshot.poseReady
                 ? "Improve tracking"
                 : !snapshot.setupReady
-                  ? "Set up hang"
+                  ? isPushUp ? "Set up plank" : "Set up hang"
                   : !snapshot.startingPositionReady
                     ? "Hold start"
-                    : snapshot.phase === "bottom"
+                    : snapshot.phase === (isPushUp ? "top" : "bottom")
                       ? "Ready"
                       : "Active set"}
           />

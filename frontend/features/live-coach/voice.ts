@@ -1,4 +1,4 @@
-import type { LiveCoachCue, PullUpSnapshot } from "./types.ts";
+import type { LiveCoachCue, LiveCoachSnapshot } from "./types.ts";
 
 export type VoicePlayback = { stop(): void };
 
@@ -48,6 +48,12 @@ const cueClips: Record<string, { path: string; kind: "correction" | "setup" }> =
   "finish-top": { path: "corrections/chin-over-bar.mp3", kind: "correction" },
   "extend-at-bottom": { path: "corrections/extend-at-bottom.mp3", kind: "correction" },
   "body-swing": { path: "corrections/reduce-the-swing.mp3", kind: "correction" },
+  "push-frame-body": { path: "setup/full-body-in-frame.mp3", kind: "setup" },
+  "push-set-position": { path: "setup/hold-start-position.mp3", kind: "setup" },
+  // Reuse the bundled neutral recordings; no live speech generation needed.
+  "go-lower": { path: "corrections/control-the-descent.mp3", kind: "correction" },
+  "extend-arms": { path: "corrections/full-extension.mp3", kind: "correction" },
+  "body-straight": { path: "corrections/brace-your-core.mp3", kind: "correction" },
 };
 
 export const SESSION_CLIPS = {
@@ -151,7 +157,7 @@ export class LiveCoachVoice {
     this.say(SESSION_CLIPS.getReady, "setup");
   }
 
-  onFrame(snapshot: PullUpSnapshot, cue: LiveCoachCue, timestampMs: number) {
+  onFrame(snapshot: LiveCoachSnapshot, cue: LiveCoachCue, timestampMs: number) {
     if (this.closed || this.closeWhenIdle) return;
     this.lastFrameAt = timestampMs;
     this.formFaultActive = Boolean(snapshot.formFault);
@@ -184,7 +190,7 @@ export class LiveCoachVoice {
   }
 
   /** Speak a closing line after any count in progress, then release audio. */
-  finish(snapshot: Pick<PullUpSnapshot, "validRepCount" | "partialRepCount">) {
+  finish(snapshot: Pick<LiveCoachSnapshot, "validRepCount" | "partialRepCount">) {
     if (this.closed) return;
     this.closeWhenIdle = true;
     const path = snapshot.validRepCount > 0

@@ -64,6 +64,24 @@ export type PullUpSnapshot = {
   formFault?: "extend-at-bottom" | "body-swing" | null;
 };
 
+export type LiveCoachMovement = "vertical-pull" | "push-up";
+
+export type PushUpObservation = {
+  timestampMs: number;
+  angleDeg: number;
+  bodyAngleDeg: number;
+  minimumVisibility: number;
+  side: "left" | "right";
+  setupReady: boolean;
+};
+
+export type PushUpSnapshot = Omit<PullUpSnapshot, "observation" | "formFault"> & {
+  observation: PushUpObservation | null;
+  formFault: "go-lower" | "extend-arms" | "body-straight" | null;
+};
+
+export type LiveCoachSnapshot = PullUpSnapshot | PushUpSnapshot;
+
 export type CueTone = "neutral" | "positive" | "attention";
 
 export type LiveCoachCue = {

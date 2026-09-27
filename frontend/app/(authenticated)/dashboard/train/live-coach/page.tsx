@@ -12,7 +12,7 @@ export default function LiveCoachPage() {
       <DashboardPageHeader
         eyebrow="Train / Live Coach"
         title="One rep at a time."
-        description="Real-time rep counting and form cues for vertical pulls. Pose tracking runs in this browser, and only full reps from a straight-arm hang to the top and back count."
+        description="Real-time rep counting and form cues for vertical pulls and push-ups. Pose tracking runs in this browser, and only full reps that return to the starting position count."
         action={
           <Link
             href="/dashboard/train"
