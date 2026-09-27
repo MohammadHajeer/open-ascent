@@ -8,6 +8,7 @@ import { dashboardKeys } from "@/features/dashboard/queries";
 import { libraryKeys } from "@/features/library/queries";
 import { invalidatePrivateQueries } from "@/lib/private-state";
 import { getPlanPreview, savePlanPreview } from "./api";
+import { ExerciseExplanation, ExerciseKindBadge, SupportingExerciseDetails } from "./plan-exercise-meta";
 import type { PlanPreview } from "./types";
 
 export function PlanPreviewCard({ previewId, onSaved }: { previewId: string; onSaved?: () => void }) {
@@ -63,14 +64,17 @@ export function PlanPreviewCard({ previewId, onSaved }: { previewId: string; onS
           {preview.days.map(day => <div key={day.day_index} className="rounded-lg border border-border/70 bg-background-alt/30 p-3">
             <h4 className="text-sm font-semibold text-foreground">Day {day.day_index}{day.label ? ` · ${day.label}` : ""}</h4>
             <ul className="mt-2 space-y-2 text-sm text-foreground-soft">
-              {day.exercises.map((exercise, index) => <li key={`${exercise.movement_id}-${index}`} className="border-t border-border/50 pt-2 first:border-0 first:pt-0">
+              {day.exercises.map((exercise, index) => <li key={`${exercise.movement_id ?? exercise.supporting_exercise_id}-${index}`} className="border-t border-border/50 pt-2 first:border-0 first:pt-0">
+                {exercise.exercise_kind && <div className="mb-1"><ExerciseKindBadge exercise={exercise} /></div>}
                 {exercise.movement_slug ? <a className="font-medium text-foreground underline decoration-border underline-offset-2 hover:text-primary" href={`/movements/${encodeURIComponent(exercise.movement_slug)}`} target="_blank" rel="noopener noreferrer">{exercise.movement_name} <span className="sr-only">safety guide opens in a new tab</span></a> : <span className="font-medium text-foreground">{exercise.movement_name}</span>} · {exercise.sets} sets × {exercise.reps !== null ? `${exercise.reps} reps` : `${exercise.hold_seconds} sec hold`} · {exercise.rest_seconds} sec rest
+                <ExerciseExplanation exercise={exercise} />
                 {exercise.notes && <p className="mt-0.5 text-xs">{exercise.notes}</p>}
+                <SupportingExerciseDetails exercise={exercise} />
               </li>)}
             </ul>
           </div>)}
         </div>
-        <p className="mt-3 text-xs leading-5 text-foreground-faint">Review each movement’s published safety guidance before training. Readiness was checked against accepted evidence when this preview was generated and is checked again when you save.</p>
+        <p className="mt-3 text-xs leading-5 text-foreground-faint">Review each movement’s published safety guidance before training. Readiness was checked against accepted evidence when this preview was generated and is checked again when you save.{preview.days.some(day => day.exercises.some(exercise => exercise.exercise_kind === "supporting")) && " Supporting exercises follow Open Ascent’s curated instructions and are not analyzed by video upload or Live Coach."}</p>
         {preview.saved_plan_id && <Link href={`/dashboard/library/${preview.saved_plan_id}`} className="mt-4 inline-block text-sm font-medium text-primary underline underline-offset-4">View saved plan in Library</Link>}
       </>}
     </section>

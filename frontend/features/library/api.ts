@@ -1,5 +1,5 @@
 import { authApiFetch } from "@/lib/auth-api";
-import type { PlanOrigin } from "@/features/coach/types";
+import type { PlanExercise, PlanOrigin } from "@/features/coach/types";
 
 export type SavedPlanSummary = {
   id: string;
@@ -12,16 +12,7 @@ export type SavedPlanSummary = {
   movement_count: number;
 };
 
-export type SavedPlanExercise = {
-  movement_id: string;
-  movement_name: string;
-  movement_slug: string | null;
-  sets: number;
-  reps: number | null;
-  hold_seconds: number | null;
-  rest_seconds: number;
-  notes: string | null;
-};
+export type SavedPlanExercise = PlanExercise;
 
 export type SavedPlanDetailData = SavedPlanSummary & {
   days: { day_index: number; label: string | null; exercises: SavedPlanExercise[] }[];

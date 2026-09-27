@@ -1,4 +1,4 @@
-"""Normalized Library plan inputs; SAF-04 remains the prescription authority."""
+"""Normalized plan inputs for Library and Coach; SAF-04 remains the prescription authority."""
 
 from __future__ import annotations
 
@@ -11,30 +11,22 @@ from sqlalchemy.orm import Session
 from app.models.movement import Movement
 from app.models.profile import Profile
 from app.schemas.plan_generation import LibraryPlanRequest
-from app.services.coach_context import get_athlete_profile_context
+from app.services.goal_paths import goal_slug_from_text
 from app.services.movement_documentation import MovementDocumentationService
+from app.services.plan_engine import (  # noqa: F401
+    EQUIPMENT_REQUIREMENTS,
+    PlanningContext,
+    build_planning_context,
+    equipment_available,
+    prompt_payload,
+)
 from app.services.progress import get_progress_summary
-from app.services.readiness import ReadinessService
-from app.services.readiness_evidence import ReadinessEvidenceBuilder
 
 
 class ProgressUnavailable(ValueError):
     pass
 
 
-EQUIPMENT_REQUIREMENTS = {
-    "pull-up": "pull_up_bar", "chin-up": "pull_up_bar",
-    "close-grip-pull-up": "pull_up_bar", "wide-grip-pull-up": "pull_up_bar",
-    "high-pull-up": "pull_up_bar", "muscle-up": "pull_up_bar",
-    "front-lever": "pull_up_bar", "back-lever": "pull_up_bar",
-    "inverted-deadlift": "pull_up_bar", "dips": "dip_bars",
-}
-
-
-def equipment_available(slug: str, coaching_context: dict) -> bool:
-    required = EQUIPMENT_REQUIREMENTS.get(slug)
-    available = set(coaching_context.get("equipment") or [])
-    return required is None or required in available or "rings" in available
 
 
 def progress_context(db: Session, user_id: uuid.UUID) -> dict:
@@ -90,24 +82,39 @@ def normalize_request(db: Session, user_id: uuid.UUID, request: LibraryPlanReque
     return content, metadata
 
 
-def generation_context(db: Session, profile: Profile, metadata: dict) -> str:
-    mode = metadata["mode"]
-    result: dict = {"mode": mode, "profile": get_athlete_profile_context(db, profile.id)}
-    if metadata.get("note"):
+def planning_context(
+    db: Session, user_id: uuid.UUID, metadata: dict | None, request_text: str = ""
+) -> PlanningContext:
+    """Resolve Library metadata or a Coach request into the one planning context."""
+    mode = (metadata or {}).get("mode")
+    goal = (metadata or {}).get("goal") or {}
+    goal_slug = goal_name = path_key = None
+    if metadata is None:
+        # Coach requests use the same engine; a named goal selects its path.
+        goal_slug = goal_slug_from_text(request_text)
+    elif goal.get("movement_id"):
+        movement = db.get(Movement, uuid.UUID(goal["movement_id"]))
+        goal_slug = movement.slug if movement else None
+        goal_name = goal.get("name")
+    elif goal.get("focus") == "general_pulling_strength":
+        path_key, goal_name = "pull-up", goal.get("name")
+    if goal_slug and metadata is None:
+        movement = db.scalar(select(Movement).where(Movement.slug == goal_slug))
+        goal_name = movement.name[:80] if movement else None
+    if mode in {"profile", "progress"}:
+        goal_slug = goal_name = None
+    return build_planning_context(
+        db, user_id, mode=mode, path_key=path_key, goal_slug=goal_slug, goal_name=goal_name,
+    )
+
+
+def generation_context(
+    db: Session, profile: Profile, metadata: dict | None, context: PlanningContext | None = None,
+) -> str:
+    context = context or planning_context(db, profile.id, metadata)
+    result = prompt_payload(context)
+    if metadata and metadata.get("note"):
         result["athlete_preference"] = metadata["note"]
-    if mode == "goal":
-        goal = metadata["goal"]
-        result["goal"] = goal
-        if goal.get("movement_id"):
-            movement_id = uuid.UUID(goal["movement_id"])
-            decision = ReadinessService.evaluate(ReadinessEvidenceBuilder.build(
-                db, user_id=profile.id, movement_id=movement_id
-            ))
-            result["goal_readiness_for_guidance_only"] = {
-                "status": decision.status.value,
-                "missing_evidence": decision.missing_evidence[:3],
-                "failed_requirements": decision.failed_requirements[:3],
-            }
-    if mode == "progress":
+    if context.mode == "progress":
         result["progress"] = progress_context(db, profile.id)
     return json.dumps(result, separators=(",", ":"))

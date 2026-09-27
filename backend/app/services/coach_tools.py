@@ -18,6 +18,7 @@ from app.schemas.coach_tools import (
     RecentAnalysesArguments,
     RecentWorkoutsArguments,
     SearchMovementsArguments,
+    SupportingExerciseArguments,
     ToolArguments,
 )
 from app.services import analysis as analysis_service
@@ -26,6 +27,12 @@ from app.services.coach_context import get_athlete_profile_context
 from app.services.movement import MovementService
 from app.services.movement_documentation import MovementDocumentationService
 from app.services.progress import get_progress_summary
+from app.services.supporting_exercises import (
+    CATALOG,
+    find_supporting_exercises,
+    get_supporting_exercise,
+    public_details,
+)
 
 MAX_TOOL_ROUNDS_PER_RESPONSE = 3
 MAX_TOOL_CALLS_PER_RESPONSE = 6
@@ -351,6 +358,27 @@ def _search(
     }
 
 
+def _supporting(
+    _db: Session, _context: CoachToolContext, args: SupportingExerciseArguments
+) -> dict:
+    text = args.exercise
+    key = text.casefold().replace(" ", "-")
+    item = get_supporting_exercise(key) or next(iter(find_supporting_exercises(text)), None)
+    if item is None or item.retired:
+        return {
+            "error": "supporting_exercise_not_found",
+            "catalog": [entry.name for entry in CATALOG if not entry.retired],
+        }
+    return {
+        "exercise": public_details(item),
+        "source": "Open Ascent curated supporting-exercise catalog",
+        "open_ascent_support": {
+            "upload_analysis": False, "live_coach": False,
+            "readiness_testing": False, "movement_guide": False,
+        },
+    }
+
+
 TOOL_REGISTRY = {
     item.name: item
     for item in (
@@ -389,6 +417,12 @@ TOOL_REGISTRY = {
             "Read currently published movement technique and safety guidance.",
             MovementGuideArguments,
             _guide,
+        ),
+        ToolDefinition(
+            "get_supporting_exercise",
+            "Read Open Ascent's curated description of a supporting plan exercise such as Ice-Cream Maker or Tuck Front Lever Hold.",
+            SupportingExerciseArguments,
+            _supporting,
         ),
         ToolDefinition(
             "search_movements",

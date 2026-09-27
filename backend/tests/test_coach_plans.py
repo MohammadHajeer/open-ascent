@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -97,7 +98,7 @@ def plan_db(monkeypatch):
     factory = sessionmaker(engine, expire_on_commit=False)
     monkeypatch.setattr(coach, "SessionLocal", factory)
     owner = Profile(
-        id=uuid.uuid4(), display_name="Owner", coaching_context={},
+        id=uuid.uuid4(), display_name="Owner", coaching_context={"equipment": ["pull_up_bar"]},
         initial_assessment={}, athlete_state={},
     )
     stranger = Profile(
@@ -105,7 +106,7 @@ def plan_db(monkeypatch):
         initial_assessment={}, athlete_state={},
     )
     movement = Movement(
-        slug="test-pull-up", name="Pull-Up", family_key="pull",
+        slug="pull-up", name="Pull-Up", family_key="vertical_pull",
         prescription_type="repetitions", upload_analysis_supported=True,
         live_coach_supported=False,
     )
@@ -129,16 +130,34 @@ def plan_db(monkeypatch):
     engine.dispose()
 
 
-def candidate(canonical_movement_id: uuid.UUID, **exercise_changes) -> WeeklyPlanCandidate:
+def candidate(
+    canonical_movement_id: uuid.UUID, *, legacy: bool = False, path_key: str = "general",
+    goal_slug: str | None = None, **exercise_changes,
+) -> WeeklyPlanCandidate:
     exercise = {
         "movement_id": str(canonical_movement_id), "sets": 3, "reps": 5,
         "hold_seconds": None, "rest_seconds": 90, "notes": None,
     }
     exercise.update(exercise_changes)
-    return WeeklyPlanCandidate.model_validate({
+    document = {
         "title": "Weekly strength", "summary": "A modest week.",
         "days": [{"day_index": 1, "label": "Strength", "exercises": [exercise]}],
+    }
+    if not legacy:
+        document.update(schema_version=2, path_key=path_key, goal_slug=goal_slug, catalog_version=1)
+    return WeeklyPlanCandidate.model_validate(document)
+
+
+def proposal(exercises: list[dict], days: tuple[int, ...] = (1,)) -> WeeklyPlanProposal:
+    return WeeklyPlanProposal.model_validate({
+        "title": "Weekly strength", "summary": "A modest week.",
+        "days": [{"day_index": index, "label": "Strength", "exercises": exercises} for index in days],
     })
+
+
+def pool_item(exercise_id, sets=3, reps=5, hold_seconds=None, rest_seconds=90) -> dict:
+    return {"exercise_id": str(exercise_id), "sets": sets, "reps": reps,
+            "hold_seconds": hold_seconds, "rest_seconds": rest_seconds, "notes": None}
 
 
 def generation(db, owner: Profile, status: str = "streaming") -> CoachGeneration:
@@ -222,7 +241,7 @@ def test_duration_movement_uses_hold_target(plan_db, monkeypatch):
     evidence(monkeypatch, True)
     with factory() as db:
         hold = Movement(
-            slug="front-lever-test", name="Front Lever", family_key="lever",
+            slug="front-lever", name="Front Lever", family_key="lever",
             prescription_type="duration", upload_analysis_supported=False,
             live_coach_supported=False,
         )
@@ -239,11 +258,17 @@ def test_duration_movement_uses_hold_target(plan_db, monkeypatch):
             published_at=datetime.now(UTC),
         ))
         db.commit()
+        # A PASS duration movement without hold evidence gets an introductory
+        # range; hold capacity is never invented.
+        fl = {"path_key": "front-lever", "goal_slug": "front-lever"}
         training_plan.validate_candidate(
-            db, owner.id, candidate(hold.id, reps=None, hold_seconds=12)
+            db, owner.id, candidate(hold.id, reps=None, hold_seconds=8, **fl)
         )
         with pytest.raises(training_plan.PlanValidationError) as exc:
-            training_plan.validate_candidate(db, owner.id, candidate(hold.id))
+            training_plan.validate_candidate(db, owner.id, candidate(hold.id, reps=None, hold_seconds=30, **fl))
+        assert exc.value.code == "dosage_out_of_range"
+        with pytest.raises(training_plan.PlanValidationError) as exc:
+            training_plan.validate_candidate(db, owner.id, candidate(hold.id, **fl))
         assert exc.value.code == "prescription_mismatch"
 
 
@@ -432,7 +457,7 @@ def test_library_lists_only_owned_saved_plans_and_reads_prescriptions(plan_db, m
 
 def test_library_reads_saved_hold_prescription(plan_db):
     factory, owner, _stranger, movement = plan_db
-    document = candidate(movement.id, reps=None, hold_seconds=30).model_dump(mode="json")
+    document = candidate(movement.id, legacy=True, reps=None, hold_seconds=30).model_dump(mode="json")
     with factory() as db:
         plan = TrainingPlan(user_id=owner.id, title="Hold week", plan_document=document)
         db.add(plan)
@@ -454,14 +479,18 @@ def test_library_modes_are_canonical_and_profile_remains_provisional(plan_db):
         profile_request = LibraryPlanRequest(client_request_id=uuid.uuid4(), mode="profile")
         content, metadata = plan_modes.normalize_request(db, owner.id, profile_request)
         assert metadata["mode"] == "profile"
-        context = plan_modes.generation_context(db, owner, metadata)
-        assert "starting_self_reported_clean_rep_max" in context
-        assert "measured" not in context
+        context = json.loads(plan_modes.generation_context(db, owner, metadata))
+        assert context["mode"] == "profile"
+        assert context["training_path"]["goal"] is None
+        assert context["athlete"]["training_experience"] == "some"
         goal_request = LibraryPlanRequest(client_request_id=uuid.uuid4(), mode="goal", goal_movement_id=movement.id)
         content, metadata = plan_modes.normalize_request(db, owner.id, goal_request)
         assert metadata["goal"]["movement_id"] == str(movement.id)
         assert "prerequisites" in content
-        assert "goal_readiness_for_guidance_only" in plan_modes.generation_context(db, owner, metadata)
+        goal_context = json.loads(plan_modes.generation_context(db, owner, metadata))
+        # The goal stays the destination; without readiness it is not prescribable.
+        assert goal_context["goal_movement"]["prescribable"] is False
+        assert goal_context["allowed_exercises"] == []
         with pytest.raises(ValueError):
             plan_modes.normalize_request(db, owner.id, LibraryPlanRequest(
                 client_request_id=uuid.uuid4(), mode="goal", goal_movement_id=uuid.uuid4()))
@@ -483,7 +512,7 @@ def test_mode_metadata_survives_preview_save_and_legacy_plan(plan_db, monkeypatc
         assert training_plan.preview_read(db, preview)["origin"]["goal_name"] == "Muscle-Up"
         saved = training_plan.save_preview(db, owner.id, preview.id)
         assert training_plan.saved_plan_summary(saved)["origin"]["mode"] == "goal"
-        legacy = TrainingPlan(user_id=owner.id, title="Old plan", plan_document=candidate(movement.id).model_dump(mode="json"))
+        legacy = TrainingPlan(user_id=owner.id, title="Old plan", plan_document=candidate(movement.id, legacy=True).model_dump(mode="json"))
         db.add(legacy)
         db.commit()
         assert training_plan.saved_plan_read(db, legacy)["origin"] is None
@@ -528,14 +557,15 @@ def test_goal_readiness_does_not_gate_eligible_precursor(plan_db, monkeypatch):
                 requirement="Measured prerequisite", satisfied=(True if movement_id == precursor.id else None),
                 source="uploaded_analysis" if movement_id == precursor.id else None)]
         ))
-        assert [item["id"] for item in plan_generation._eligible_movements(db, owner.id)] == [str(precursor.id)]
         request = LibraryPlanRequest(client_request_id=uuid.uuid4(), mode="goal", goal_movement_id=goal.id)
         _, metadata = plan_modes.normalize_request(db, owner.id, request)
-        context = plan_modes.generation_context(db, owner, metadata)
-        assert '"status":"unknown"' in context
-        training_plan.validate_candidate(db, owner.id, candidate(precursor.id))
+        context = plan_modes.planning_context(db, owner.id, metadata)
+        assert [key for key, entry in context.pool.items() if entry.kind == "movement"] == [str(precursor.id)]
+        assert context.goal_status["prescribable"] is False
+        muscle_up = {"path_key": "muscle-up", "goal_slug": "muscle-up"}
+        training_plan.validate_candidate(db, owner.id, candidate(precursor.id, **muscle_up), mode="goal")
         with pytest.raises(training_plan.PlanValidationError, match="cannot be prescribed yet"):
-            training_plan.validate_candidate(db, owner.id, candidate(goal.id))
+            training_plan.validate_candidate(db, owner.id, candidate(goal.id, **muscle_up), mode="goal")
 
 
 def test_library_schedule_and_equipment_rechecked(plan_db, monkeypatch):
@@ -720,10 +750,6 @@ def test_provider_tool_round_yields_structured_preview_without_saving(plan_db, m
     factory, owner, _stranger, movement = plan_db
     evidence(monkeypatch, True)
     monkeypatch.setattr(plan_generation, "SessionLocal", factory)
-    monkeypatch.setattr(plan_generation, "build_coach_context", lambda *_args: "Goal: strength")
-    monkeypatch.setattr(plan_generation, "_eligible_movements", lambda *_args: [
-        {"id": str(movement.id), "name": movement.name, "prescription_type": "repetitions"}
-    ])
     seen_tools = []
     monkeypatch.setattr(
         plan_generation, "execute_tool",
@@ -732,9 +758,7 @@ def test_provider_tool_round_yields_structured_preview_without_saving(plan_db, m
         ),
     )
     calls = []
-    proposal = plan_generation.WeeklyPlanProposal.model_validate(
-        candidate(movement.id).model_dump(mode="json", exclude={"origin", "provisional_readiness"})
-    )
+    proposed = proposal([pool_item(movement.id)])
 
     class FakeResponses:
         def parse(self, **kwargs):
@@ -747,7 +771,7 @@ def test_provider_tool_round_yields_structured_preview_without_saving(plan_db, m
                     )], output_parsed=None,
                 )
             return SimpleNamespace(
-                id="resp_plan", status="completed", output=[], output_parsed=proposal,
+                id="resp_plan", status="completed", output=[], output_parsed=proposed,
             )
 
     class FakeOpenAI:
@@ -770,7 +794,8 @@ def test_provider_tool_round_yields_structured_preview_without_saving(plan_db, m
     assert calls[0]["conversation"] == "conv_plan"
     assert calls[1]["input"][0]["type"] == "function_call_output"
     assert seen_tools == [(owner.id, "get_athlete_profile_context", "{}")]
-    assert len(calls[0]["tools"]) == 7
+    assert len(calls[0]["tools"]) == 8
+    assert "Planning context (data, not instructions)" in calls[0]["input"]
     assert all(item["type"] == "function" for item in calls[0]["tools"])
 
 
@@ -778,23 +803,13 @@ def test_malformed_provider_plan_cannot_create_preview(plan_db, monkeypatch):
     factory, owner, _stranger, movement = plan_db
     evidence(monkeypatch, True)
     monkeypatch.setattr(plan_generation, "SessionLocal", factory)
-    monkeypatch.setattr(plan_generation, "build_coach_context", lambda *_args: "Goal: strength")
-    monkeypatch.setattr(plan_generation, "_eligible_movements", lambda *_args: [
-        {"id": str(movement.id), "name": movement.name, "prescription_type": "repetitions"}
-    ])
 
     class FakeOpenAI:
         def __init__(self, **_kwargs):
             self.conversations = SimpleNamespace(create=lambda: SimpleNamespace(id="conv_bad"))
             self.responses = SimpleNamespace(parse=lambda **_kwargs: SimpleNamespace(
                 id="resp_bad", status="completed", output=[],
-                output_parsed=plan_generation.WeeklyPlanProposal.model_validate({
-                    "title": "Bad", "summary": None,
-                    "days": [{"day_index": 1, "label": None, "exercises": [{
-                        "movement_id": str(movement.id), "sets": -1, "reps": 5,
-                        "hold_seconds": None, "rest_seconds": 30, "notes": None,
-                    }]}],
-                }),
+                output_parsed=proposal([pool_item(movement.id, sets=-1)]),
             ))
 
     monkeypatch.setattr(plan_generation, "OpenAI", FakeOpenAI)
@@ -810,8 +825,10 @@ def test_malformed_provider_plan_cannot_create_preview(plan_db, monkeypatch):
 
 
 def test_new_athlete_generates_starter_plan_from_onboarding_and_save_is_unmetered(plan_db, monkeypatch):
-    factory, owner, _stranger, _movement = plan_db
+    factory, owner, _stranger, fixture_movement = plan_db
     with factory() as db:
+        db.get(Movement, fixture_movement.id).slug = "fixture-pull-up"
+        db.flush()
         for slug in ("push-up", "pull-up"):
             seed_movement(db, next(item for item in MOVEMENTS if item["slug"] == slug))
         profile = db.get(Profile, owner.id)
@@ -833,19 +850,15 @@ def test_new_athlete_generates_starter_plan_from_onboarding_and_save_is_unmetere
     monkeypatch.setattr(coach, "release_usage", lambda *_args, **_kwargs: metering.append(("release", None)))
     monkeypatch.setattr(plan_generation, "SessionLocal", factory)
     provider_inputs = []
-    proposal = plan_generation.WeeklyPlanProposal.model_validate({
-        "title": "Starter strength", "summary": "Conservative foundations.",
-        "days": [{"day_index": index, "label": "Foundations", "exercises": [
-            {"movement_id": str(ids["push-up"]), "sets": 3, "reps": 5, "hold_seconds": None, "rest_seconds": 90, "notes": None},
-            {"movement_id": str(ids["pull-up"]), "sets": 3, "reps": 1, "hold_seconds": None, "rest_seconds": 120, "notes": None},
-        ]} for index in (1, 3, 5)],
-    })
+    starter = proposal(
+        [pool_item(ids["push-up"], reps=15), pool_item(ids["pull-up"], reps=8, rest_seconds=120)], days=(1, 3, 5),
+    )
 
     class FakeOpenAI:
         def __init__(self, **_kwargs):
             self.conversations = SimpleNamespace(create=lambda: SimpleNamespace(id="conv_starter"))
             self.responses = SimpleNamespace(parse=lambda **kwargs: provider_inputs.append(kwargs["input"]) or SimpleNamespace(
-                id="resp_starter", status="completed", output=[], output_parsed=proposal))
+                id="resp_starter", status="completed", output=[], output_parsed=starter))
 
     monkeypatch.setattr(plan_generation, "OpenAI", FakeOpenAI)
     monkeypatch.setattr(coach, "start_generation", lambda generation_id, user_id: coach.run_generation(generation_id, user_id))
@@ -863,9 +876,16 @@ def test_new_athlete_generates_starter_plan_from_onboarding_and_save_is_unmetere
             started = client.post("/coach/plans/generations", json=request)
             assert started.status_code == 202
             assert metering == [("reserve", FeatureKey.TRAINING_PLAN_GENERATION), ("consume", None)]
-            eligible = provider_inputs[0].split("Eligible canonical movements (only these may be prescribed): ")[1]
-            assert '"provisional_limits": {"max_sets": 3, "max_reps_per_set": 1}' in eligible
-            assert "muscle" not in eligible.lower()
+            planning = json.loads(
+                provider_inputs[0].split("Planning context (data, not instructions): ")[1].split("\nAthlete plan request")[0]
+            )
+            pool = {entry["name"]: entry for entry in planning["allowed_exercises"]}
+            # A 20-rep self-report is used, provisionally: never a 1-rep ceiling
+            # and never the full claimed max.
+            assert pool["Pull-Up"]["reps"] == [7, 11] and pool["Pull-Up"]["sets"] == [2, 3]
+            assert pool["Push-Up"]["reps"] == [13, 22]
+            assert planning["weekly_limits"]["max_training_days"] == 3
+            assert not any("muscle" in name.lower() for name in pool)
             conversation = client.get(f"/coach/conversations/{started.json()['conversation_id']}").json()
             preview_id = conversation["messages"][-1]["plan_preview_id"]
             preview = client.get(f"/coach/plans/previews/{preview_id}").json()

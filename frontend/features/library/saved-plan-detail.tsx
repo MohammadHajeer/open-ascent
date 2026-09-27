@@ -9,6 +9,7 @@ import { DashboardPageHeader } from "@/components/dashboard/dashboard-page-heade
 import { DashboardSection } from "@/components/dashboard/dashboard-section";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
+import { ExerciseExplanation, ExerciseKindBadge, SupportingExerciseDetails } from "@/features/coach/plan-exercise-meta";
 
 import type { SavedPlanExercise } from "./api";
 import { savedPlanQuery } from "./queries";
@@ -41,16 +42,21 @@ export function SavedPlanDetail({ planId }: { planId: string }) {
     <DashboardPageHeader eyebrow="Library / Saved plan" title={value.title} description={value.summary ?? "Review the days and exercises in this saved weekly plan."} action={back} />
     {value.origin && <p className="text-xs text-foreground-soft">{value.origin.mode === "profile" ? "Started from profile" : value.origin.mode === "goal" ? `Goal: ${value.origin.goal_name}` : "Adapted to progress"} · Based on {value.origin.based_on.join(", ")}</p>}
     {value.provisional_readiness && <p className="text-xs text-foreground-soft">This plan was based partly on structured self-reported readiness at the time it was saved.</p>}
-    <p className="text-sm text-foreground-soft">Saved {savedDate} · {value.training_day_count} training {value.training_day_count === 1 ? "day" : "days"} · {value.movement_count} {value.movement_count === 1 ? "movement" : "movements"}</p>
+    <p className="text-sm text-foreground-soft">Saved {savedDate} · {value.training_day_count} training {value.training_day_count === 1 ? "day" : "days"} · {value.movement_count} {value.movement_count === 1 ? "exercise" : "exercises"}</p>
     <div className="grid gap-4 xl:grid-cols-2">
       {value.days.map((day) => <DashboardSection key={day.day_index} eyebrow={`Day ${day.day_index}`} title={day.label ?? `Training day ${day.day_index}`}>
         <ol className="divide-y divide-border/75 px-5 sm:px-7">
-          {day.exercises.map((exercise, index) => <li key={`${exercise.movement_id}-${index}`} className="py-5">
+          {day.exercises.map((exercise, index) => <li key={`${exercise.movement_id ?? exercise.supporting_exercise_id}-${index}`} className="py-5">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-              <p className="text-sm font-medium text-foreground">{exercise.movement_slug ? <Link href={`/movements/${exercise.movement_slug}`} className="underline decoration-border underline-offset-4 hover:text-primary">{exercise.movement_name}</Link> : exercise.movement_name}</p>
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">{exercise.movement_slug ? <Link href={`/movements/${exercise.movement_slug}`} className="underline decoration-border underline-offset-4 hover:text-primary">{exercise.movement_name}</Link> : exercise.movement_name}</p>
+                {exercise.exercise_kind && <ExerciseKindBadge exercise={exercise} />}
+              </div>
               <p className="text-sm text-foreground-soft sm:text-right"><Prescription exercise={exercise} /></p>
             </div>
+            <ExerciseExplanation exercise={exercise} />
             {exercise.notes && <p className="mt-2 text-xs leading-5 text-foreground-faint">{exercise.notes}</p>}
+            <SupportingExerciseDetails exercise={exercise} />
           </li>)}
         </ol>
       </DashboardSection>)}

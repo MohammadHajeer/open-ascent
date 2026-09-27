@@ -187,6 +187,7 @@ def test_registry_and_argument_validation(storage):
         "get_recent_analyses",
         "get_analysis_detail",
         "get_movement_guide",
+        "get_supporting_exercise",
         "search_movements",
     }
     assert set(TOOL_REGISTRY) == expected

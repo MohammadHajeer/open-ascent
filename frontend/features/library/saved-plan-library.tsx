@@ -33,7 +33,7 @@ export function SavedPlanLibrary() {
                 <p className="font-mono text-[0.58rem] font-semibold uppercase tracking-[0.12em] text-primary">Saved {formatDate(plan.saved_at)}</p>
                 <h3 className="mt-2 text-xl font-medium tracking-[-0.035em] text-foreground">{plan.title}</h3>
                 {plan.summary && <p className="mt-2 text-sm leading-6 text-foreground-soft">{plan.summary}</p>}
-                <p className="mt-4 mb-5 text-xs text-foreground-faint">{plan.training_day_count} training {plan.training_day_count === 1 ? "day" : "days"} · {plan.movement_count} {plan.movement_count === 1 ? "movement" : "movements"}</p>
+                <p className="mt-4 mb-5 text-xs text-foreground-faint">{plan.training_day_count} training {plan.training_day_count === 1 ? "day" : "days"} · {plan.movement_count} {plan.movement_count === 1 ? "exercise" : "exercises"}</p>
                 <Link href={`/dashboard/library/${plan.id}`} className={`${buttonVariants({ variant: "outline" })} mt-auto w-full gap-2 sm:ml-auto sm:w-auto`} aria-label={`Open ${plan.title}`}>Open plan <ArrowUpRight className="size-4" aria-hidden="true" /></Link>
               </article>)}
             </div>}

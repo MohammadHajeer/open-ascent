@@ -31,10 +31,12 @@ from app.services.movement_documentation import (
     InvalidSafetyContentError,
     MovementDocumentationService,
 )
+from app.services.plan_modes import planning_context
 from app.services.readiness import ReadinessService
-from app.services.readiness_check import preflight, store_answers
+from app.services.readiness_check import _published_question, preflight, store_answers
 from app.services.readiness_evidence import ReadinessEvidenceBuilder
-from app.services.training_plan import PlanValidationError, validate_candidate
+from app.services.training_plan import PlanValidationError
+from app.services.training_plan import validate_candidate as _validate_candidate
 from scripts.seed_movements import (
     CURATED_READINESS_RULES,
     FOUNDATION_READINESS_RULES,
@@ -489,20 +491,24 @@ def test_zero_history_profile_check_unlocks_only_foundation_rules_for_owner(db):
     advanced = db.query(Movement).filter_by(slug="muscle-up").one()
     assert result(db, profile, advanced)[1].status is ReadinessStatus.UNKNOWN
     pull_up = db.query(Movement).filter_by(slug="pull-up").one()
-    proposal = {"title": "Starter", "days": [{"day_index": 1, "exercises": [{
-        "movement_id": pull_up.id, "sets": 2, "reps": 1, "rest_seconds": 90
-    }]}]}
+    push_up = db.query(Movement).filter_by(slug="push-up").one()
+    proposal = {"title": "Starter", "days": [{"day_index": 1, "exercises": [
+        {"movement_id": pull_up.id, "sets": 3, "reps": 1, "rest_seconds": 90},
+        {"movement_id": push_up.id, "sets": 3, "reps": 5, "rest_seconds": 90},
+    ]}]}
     validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
+    # A Quick readiness "able" confirms only the rule threshold, never more.
     proposal["days"][0]["exercises"][0]["reps"] = 2
-    with pytest.raises(PlanValidationError, match="conservative target"):
+    with pytest.raises(PlanValidationError, match="outside the 1-1 range"):
         validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
     proposal["days"][0]["exercises"][0]["movement_id"] = advanced.id
     with pytest.raises(PlanValidationError, match="cannot be prescribed yet"):
         validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
     proposal["days"][0]["exercises"][0].update(movement_id=pull_up.id, reps=1)
     proposal["days"] = [{**proposal["days"][0], "day_index": index} for index in range(1, 5)]
-    with pytest.raises(PlanValidationError, match="at most three training days"):
+    with pytest.raises(PlanValidationError, match="the current limit is 3") as exc:
         validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
+    assert exc.value.code == "availability_exceeded"
     logged_set(db, profile, pull_up, source="manual", reps=1)
     assert result(db, profile, pull_up)[0][0].source == "manual"
 
@@ -550,15 +556,18 @@ def test_muscle_up_goal_uses_foundation_check_without_unlocking_goal(db):
     ]}))
     assert preflight(db, profile.id, request)["status"] == "ready"
     pull_up = db.query(Movement).filter_by(slug="pull-up").one()
-    safe = WeeklyPlanCandidate.model_validate({"title": "Toward Muscle-Up", "days": [{
-        "day_index": 1, "exercises": [{"movement_id": pull_up.id, "sets": 2,
-                                       "reps": 1, "rest_seconds": 90}]
-    }]})
-    validate_candidate(db, profile.id, safe)
+    safe = WeeklyPlanCandidate.model_validate({
+        "schema_version": 2, "path_key": "muscle-up", "goal_slug": "muscle-up",
+        "title": "Toward Muscle-Up", "days": [{
+            "day_index": 1, "exercises": [{"movement_id": pull_up.id, "sets": 3,
+                                           "reps": 1, "rest_seconds": 90}]
+        }],
+    })
+    _validate_candidate(db, profile.id, safe, mode="goal")
     blocked = safe.model_copy(deep=True)
     blocked.days[0].exercises[0].movement_id = muscle_up.id
     with pytest.raises(PlanValidationError, match="cannot be prescribed yet"):
-        validate_candidate(db, profile.id, blocked)
+        _validate_candidate(db, profile.id, blocked, mode="goal")
 
 
 def test_stale_guide_answer_cannot_unlock_new_published_guide(db):
@@ -829,6 +838,12 @@ def test_invalid_rule_content_is_rejected(change):
         })
 
 
+def validate_candidate(db, user_id, proposal: WeeklyPlanCandidate) -> None:
+    """Validate a profile-mode plan through the current (version 2) planner."""
+    document = {**proposal.model_dump(mode="json"), "schema_version": 2, "path_key": "general"}
+    _validate_candidate(db, user_id, WeeklyPlanCandidate.model_validate(document), mode="profile")
+
+
 def onboarded_athlete(db, reps: dict, *, submitted_at=None, equipment=("pull_up_bar",)) -> Profile:
     profile = athlete(db, assessment={
         "submitted_at": (submitted_at or datetime.now(UTC)).isoformat(),
@@ -865,19 +880,19 @@ def test_onboarding_answers_let_a_new_athlete_reach_a_conservative_starter_plan(
     assert db.query(Analysis).filter_by(user_id=profile.id).count() == 0
 
     proposal = {"title": "Starter", "days": [{"day_index": 1, "exercises": [
-        {"movement_id": pull_up.id, "sets": 3, "reps": 1, "rest_seconds": 120},
-        {"movement_id": push_up.id, "sets": 3, "reps": 5, "rest_seconds": 90},
+        {"movement_id": pull_up.id, "sets": 3, "reps": 8, "rest_seconds": 120},
+        {"movement_id": push_up.id, "sets": 3, "reps": 15, "rest_seconds": 90},
     ]}]}
+    # The 20 / 40 self-report scales dosage provisionally (7-11 and 13-22).
     validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
-    proposal["days"][0]["exercises"][0]["reps"] = 8
-    with pytest.raises(PlanValidationError, match="conservative target"):
-        validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
-    proposal["days"][0]["exercises"][0].update(reps=1, sets=4)
-    with pytest.raises(PlanValidationError, match="conservative target"):
-        validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
-    proposal["days"][0]["exercises"][0].update(sets=3)
+    for change in ({"reps": 1}, {"reps": 12}, {"sets": 4}):
+        proposal["days"][0]["exercises"][0].update({"sets": 3, "reps": 8, **change})
+        with pytest.raises(PlanValidationError) as exc:
+            validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
+        assert exc.value.code == "dosage_out_of_range"
+    proposal["days"][0]["exercises"][0].update(sets=3, reps=8)
     proposal["days"] = [{**proposal["days"][0], "day_index": index} for index in range(1, 5)]
-    with pytest.raises(PlanValidationError, match="at most three training days"):
+    with pytest.raises(PlanValidationError, match="the current limit is 3"):
         validate_candidate(db, profile.id, WeeklyPlanCandidate.model_validate(proposal))
     muscle_up = db.query(Movement).filter_by(slug="muscle-up").one()
     blocked = {"title": "Too soon", "days": [{"day_index": 1, "exercises": [
@@ -900,18 +915,20 @@ def test_onboarding_below_threshold_fails_until_a_quick_readiness_answer_superse
     assert decision.status is ReadinessStatus.FAIL
     assert (evidence[0].source, evidence[0].observed_value) == ("onboarding_self_report", 3)
     request = LibraryPlanRequest(client_request_id=uuid.uuid4(), mode="profile")
-    check = preflight(db, profile.id, request)
-    assert check["status"] == "unavailable"
-    assert {item["rule_code"] for item in check["questions"]} == {
-        "recent_logged_push_up", "recent_logged_pull_up"
-    }
-    retry = next(item for item in check["questions"] if item["rule_code"] == "recent_logged_push_up")
+    metadata = {"mode": "profile", "note": None}
+    # Known "not yet" answers unlock only the guides' easier options.
+    assert preflight(db, profile.id, request)["status"] == "ready"
+    pool = planning_context(db, profile.id, metadata).pool
+    assert {entry.name for entry in pool.values() if entry.kind == "movement"} == set()
+    assert {"Eccentric Pull-Up", "Incline Push-Up"} <= {entry.name for entry in pool.values()}
+    retry = _published_question(db, push_up)
     store_answers(db, profile.id, ReadinessAnswersInput.model_validate({"answers": [{
         **{key: retry[key] for key in ("movement_id", "documentation_id", "rule_code")},
         "response": "able",
     }]}))
     assert preflight(db, profile.id, request)["status"] == "ready"
     assert result(db, profile, push_up)[0][0].source == "structured_self_report"
+    assert str(push_up.id) in planning_context(db, profile.id, metadata).pool
 
 
 @pytest.mark.parametrize("reps,age_days", [

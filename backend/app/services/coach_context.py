@@ -12,6 +12,7 @@ from app.models.analysis import Analysis
 from app.models.movement import Movement
 from app.models.profile import Profile
 from app.models.training import WorkoutSession, WorkoutSet
+from app.services.supporting_exercises import find_supporting_exercises, public_details
 
 
 def _current_capabilities(state: dict) -> list[dict]:
@@ -121,6 +122,13 @@ def build_coach_context(db: Session, profile: Profile, question: str) -> str:
     avoided_names = [m.name for m in movements if str(m.id) in avoided][:12]
     if avoided_names:
         result["athlete_reported_profile"]["movements_to_avoid"] = avoided_names
+    # Curated supporting exercises named in the question are explained from
+    # trusted catalog content; they are not canonical movements or evidence.
+    supporting = find_supporting_exercises(question)[:2]
+    if supporting:
+        result["supporting_exercises"] = [
+            {**public_details(item), "analyzed_by_open_ascent": False} for item in supporting
+        ]
     normalized_question = question.lower().replace("-", " ")
     mentioned = [
         m for m in movements if m.name.lower().replace("-", " ") in normalized_question

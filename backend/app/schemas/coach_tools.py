@@ -1,4 +1,4 @@
-"""Strict model-facing arguments for the seven read-only Coach tools."""
+"""Strict model-facing arguments for the eight read-only Coach tools."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ ToolLimit = Annotated[int, Field(strict=True, ge=1, le=10)]
 class ToolArguments(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    @field_validator("movement", "query", check_fields=False, mode="before")
+    @field_validator("movement", "query", "exercise", check_fields=False, mode="before")
     @classmethod
     def normalize_text(cls, value: object) -> object:
         return " ".join(value.split()) if isinstance(value, str) else value
@@ -49,3 +49,7 @@ class MovementGuideArguments(ToolArguments):
 class SearchMovementsArguments(ToolArguments):
     query: MovementText
     limit: ToolLimit = 5
+
+
+class SupportingExerciseArguments(ToolArguments):
+    exercise: MovementText

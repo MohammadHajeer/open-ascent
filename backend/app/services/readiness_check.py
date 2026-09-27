@@ -18,7 +18,11 @@ from app.schemas.readiness import ReadinessStatus
 from app.schemas.readiness_check import ReadinessAnswersInput
 from app.services.foundation_readiness import permits_structured_self_report
 from app.services.movement_documentation import MovementDocumentationService
-from app.services.plan_modes import equipment_available, normalize_request
+from app.services.plan_modes import (
+    equipment_available,
+    normalize_request,
+    planning_context,
+)
 from app.services.readiness import ReadinessService
 from app.services.readiness_evidence import ReadinessEvidenceBuilder
 
@@ -67,7 +71,7 @@ def _published_question(db: Session, movement: Movement) -> dict | None:
 
 def preflight(db: Session, user_id: uuid.UUID, request: LibraryPlanRequest) -> dict:
     # Validate goal/progress before considering any metered generation.
-    normalize_request(db, user_id, request)
+    _content, metadata = normalize_request(db, user_id, request)
     if request.mode == "progress":
         return {"status": "ready", "questions": []}
     profile = db.get(Profile, user_id)
@@ -96,14 +100,12 @@ def preflight(db: Session, user_id: uuid.UUID, request: LibraryPlanRequest) -> d
             questions.append(question)
     if questions:
         return {"status": "check_required", "questions": questions}
-    from app.services.coach_plan_generation import _eligible_movements
-    slugs = {str(item.id): item.slug for item in db.scalars(select(Movement))}
-    eligible = [item for item in _eligible_movements(db, user_id)
-                if equipment_available(slugs.get(item["id"], ""), context)]
-    if eligible:
+    # The same planning engine that generation and Save use decides whether a
+    # coherent plan exists, so a metered request is never admitted without one.
+    context = planning_context(db, user_id, metadata)
+    if context.usable:
         return {"status": "ready", "questions": []}
-    return {"status": "unavailable", "questions": retry_questions,
-            "message": "No suitable foundation movement passes readiness yet. Review your readiness answers or log a foundation workout."}
+    return {"status": "unavailable", "questions": retry_questions, "message": context.unavailable_message()}
 
 
 def store_answers(db: Session, user_id: uuid.UUID, payload: ReadinessAnswersInput) -> None:

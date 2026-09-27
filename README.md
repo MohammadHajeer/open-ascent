@@ -1,4 +1,4 @@
-<p align="center"><img src="frontend/public/assets/brand/symbol-light.svg" alt="Open Ascent symbol" width="112" height="112"></p>
+<p align="center" style="background-color:#111111;"><img src="frontend/public/assets/brand/symbol-dark.svg" alt="Open Ascent symbol" width="112" height="112"></p>
 
 # Open Ascent
 

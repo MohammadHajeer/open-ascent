@@ -52,7 +52,7 @@ describe("saved plan Library", () => {
     vi.mocked(api.listSavedPlans).mockResolvedValue([summary]);
     renderQuery(<SavedPlanLibrary />);
     expect(await screen.findByText("Weekly strength")).toBeTruthy();
-    expect(screen.getByText(/2 training days · 2 movements/)).toBeTruthy();
+    expect(screen.getByText(/2 training days · 2 exercises/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Open Weekly strength" }).getAttribute("href")).toBe(`/dashboard/library/${summary.id}`);
     expect(screen.getByRole("link", { name: "Open Weekly strength" }).className).toContain("sm:w-auto");
   });
@@ -70,6 +70,28 @@ describe("saved plan Library", () => {
     expect(screen.getByText("3 sets × 5 reps · 90 sec rest")).toBeTruthy();
     expect(screen.getByText("2 sets × 20 sec hold · 120 sec rest")).toBeTruthy();
     expect(screen.getByText("Keep control.")).toBeTruthy();
+  });
+
+  it("distinguishes supported movements from curated supporting exercises", async () => {
+    vi.mocked(api.getSavedPlan).mockResolvedValue({
+      ...summary,
+      days: [{ day_index: 1, label: "Front Lever", exercises: [
+        { movement_id: "a", exercise_kind: "movement", movement_name: "Pull-Up", movement_slug: "pull-up", sets: 3, reps: 8, hold_seconds: null, rest_seconds: 120, notes: null,
+          explanation: "Volume is based on your self-reported max of 20 reps and stays provisional until you log training." },
+        { movement_id: null, supporting_exercise_id: "tuck-front-lever-hold", exercise_kind: "supporting", movement_name: "Tuck Front Lever Hold", movement_slug: null,
+          sets: 4, reps: null, hold_seconds: 8, rest_seconds: 120, notes: null, explanation: "Supporting exercise for Front Lever preparation.",
+          supporting: { key: "tuck-front-lever-hold", name: "Tuck Front Lever Hold", purpose: "Trains straight-arm pulling.", setup: ["Hang from the bar."],
+            execution: ["Hold the tuck with straight arms."], common_mistakes: ["Bending the elbows."], equipment: ["pull_up_bar"], target: "hold_seconds" } },
+      ] }],
+    });
+    renderQuery(<SavedPlanDetail planId={summary.id} />);
+    expect(await screen.findByText("Supported movement")).toBeTruthy();
+    expect(screen.getByText("Supporting exercise")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Pull-Up" }).getAttribute("href")).toBe("/movements/pull-up");
+    expect(screen.queryByRole("link", { name: "Tuck Front Lever Hold" })).toBeNull();
+    expect(screen.getByText(/self-reported max of 20 reps/)).toBeTruthy();
+    expect(screen.getByText("Hold the tuck with straight arms.")).toBeTruthy();
+    expect(screen.getByText(/Not analyzed by video upload or Live Coach/)).toBeTruthy();
   });
 
   it("handles missing plans safely", async () => {

@@ -13,6 +13,7 @@ from app.db.database import DbSession
 from app.models.movement import Movement
 from app.models.training import TrainingPlan
 from app.schemas.training_plan import WeeklyPlanCandidate
+from app.services.training_plan import exercise_display_name
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -56,14 +57,14 @@ def get_dashboard_context(profile: AthleteProfile, db: DbSession) -> DashboardCo
     latest_plan = None
     if plan is not None:
         document = WeeklyPlanCandidate.model_validate(plan.plan_document)
-        movement_ids = {
-            exercise.movement_id
-            for day in document.days
-            for exercise in day.exercises
-        }
         movements = {
-            movement.id: movement.name
-            for movement in db.scalars(select(Movement).where(Movement.id.in_(movement_ids)))
+            movement.id: movement
+            for movement in db.scalars(select(Movement).where(Movement.id.in_({
+                exercise.movement_id
+                for day in document.days
+                for exercise in day.exercises
+                if exercise.movement_id
+            })))
         }
         latest_plan = DashboardPlan(
             id=str(plan.id),
@@ -76,7 +77,7 @@ def get_dashboard_context(profile: AthleteProfile, db: DbSession) -> DashboardCo
                     label=day.label,
                     exercises=[
                         DashboardExercise(
-                            movement_name=movements.get(exercise.movement_id, "Movement unavailable"),
+                            movement_name=exercise_display_name(exercise, movements),
                             sets=exercise.sets,
                             reps=exercise.reps,
                             hold_seconds=exercise.hold_seconds,
