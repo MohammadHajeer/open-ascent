@@ -112,7 +112,9 @@ export function useLiveCoachSession() {
       title: "Starting camera and pose tracking",
       detail: analyzer.movement === "push-up"
         ? "Place the camera beside you with your full body in view."
-        : "Stand where your wrists, shoulders, and hips can stay in view.",
+        : analyzer.movement === "muscle-up"
+          ? "Place the camera beside the bar so you stay in view above and below it."
+          : "Stand where your wrists, shoulders, and hips can stay in view.",
     });
     setFps(0);
     setInferenceMs(0);

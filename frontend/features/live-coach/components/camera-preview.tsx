@@ -56,7 +56,9 @@ export function CameraPreview({ session }: Props) {
                   : ""}Restarting begins a new count.`
                 : isPushUp
                   ? "Place the camera beside you with your shoulder, elbow, wrist, hip, and ankle visible through the full rep."
-                  : "Place the camera in front of the bar with your wrists, shoulders, and hips visible through the full rep."}
+                  : movement === "muscle-up"
+                    ? "Place the camera beside the bar with your shoulder, elbow, and wrist visible from the hang to support above the bar."
+                    : "Place the camera in front of the bar with your wrists, shoulders, and hips visible through the full rep."}
             </p>
           </div>
         </div>

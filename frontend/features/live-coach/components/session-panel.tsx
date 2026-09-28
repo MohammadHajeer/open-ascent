@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { useLiveCoachSession } from "../hooks/use-live-coach-session.ts";
-import type { PullUpPhase, PullUpRep } from "../types.ts";
+import type { MuscleUpPhase, PullUpPhase, PullUpRep } from "../types.ts";
 import {
   LIVE_VERTICAL_PULL_MOVEMENTS,
   PARTIAL_VERTICAL_PULL_VARIANTS,
@@ -27,6 +27,10 @@ const PHASE_LABELS: Record<PullUpPhase, string> = {
 
 const PUSH_UP_PHASE_LABELS: Record<PullUpPhase, string> = {
   ...PHASE_LABELS, bottom: "Bottom", rising: "Pressing up",
+};
+
+const MUSCLE_UP_PHASE_LABELS: Record<MuscleUpPhase, string> = {
+  ...PHASE_LABELS, transition: "Transition", top: "Support", lowering: "Returning",
 };
 
 const VARIANTS = [...LIVE_VERTICAL_PULL_MOVEMENTS, ...PARTIAL_VERTICAL_PULL_VARIANTS];
@@ -50,6 +54,9 @@ export function SessionPanel({ session }: Props) {
     startSession, stopSession, movement, selectMovement,
   } = session;
   const isPushUp = movement === "push-up";
+  const isMuscleUp = movement === "muscle-up";
+  const phaseLabels: Record<MuscleUpPhase, string> = isMuscleUp
+    ? MUSCLE_UP_PHASE_LABELS : { ...(isPushUp ? PUSH_UP_PHASE_LABELS : PHASE_LABELS), transition: "Transition" };
   const breakdown = [
     ...VARIANTS.filter((variant) => snapshot.variantBreakdown[variant.slug] > 0),
     ...(snapshot.variantBreakdown.unknown > 0 ? [{ slug: "unknown" as const, label: "Unclassified" }] : []),
@@ -63,7 +70,7 @@ export function SessionPanel({ session }: Props) {
           Movement family
         </Label>
         <Select value={movement} onValueChange={(value) => {
-          if (value === "vertical-pull" || value === "push-up") selectMovement(value);
+          if (value === "vertical-pull" || value === "push-up" || value === "muscle-up") selectMovement(value);
         }}>
           <SelectTrigger id="live-coach-movement" className="mt-2 h-11 w-full rounded-xl bg-background/70">
             <SelectValue />
@@ -71,23 +78,24 @@ export function SessionPanel({ session }: Props) {
           <SelectContent>
             <SelectItem value="vertical-pull">Vertical Pull (Pull-Up)</SelectItem>
             <SelectItem value="push-up">Push-Up</SelectItem>
+            <SelectItem value="muscle-up">Muscle-Up</SelectItem>
           </SelectContent>
         </Select>
         <p className="mt-2 text-xs leading-5 text-foreground-faint">
           {isPushUp
             ? "Use a side or mostly-side view with your shoulder, elbow, wrist, hip, and ankle visible. Begin with extended arms. Changing movement stops the session and resets the count."
-            : "Counts pull-ups, chin-ups, and their width and height variations. The camera can't reliably see which way your palms face, so reps are labeled by hand width and pull height. Changing movement stops the session and resets the count."}
+            : isMuscleUp
+              ? "Use a side or mostly-side view that keeps you in frame above and below the bar. Start from a straight-arm hang; a rep counts once you return to the hang after support. Changing movement stops the session and resets the count."
+              : "Counts pull-ups, chin-ups, and their width and height variations. The camera can't reliably see which way your palms face, so reps are labeled by hand width and pull height. Changing movement stops the session and resets the count."}
         </p>
       </div>
 
       <div className="grid grid-cols-2 border-b border-border">
         <Metric label="Completed reps" value={String(snapshot.validRepCount)} />
-        <Metric label="Current phase" value={isPushUp
-          ? PUSH_UP_PHASE_LABELS[snapshot.phase]
-          : PHASE_LABELS[snapshot.phase]} />
+        <Metric label="Current phase" value={phaseLabels[snapshot.phase]} />
       </div>
 
-      {!isPushUp ? <div className="border-b border-border px-5 py-4 sm:px-6">
+      {!isPushUp && !isMuscleUp ? <div className="border-b border-border px-5 py-4 sm:px-6">
         <p className="font-mono text-[0.56rem] font-semibold tracking-[0.14em] text-primary uppercase">
           Rep breakdown
         </p>
@@ -232,7 +240,7 @@ export function SessionPanel({ session }: Props) {
           </div>
         ) : (
           <p className="text-xs leading-5 text-foreground-faint">
-            Camera choices appear after first permission. {isPushUp ? "Place the selected camera beside you." : "Place the selected camera in front of the bar."}
+            Camera choices appear after first permission. {isPushUp ? "Place the selected camera beside you." : isMuscleUp ? "Place the selected camera beside the bar." : "Place the selected camera in front of the bar."}
           </p>
         )}
 

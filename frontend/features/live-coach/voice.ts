@@ -54,6 +54,9 @@ const cueClips: Record<string, { path: string; kind: "correction" | "setup" }> =
   "go-lower": { path: "corrections/control-the-descent.mp3", kind: "correction" },
   "extend-arms": { path: "corrections/full-extension.mp3", kind: "correction" },
   "body-straight": { path: "corrections/brace-your-core.mp3", kind: "correction" },
+  "muscle-up-frame-body": { path: "setup/full-body-in-frame.mp3", kind: "setup" },
+  "muscle-up-set-position": { path: "setup/hold-start-position.mp3", kind: "setup" },
+  "get-over-bar": { path: "corrections/get-over-the-bar.mp3", kind: "correction" },
 };
 
 export const SESSION_CLIPS = {
