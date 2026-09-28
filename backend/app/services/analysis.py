@@ -21,6 +21,10 @@ from app.models.guest_analysis_usage import GuestAnalysisUsage
 from app.models.movement import Movement
 from app.models.movement_documentation import MovementDocumentation
 from app.schemas.analysis import GuestAnalysisReservationRequest
+from app.services.analysis_availability import (
+    AnalysisServiceUnavailableError,
+    require_analysis_service_available,
+)
 from app.services.feature_usage import (
     UsageIdempotencyConflictError,
     reserve_usage,
@@ -104,6 +108,18 @@ class SafetyAcknowledgementOutdatedError(Exception):
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
+
+
+def _require_analysis_service(db: Session) -> None:
+    # Authoritative admission check, run inside the reservation request so a
+    # worker that died after the page loaded cannot receive new work. Already
+    # admitted analyses are never affected; they stay queued until a worker
+    # returns.
+    try:
+        require_analysis_service_available(db)
+    except AnalysisServiceUnavailableError:
+        db.rollback()
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +430,12 @@ def reserve_guest_analysis(
     _validate_safety_acknowledgement(payload.safety_ack_version)
 
     # ---------------------------------------------------------
+    # 5. Analysis worker availability
+    # ---------------------------------------------------------
+
+    _require_analysis_service(db)
+
+    # ---------------------------------------------------------
     # 6. Expiration / retention times
     # ---------------------------------------------------------
 
@@ -565,6 +587,7 @@ def reserve_authenticated_analysis(
         movement_id=safety_movement.id,
     )
     _validate_safety_acknowledgement(payload.safety_ack_version)
+    _require_analysis_service(db)
 
     reservation_expires_at = now + timedelta(
         minutes=settings.guest_reservation_ttl_minutes

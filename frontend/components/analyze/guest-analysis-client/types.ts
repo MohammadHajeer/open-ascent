@@ -8,6 +8,10 @@ import type {
   RepClassification,
   ExecutionIntent,
 } from "@/lib/analysis";
+import type {
+  AnalysisQueue,
+  AnalysisServiceState,
+} from "@/lib/analysis-progress";
 
 export type SelectedMovement = {
   id: string | null;
@@ -54,6 +58,9 @@ export type AnalysisControllerState = {
   status: AnalysisStatus;
   observing: boolean;
   stage: string;
+  queue: AnalysisQueue | null;
+  serviceState: AnalysisServiceState | null;
+  newAnalysisBlocked: boolean;
   reps: RepClassification[];
   result: GuestResult | null;
   error: string | null;

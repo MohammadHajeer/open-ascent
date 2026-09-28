@@ -5,6 +5,10 @@ import { ArrowLeft, Camera, ScanLine, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { ExecutionIntent } from "@/lib/analysis";
+import {
+  serviceAvailabilityCopy,
+  type AnalysisServiceState,
+} from "@/lib/analysis-progress";
 
 import { GuestVideoRecorder as AnalysisVideoRecorder } from "../guest-video-recorder";
 import type {
@@ -30,6 +34,8 @@ export function VideoStep({
   config,
   authenticated,
   access,
+  serviceState,
+  newAnalysisBlocked,
   file,
   videoUrl,
   duration,
@@ -50,6 +56,8 @@ export function VideoStep({
   config: UploadConfig;
   authenticated: boolean;
   access: AnalysisAccess | null;
+  serviceState: AnalysisServiceState | null;
+  newAnalysisBlocked: boolean;
   file: File | null;
   videoUrl: string | null;
   duration: number | null;
@@ -98,6 +106,8 @@ export function VideoStep({
             <strong className="text-foreground">{movement.name}</strong>
           </span>
         </div>
+
+        {!access && <ServiceStatusNotice state={serviceState} />}
 
         <div className="mt-6 max-w-sm">
           <Label htmlFor="execution-intent">Execution intent</Label>
@@ -160,6 +170,7 @@ export function VideoStep({
             movement={movement}
             config={config}
             access={access}
+            newAnalysisBlocked={newAnalysisBlocked}
             file={file}
             videoUrl={videoUrl}
             duration={duration}
@@ -175,6 +186,51 @@ export function VideoStep({
 
       {safetyGuidance}
     </>
+  );
+}
+
+function ServiceStatusNotice({
+  state,
+}: {
+  state: AnalysisServiceState | null;
+}) {
+  const copy = serviceAvailabilityCopy(state);
+  if (!copy) return null;
+
+  if (state === "unavailable") {
+    return (
+      <div
+        className="mt-6 rounded-2xl border border-destructive/35 bg-destructive/10 p-4 text-sm text-foreground"
+        role="alert"
+      >
+        <strong className="block font-medium">{copy.title}</strong>
+        <span className="mt-1 block text-foreground-soft">
+          {copy.description}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mt-6 flex items-start gap-3 rounded-2xl border border-border bg-card p-4 text-sm"
+      role="status"
+    >
+      <span
+        className={`mt-1.5 size-2 shrink-0 rounded-full ${
+          state === "ready" ? "bg-primary" : "bg-primary/50"
+        }`}
+        aria-hidden="true"
+      />
+      <span>
+        <strong className="block font-medium text-foreground">
+          {copy.title}
+        </strong>
+        <span className="mt-1 block text-foreground-soft">
+          {copy.description}
+        </span>
+      </span>
+    </div>
   );
 }
 
@@ -296,6 +352,7 @@ function VideoReview({
   movement,
   config,
   access,
+  newAnalysisBlocked,
   file,
   videoUrl,
   duration,
@@ -309,6 +366,7 @@ function VideoReview({
   movement: SelectedMovement;
   config: UploadConfig;
   access: AnalysisAccess | null;
+  newAnalysisBlocked: boolean;
   file: File;
   videoUrl: string;
   duration: number | null;
@@ -388,15 +446,29 @@ function VideoReview({
           size="lg"
           className="mt-6 w-full"
           disabled={
+            newAnalysisBlocked ||
             !acknowledged ||
             duration === null ||
             duration > config.maxDurationSeconds
+          }
+          aria-describedby={
+            newAnalysisBlocked ? "analysis-unavailable-reason" : undefined
           }
           onClick={() => onAnalyze()}
         >
           {access ? "Continue analysis" : "Analyze movement"}
           <ScanLine className="size-4" />
         </Button>
+
+        {newAnalysisBlocked && (
+          <p
+            id="analysis-unavailable-reason"
+            className="mt-3 text-sm text-foreground-soft"
+          >
+            Analysis is paused while the service is offline. Your video stays
+            selected, so you can start as soon as it is back.
+          </p>
+        )}
 
         <label className="mt-3 cursor-pointer text-center text-sm text-primary underline">
           Replace video

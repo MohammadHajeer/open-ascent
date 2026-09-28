@@ -37,7 +37,11 @@ async def http_exception_handler(
             error["details"] = exc.detail["details"]
     else:
         error = {"code": "http_error", "message": str(exc.detail)}
-    return JSONResponse(status_code=exc.status_code, content={"error": error})
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": error},
+        headers=getattr(exc, "headers", None),
+    )
 
 
 @app.exception_handler(RequestValidationError)

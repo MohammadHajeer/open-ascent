@@ -67,10 +67,23 @@ class GuestAnalysisFinalizeResponse(BaseModel):
     stage: Literal["queued"] = "queued"
 
 
+AnalysisServiceState = Literal["ready", "busy", "unavailable"]
+
+
+class AnalysisServiceStatusResponse(BaseModel):
+    state: AnalysisServiceState
+
+
+class AnalysisQueueRead(BaseModel):
+    service_state: AnalysisServiceState
+    analyses_ahead: int | None = None
+
+
 class GuestAnalysisStatusResponse(BaseModel):
     analysis_id: uuid.UUID
     status: str
     stage: str
+    queue: AnalysisQueueRead | None = None
 
 
 class AnalysisPhaseRead(BaseModel):

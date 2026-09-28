@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api";
+import type { AnalysisQueue } from "@/lib/analysis-progress";
 import { createClient as createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 export type Movement = {
@@ -238,11 +239,15 @@ export async function uploadGuestVideo(access: GuestAccess, file: File) {
   });
 }
 
+export type AnalysisStatusSnapshot = {
+  status: AnalysisStatus;
+  stage: string;
+  // Present while the analysis is queued or running.
+  queue?: AnalysisQueue | null;
+};
+
 export const getGuestStatus = (access: GuestAccess) =>
-  apiFetch<{
-    status: AnalysisStatus;
-    stage: string;
-  }>(`/analyses/${access.analysis_id}/status`, {
+  apiFetch<AnalysisStatusSnapshot>(`/analyses/${access.analysis_id}/status`, {
     headers: authorization(access.credential),
     cache: "no-store",
   });

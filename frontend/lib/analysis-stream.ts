@@ -1,6 +1,7 @@
 import { ApiError, apiUrl } from "./api";
 import { SseParser, type SseMessage } from "./sse-parser";
 import type { AnalysisStatus, ExplanationStatus, GuestAccess, RepOutcome, RepClassification } from "./analysis";
+import { parseAnalysisQueue, type AnalysisQueue } from "./analysis-progress";
 
 type StageEvent = {
   id: number;
@@ -25,12 +26,14 @@ type StateEvent = {
   stage: string;
   explanation_status: ExplanationStatus;
 };
+type QueueEvent = { id: null; type: "queue" } & AnalysisQueue;
 type ExplanationEvent = {
   id: number;
   type: "explanation_started" | "explanation_ready" | "explanation_failed";
   attempt: number;
 };
-export type AnalysisProgressEvent = StageEvent | RepEvent | StateEvent | ExplanationEvent;
+export type AnalysisProgressEvent =
+  StageEvent | RepEvent | StateEvent | QueueEvent | ExplanationEvent;
 
 const stageTypes = new Set([
   "analysis_queued", "processing_started", "video_loaded",
@@ -53,6 +56,10 @@ export function decodeAnalysisProgress(message: SseMessage): AnalysisProgressEve
         !explanationStatuses.has(data.explanation_status)) return null;
     return { id: null, type: "state", status: data.status as AnalysisStatus, stage: data.stage,
       explanation_status: data.explanation_status as ExplanationStatus };
+  }
+  if (message.event === "queue") {
+    const queue = parseAnalysisQueue(data);
+    return queue ? { id: null, type: "queue", ...queue } : null;
   }
   const id = Number(message.id);
   if (!message.id || !Number.isSafeInteger(id) || id < 1 ||
