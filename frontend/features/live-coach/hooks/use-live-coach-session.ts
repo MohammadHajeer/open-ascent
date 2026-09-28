@@ -110,7 +110,9 @@ export function useLiveCoachSession() {
       priority: 0,
       tone: "neutral",
       title: "Starting camera and pose tracking",
-      detail: analyzer.movement === "push-up"
+      detail: analyzer.movement === "dips"
+        ? "Place the camera beside the parallel bars with your shoulder, elbow, wrist, and hip in view."
+        : analyzer.movement === "push-up"
         ? "Place the camera beside you with your full body in view."
         : analyzer.movement === "muscle-up"
           ? "Place the camera beside the bar so you stay in view above and below it."

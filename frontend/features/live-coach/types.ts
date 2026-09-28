@@ -64,7 +64,7 @@ export type PullUpSnapshot = {
   formFault?: "extend-at-bottom" | "body-swing" | null;
 };
 
-export type LiveCoachMovement = "vertical-pull" | "push-up" | "muscle-up";
+export type LiveCoachMovement = "vertical-pull" | "push-up" | "muscle-up" | "dips";
 
 export type PushUpObservation = {
   timestampMs: number;
@@ -78,6 +78,23 @@ export type PushUpObservation = {
 export type PushUpSnapshot = Omit<PullUpSnapshot, "observation" | "formFault"> & {
   observation: PushUpObservation | null;
   formFault: "go-lower" | "extend-arms" | "body-straight" | null;
+};
+
+export type DipObservation = {
+  timestampMs: number;
+  angleDeg: number;
+  minimumVisibility: number;
+  side: "left" | "right";
+  supportReady: boolean;
+  // Aspect-corrected wrist position and arm length, to check hands stay on the bars.
+  wristX: number;
+  wristY: number;
+  armLength: number;
+};
+
+export type DipSnapshot = Omit<PullUpSnapshot, "observation" | "formFault"> & {
+  observation: DipObservation | null;
+  formFault: "go-lower" | "extend-arms" | null;
 };
 
 export type MuscleUpPhase = PullUpPhase | "transition";
@@ -103,7 +120,7 @@ export type MuscleUpSnapshot = Omit<PullUpSnapshot, "phase" | "latestRep" | "obs
   formFault: "get-over-bar" | null;
 };
 
-export type LiveCoachSnapshot = PullUpSnapshot | PushUpSnapshot | MuscleUpSnapshot;
+export type LiveCoachSnapshot = PullUpSnapshot | PushUpSnapshot | MuscleUpSnapshot | DipSnapshot;
 
 export type CueTone = "neutral" | "positive" | "attention";
 

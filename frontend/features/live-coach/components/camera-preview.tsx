@@ -9,6 +9,7 @@ type Props = { session: ReturnType<typeof useLiveCoachSession> };
 export function CameraPreview({ session }: Props) {
   const { videoRef, canvasRef, mirrorPreview, isActive, status, snapshot, cue, stopSession, movement } = session;
   const isPushUp = movement === "push-up";
+  const isDip = movement === "dips";
   const setComplete = status === "stopped" && snapshot.validRepCount > 0;
   return (
     <div className="relative h-[min(58dvh,34rem)] min-h-72 overflow-hidden bg-visual-surface lg:sticky lg:top-24 lg:h-[min(calc(100dvh-8rem),46rem)] lg:min-h-120 lg:self-start">
@@ -54,11 +55,13 @@ export function CameraPreview({ session }: Props) {
                 ? `${snapshot.partialRepCount > 0
                   ? `${snapshot.partialRepCount} partial ${snapshot.partialRepCount === 1 ? "attempt" : "attempts"} not counted. `
                   : ""}Restarting begins a new count.`
-                : isPushUp
-                  ? "Place the camera beside you with your shoulder, elbow, wrist, hip, and ankle visible through the full rep."
-                  : movement === "muscle-up"
-                    ? "Place the camera beside the bar with your shoulder, elbow, and wrist visible from the hang to support above the bar."
-                    : "Place the camera in front of the bar with your wrists, shoulders, and hips visible through the full rep."}
+                : isDip
+                  ? "Place the camera beside the parallel bars with shoulder, elbow, wrist, and hip visible through the full dip."
+                  : isPushUp
+                    ? "Place the camera beside you with your shoulder, elbow, wrist, hip, and ankle visible through the full rep."
+                    : movement === "muscle-up"
+                      ? "Place the camera beside the bar with your shoulder, elbow, and wrist visible from the hang to support above the bar."
+                      : "Place the camera in front of the bar with your wrists, shoulders, and hips visible through the full rep."}
             </p>
           </div>
         </div>
@@ -88,10 +91,10 @@ export function CameraPreview({ session }: Props) {
               : !snapshot.poseReady
                 ? "Improve tracking"
                 : !snapshot.setupReady
-                  ? isPushUp ? "Set up plank" : "Set up hang"
+                  ? isDip ? "Set up support" : isPushUp ? "Set up plank" : "Set up hang"
                   : !snapshot.startingPositionReady
                     ? "Hold start"
-                    : snapshot.phase === (isPushUp ? "top" : "bottom")
+                    : snapshot.phase === (isPushUp || isDip ? "top" : "bottom")
                       ? "Ready"
                       : "Active set"}
           />

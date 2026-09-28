@@ -23,7 +23,11 @@ export function SessionDetails({ session }: Props) {
               Set up before the camera starts.
             </h2>
             <p className="mt-2 text-sm leading-6 text-foreground-soft">
-              {session.movement === "push-up" ? (
+              {session.movement === "dips" ? (
+                <>Use stable parallel bars with space for your legs and a secure grip.
+                Begin in controlled straight-arm support. Stop for sharp or
+                increasing pain, loss of grip, dizziness, or unusual shortness of breath.</>
+              ) : session.movement === "push-up" ? (
                 <>Use a clear, stable floor with space to extend your body. Begin
                 in a comfortable plank with your hands supported. Stop for sharp
                 or increasing pain, dizziness, or unusual shortness of breath.</>

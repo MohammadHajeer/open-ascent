@@ -34,6 +34,10 @@ export const CAMERA_OFF_CUE: LiveCoachCue = {
 };
 
 export function cameraOffCue(movement: LiveCoachMovement): LiveCoachCue {
+  if (movement === "dips") return {
+    ...CAMERA_OFF_CUE,
+    detail: "Review safety, then start with a side-view camera that sees your shoulder, elbow, wrist, hip, and parallel bars.",
+  };
   if (movement === "muscle-up") return {
     ...CAMERA_OFF_CUE,
     detail: "Review safety, then start with a side-view camera that sees you above and below the bar.",

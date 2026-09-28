@@ -33,6 +33,11 @@ const MUSCLE_UP_PHASE_LABELS: Record<MuscleUpPhase, string> = {
   ...PHASE_LABELS, transition: "Transition", top: "Support", lowering: "Returning",
 };
 
+const DIP_PHASE_LABELS: Record<PullUpPhase, string> = {
+  unknown: "Setting up", top: "Support", lowering: "Lowering",
+  bottom: "Bottom", rising: "Pressing up",
+};
+
 const VARIANTS = [...LIVE_VERTICAL_PULL_MOVEMENTS, ...PARTIAL_VERTICAL_PULL_VARIANTS];
 
 function attributeLabel(value: string) {
@@ -55,8 +60,9 @@ export function SessionPanel({ session }: Props) {
   } = session;
   const isPushUp = movement === "push-up";
   const isMuscleUp = movement === "muscle-up";
+  const isDip = movement === "dips";
   const phaseLabels: Record<MuscleUpPhase, string> = isMuscleUp
-    ? MUSCLE_UP_PHASE_LABELS : { ...(isPushUp ? PUSH_UP_PHASE_LABELS : PHASE_LABELS), transition: "Transition" };
+    ? MUSCLE_UP_PHASE_LABELS : { ...(isDip ? DIP_PHASE_LABELS : isPushUp ? PUSH_UP_PHASE_LABELS : PHASE_LABELS), transition: "Transition" };
   const breakdown = [
     ...VARIANTS.filter((variant) => snapshot.variantBreakdown[variant.slug] > 0),
     ...(snapshot.variantBreakdown.unknown > 0 ? [{ slug: "unknown" as const, label: "Unclassified" }] : []),
@@ -70,7 +76,7 @@ export function SessionPanel({ session }: Props) {
           Movement family
         </Label>
         <Select value={movement} onValueChange={(value) => {
-          if (value === "vertical-pull" || value === "push-up" || value === "muscle-up") selectMovement(value);
+          if (value === "vertical-pull" || value === "push-up" || value === "muscle-up" || value === "dips") selectMovement(value);
         }}>
           <SelectTrigger id="live-coach-movement" className="mt-2 h-11 w-full rounded-xl bg-background/70">
             <SelectValue />
@@ -79,14 +85,17 @@ export function SessionPanel({ session }: Props) {
             <SelectItem value="vertical-pull">Vertical Pull (Pull-Up)</SelectItem>
             <SelectItem value="push-up">Push-Up</SelectItem>
             <SelectItem value="muscle-up">Muscle-Up</SelectItem>
+            <SelectItem value="dips">Dips</SelectItem>
           </SelectContent>
         </Select>
         <p className="mt-2 text-xs leading-5 text-foreground-faint">
-          {isPushUp
-            ? "Use a side or mostly-side view with your shoulder, elbow, wrist, hip, and ankle visible. Begin with extended arms. Changing movement stops the session and resets the count."
-            : isMuscleUp
-              ? "Use a side or mostly-side view that keeps you in frame above and below the bar. Start from a straight-arm hang; a rep counts once you return to the hang after support. Changing movement stops the session and resets the count."
-              : "Counts pull-ups, chin-ups, and their width and height variations. The camera can't reliably see which way your palms face, so reps are labeled by hand width and pull height. Changing movement stops the session and resets the count."}
+          {isDip
+            ? "Use a side or mostly-side view of parallel bars with shoulder, elbow, wrist, and hip visible. Begin in straight-arm support; a rep counts when you return there after reaching the bottom. Changing movement stops the session and resets the count."
+            : isPushUp
+              ? "Use a side or mostly-side view with your shoulder, elbow, wrist, hip, and ankle visible. Begin with extended arms. Changing movement stops the session and resets the count."
+              : isMuscleUp
+                ? "Use a side or mostly-side view that keeps you in frame above and below the bar. Start from a straight-arm hang; a rep counts once you return to the hang after support. Changing movement stops the session and resets the count."
+                : "Counts pull-ups, chin-ups, and their width and height variations. The camera can't reliably see which way your palms face, so reps are labeled by hand width and pull height. Changing movement stops the session and resets the count."}
         </p>
       </div>
 
@@ -95,7 +104,7 @@ export function SessionPanel({ session }: Props) {
         <Metric label="Current phase" value={phaseLabels[snapshot.phase]} />
       </div>
 
-      {!isPushUp && !isMuscleUp ? <div className="border-b border-border px-5 py-4 sm:px-6">
+      {!isPushUp && !isMuscleUp && !isDip ? <div className="border-b border-border px-5 py-4 sm:px-6">
         <p className="font-mono text-[0.56rem] font-semibold tracking-[0.14em] text-primary uppercase">
           Rep breakdown
         </p>
@@ -196,9 +205,11 @@ export function SessionPanel({ session }: Props) {
           />
           <div>
             <Label htmlFor="live-coach-safety" className="cursor-pointer text-sm leading-5 font-normal">
-              {isPushUp
-                ? "I checked the floor and space, can support myself comfortably, and will stop if body control breaks down."
-                : "I checked the bar and space, can hang comfortably, and will stop if grip or body control breaks down."}
+              {isDip
+                ? "I checked the parallel bars and space, can hold stable support comfortably, and will stop if grip or body control breaks down."
+                : isPushUp
+                  ? "I checked the floor and space, can support myself comfortably, and will stop if body control breaks down."
+                  : "I checked the bar and space, can hang comfortably, and will stop if grip or body control breaks down."}
             </Label>
             <a href="#live-coach-safety-guidance" className="mt-1 inline-block text-xs font-medium text-primary underline underline-offset-4">Read safety guidance</a>
           </div>
@@ -240,7 +251,7 @@ export function SessionPanel({ session }: Props) {
           </div>
         ) : (
           <p className="text-xs leading-5 text-foreground-faint">
-            Camera choices appear after first permission. {isPushUp ? "Place the selected camera beside you." : isMuscleUp ? "Place the selected camera beside the bar." : "Place the selected camera in front of the bar."}
+            Camera choices appear after first permission. {isDip ? "Place the selected camera beside the parallel bars." : isPushUp ? "Place the selected camera beside you." : isMuscleUp ? "Place the selected camera beside the bar." : "Place the selected camera in front of the bar."}
           </p>
         )}
 
