@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Annotated
@@ -18,10 +19,15 @@ from app.api.dependencies.analysis_access import (
 from app.db.database import SessionLocal
 from app.models.analysis import Analysis
 from app.models.analysis_event import AnalysisEvent
+from app.services.analysis_availability import analysis_queue_snapshot
 
 router = APIRouter(prefix="/analyses", tags=["Analysis"])
 TERMINAL_STATUSES = frozenset({"failed", "expired"})
 TERMINAL_EXPLANATION_STATUSES = frozenset({"completed", "failed", "skipped"})
+WAITING_STATUSES = frozenset({"queued", "running"})
+# Worker health changes on a heartbeat scale (seconds), so the queue snapshot
+# is refreshed less often than the event table is polled.
+QUEUE_REFRESH_SECONDS = 3.0
 
 
 def read_progress(
@@ -51,8 +57,19 @@ def read_progress(
         )
 
 
+def read_queue_status(analysis_id: uuid.UUID) -> dict | None:
+    with SessionLocal() as db:
+        analysis = db.get(Analysis, analysis_id)
+        if analysis is None:
+            return None
+        snapshot = analysis_queue_snapshot(db, analysis)
+        return snapshot.as_dict() if snapshot else None
+
+
 async def stream_progress(request: Request, analysis_id: uuid.UUID, cursor: int):
     sent_state = False
+    sent_queue: dict | None = None
+    queue_checked_at: float | None = None
     while not await request.is_disconnected():
         (
             events,
@@ -90,6 +107,22 @@ async def stream_progress(request: Request, analysis_id: uuid.UUID, cursor: int)
                 ),
             }
             sent_state = True
+
+        # Athlete-safe queue context (service state + jobs ahead) for work
+        # that is still waiting. Sent only when it changes; carries no event
+        # id so it never moves the replay cursor.
+        now = time.monotonic()
+        if status in WAITING_STATUSES and (
+            queue_checked_at is None or now - queue_checked_at >= QUEUE_REFRESH_SECONDS
+        ):
+            queue_checked_at = now
+            queue = await asyncio.to_thread(read_queue_status, analysis_id)
+            if queue is not None and queue != sent_queue:
+                sent_queue = queue
+                yield {
+                    "event": "queue",
+                    "data": json.dumps(queue, separators=(",", ":")),
+                }
 
         if status in TERMINAL_STATUSES or (
             status == "completed"

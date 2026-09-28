@@ -18,6 +18,8 @@ from app.models.movement_documentation import MovementDocumentation
 from app.schemas.analysis import (
     AnalysisHistoryItem,
     AnalysisHistoryMovementRead,
+    AnalysisQueueRead,
+    AnalysisServiceStatusResponse,
     AuthenticatedAnalysisReservationResponse,
     DeterministicAnalysisRead,
     GuestAnalysisConfigResponse,
@@ -47,6 +49,11 @@ from app.services.analysis import (
     reserve_authenticated_analysis,
     reserve_guest_analysis,
 )
+from app.services.analysis_availability import (
+    AnalysisServiceUnavailableError,
+    analysis_queue_snapshot,
+    analysis_service_state,
+)
 from app.services.analysis_storage import (
     AnalysisNotReservedError,
     InvalidUploadedVideoError,
@@ -71,6 +78,28 @@ IdempotencyKey = Annotated[
     uuid.UUID,
     Header(alias="Idempotency-Key"),
 ]
+
+SERVICE_UNAVAILABLE_RETRY_SECONDS = 30
+
+
+def _analysis_service_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "code": "analysis_service_unavailable",
+            "message": (
+                "Video analysis is temporarily unavailable. "
+                "Please try again shortly."
+            ),
+        },
+        headers={"Retry-After": str(SERVICE_UNAVAILABLE_RETRY_SECONDS)},
+    )
+
+
+@router.get("/availability", response_model=AnalysisServiceStatusResponse)
+def get_analysis_service_status(db: DbSession) -> AnalysisServiceStatusResponse:
+    # Informational only; reservations re-check availability themselves.
+    return AnalysisServiceStatusResponse(state=analysis_service_state(db))
 
 
 @router.post(
@@ -134,6 +163,8 @@ def create_authenticated_analysis_reservation(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Video analysis allowance is not configured.",
         )
+    except AnalysisServiceUnavailableError:
+        raise _analysis_service_unavailable()
     return AuthenticatedAnalysisReservationResponse(
         analysis_id=analysis.id,
         reservation_expires_at=analysis.reservation_expires_at,
@@ -309,6 +340,9 @@ def create_guest_analysis_reservation(
             detail="Invalid guest credential.",
         )
 
+    except AnalysisServiceUnavailableError:
+        raise _analysis_service_unavailable()
+
     return GuestAnalysisReservationResponse(
         analysis_id=analysis.id,
         credential=credential,
@@ -428,11 +462,14 @@ def finalize_guest_analysis(
 def get_guest_analysis_status(
     analysis_id: uuid.UUID,
     analysis: AnalysisAccess,
+    db: DbSession,
 ) -> GuestAnalysisStatusResponse:
+    queue = analysis_queue_snapshot(db, analysis)
     return GuestAnalysisStatusResponse(
         analysis_id=analysis.id,
         status=analysis.status,
         stage=analysis.stage,
+        queue=AnalysisQueueRead(**queue.as_dict()) if queue else None,
     )
 
 

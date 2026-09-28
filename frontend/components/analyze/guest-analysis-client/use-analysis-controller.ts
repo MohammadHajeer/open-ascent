@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   fetchAuthenticatedAnalysisResult,
@@ -24,6 +25,16 @@ import {
   type RepClassification,
   type ExecutionIntent,
 } from "@/lib/analysis";
+import {
+  analysisProgressCopy,
+  blocksNewAnalysis,
+  isAnalysisServiceUnavailable,
+  type AnalysisQueue,
+} from "@/lib/analysis-progress";
+import {
+  analysisAvailabilityQuery,
+  analysisPublicKeys,
+} from "@/lib/analysis-public";
 import {
   streamGuestAnalysis,
   type AnalysisProgressEvent,
@@ -70,74 +81,6 @@ const resultFor = (current: AnalysisAccess, authenticated: boolean) =>
     ? fetchAuthenticatedAnalysisResult(current.analysis_id)
     : getGuestResult(current as GuestAccess);
 
-function progressCopy(status: AnalysisStatus, stage: string) {
-  if (status === "failed") {
-    return {
-      title: "Analysis could not be completed",
-      description:
-        "We couldn’t process this video successfully. This is a processing issue, not a judgment of your movement.",
-    };
-  }
-
-  if (status === "expired") {
-    return {
-      title: "Analysis expired",
-      description:
-        "This guest analysis has expired. Start a new analysis to try again.",
-    };
-  }
-
-  if (status === "reserved") {
-    return {
-      title: "Getting your video ready",
-      description: "Your upload is being prepared and checked before analysis.",
-    };
-  }
-
-  if (status === "queued") {
-    return {
-      title: "Your analysis is queued",
-      description:
-        "We’ve received your video and it’s waiting to be processed.",
-    };
-  }
-
-  if (status === "completed") {
-    return {
-      title: "Your results are ready",
-      description: "Opening your movement analysis results.",
-    };
-  }
-
-  if (stage === "video_loaded") {
-    return {
-      title: "Video ready",
-      description: "Your video is ready for movement analysis.",
-    };
-  }
-
-  if (stage === "movement_analysis_started" || stage === "rep_completed") {
-    return {
-      title: "Analyzing your movement",
-      description:
-        "We’re reviewing the movement and identifying completed repetitions.",
-    };
-  }
-
-  if (stage === "finalizing") {
-    return {
-      title: "Finalizing your results",
-      description:
-        "We’re organizing the detected repetitions and analysis findings.",
-    };
-  }
-
-  return {
-    title: "Preparing your analysis",
-    description: "Your video is being prepared for movement analysis.",
-  };
-}
-
 export function useAnalysisController({
   analysisId,
   movement,
@@ -150,12 +93,14 @@ export function useAnalysisController({
   authenticated: boolean;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const restorationRef = useRef<{
     id: string;
     request: Promise<{
       status: AnalysisStatus;
       stage: string;
+      queue: AnalysisQueue | null;
       result: GuestResult | null;
     }>;
   } | null>(null);
@@ -174,12 +119,22 @@ export function useAnalysisController({
   const [status, setStatus] = useState<AnalysisStatus>("reserved");
   const [observing, setObserving] = useState(false);
   const [stage, setStage] = useState("reserved");
+  const [queue, setQueue] = useState<AnalysisQueue | null>(null);
   const [reps, setReps] = useState<RepClassification[]>([]);
   const [result, setResult] = useState<GuestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [storageWarning, setStorageWarning] = useState(false);
   const [recoveryIssue, setRecoveryIssue] = useState<RecoveryIssue>(null);
   const [videoChoice, setVideoChoice] = useState<VideoChoice>(null);
+
+  // Checked only while choosing a video; once an analysis exists its own
+  // status and stream carry the service state.
+  const availability = useQuery({
+    ...analysisAvailabilityQuery(),
+    enabled: step === "video" || step === "ready",
+  });
+  const serviceState = availability.data ?? null;
+  const newAnalysisBlocked = blocksNewAnalysis(serviceState, Boolean(access));
 
   useEffect(() => {
     return () => {
@@ -213,6 +168,7 @@ export function useAnalysisController({
         request: statusFor(saved, authenticated).then(async (current) => ({
           status: current.status,
           stage: current.stage,
+          queue: current.queue ?? null,
           result:
             current.status === "completed"
               ? await resultFor(saved, authenticated)
@@ -225,6 +181,7 @@ export function useAnalysisController({
       ({
         status: restoredStatus,
         stage: restoredStage,
+        queue: restoredQueue,
         result: restoredResult,
       }) => {
         if (!active) return;
@@ -232,6 +189,7 @@ export function useAnalysisController({
         setAccess(saved);
         setStatus(restoredStatus);
         setStage(restoredStage);
+        setQueue(restoredQueue);
 
         const action = recoveryActionForStatus(restoredStatus);
 
@@ -324,6 +282,14 @@ export function useAnalysisController({
         lastEventId.current = event.id;
       }
 
+      if (event.type === "queue") {
+        setQueue({
+          service_state: event.service_state,
+          analyses_ahead: event.analyses_ahead,
+        });
+        return;
+      }
+
       if (event.type === "state") {
         setStatus(event.status);
         setStage(event.stage);
@@ -346,6 +312,8 @@ export function useAnalysisController({
         setStatus("queued");
         setStage("queued");
       } else if (event.type === "processing_started") {
+        // A worker claimed it; the queued snapshot no longer applies.
+        setQueue(null);
         setStatus("running");
         setStage("processing_started");
       } else if (event.type === "rep_completed") {
@@ -416,6 +384,7 @@ export function useAnalysisController({
 
               setStatus(current.status);
               setStage(current.stage);
+              setQueue(current.queue ?? null);
               await finish(current.status);
 
               if (settled) return;
@@ -514,9 +483,17 @@ export function useAnalysisController({
       return;
     }
 
+    // The service is known to be down: keep the chosen video on the review
+    // screen, where the start action is disabled with an explanation.
+    if (blocksNewAnalysis(serviceState, Boolean(access))) {
+      setStep("ready");
+      return;
+    }
+
     setError(null);
     setStatus("reserved");
     setStage("reserved");
+    setQueue(null);
     setObserving(false);
     setReps([]);
     lastEventId.current = 0;
@@ -572,6 +549,14 @@ export function useAnalysisController({
       setStage("queued");
       setObserving(true);
     } catch (cause) {
+      // The backend re-checks worker health when reserving. If it refused,
+      // nothing was created: return to review and show the outage there.
+      if (!currentAccess && isAnalysisServiceUnavailable(cause)) {
+        queryClient.setQueryData(analysisPublicKeys.availability, "unavailable");
+        setStep("ready");
+        return;
+      }
+
       if (cause instanceof ApiError && cause.status === 401 && currentAccess) {
         if (!authenticated) {
           removeGuestAnalysisSession(currentAccess.analysis_id);
@@ -594,6 +579,7 @@ export function useAnalysisController({
     replaceVideoUrl(null);
     setDuration(null);
     setResult(null);
+    setQueue(null);
     setObserving(false);
     setReps([]);
     lastEventId.current = 0;
@@ -610,7 +596,7 @@ export function useAnalysisController({
   }
 
   const accessInvalid = error === INVALID_ACCESS_MESSAGE;
-  const copy = progressCopy(status, stage);
+  const copy = analysisProgressCopy(status, stage, queue);
 
   const progressTitle = accessInvalid
     ? "Analysis access expired."
@@ -638,6 +624,9 @@ export function useAnalysisController({
     status,
     observing,
     stage,
+    queue,
+    serviceState,
+    newAnalysisBlocked,
     reps,
     result,
     error,

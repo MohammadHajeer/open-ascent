@@ -3,7 +3,7 @@ import { ApiError } from "@/lib/api";
 import { authApiFetch, authApiRequest } from "@/lib/auth-api";
 import { decodeAnalysisProgress, type AnalysisProgressEvent } from "@/lib/analysis-stream";
 import { SseParser } from "@/lib/sse-parser";
-import type { AnalysisStatus, ExecutionIntent } from "@/lib/analysis";
+import type { AnalysisStatusSnapshot, ExecutionIntent } from "@/lib/analysis";
 
 import type {
   AnalysisHistoryItem,
@@ -61,7 +61,7 @@ export async function uploadAuthenticatedVideo(
 }
 
 export const fetchAuthenticatedAnalysisStatus = (analysisId: string) =>
-  authApiFetch<{ status: AnalysisStatus; stage: string }>(
+  authApiFetch<AnalysisStatusSnapshot>(
     `/analyses/${analysisId}/status`,
     { cache: "no-store" },
   );

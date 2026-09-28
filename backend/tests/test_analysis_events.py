@@ -340,6 +340,7 @@ async def test_live_stream_waits_for_new_persisted_events(
         return None
 
     monkeypatch.setattr(analysis_stream, "read_progress", fake_read)
+    monkeypatch.setattr(analysis_stream, "read_queue_status", lambda _id: None)
     monkeypatch.setattr(analysis_stream.asyncio, "sleep", no_wait)
     output = [
         event
@@ -403,6 +404,7 @@ async def test_completed_stream_stays_open_until_explanation_finishes(
         return None
 
     monkeypatch.setattr(analysis_stream, "read_progress", fake_read)
+    monkeypatch.setattr(analysis_stream, "read_queue_status", lambda _id: None)
     monkeypatch.setattr(analysis_stream.asyncio, "sleep", no_wait)
     output = [
         event

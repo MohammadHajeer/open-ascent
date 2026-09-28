@@ -6,6 +6,27 @@ from sqlalchemy.orm import Session
 
 from app.db.database import engine, get_db
 from app.main import app
+from app.services import analysis as analysis_service
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "real_worker_health: use real worker heartbeats for analysis admission",
+    )
+
+
+@pytest.fixture(autouse=True)
+def analysis_worker_available(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The suite shares a live database whose worker heartbeats depend on
+    # whether a developer worker happens to be running. Reservation tests
+    # therefore assume a healthy worker unless they opt into the real check.
+    if request.node.get_closest_marker("real_worker_health") is None:
+        monkeypatch.setattr(
+            analysis_service, "require_analysis_service_available", lambda db: None
+        )
 
 
 @pytest.fixture

@@ -31,6 +31,19 @@ class AnalysisClaim:
     video_path: str
 
 
+def claimable_analysis_conditions() -> list:
+    """Filters every job must pass before the worker will claim it.
+
+    Shared with the athlete-facing queue position so both agree on which
+    queued analyses the worker will actually process.
+    """
+    return [
+        Analysis.video_path.is_not(None),
+        Analysis.attempts < MAX_ANALYSIS_ATTEMPTS,
+        or_(Analysis.owner_kind != "guest", Analysis.access_expires_at > func.now()),
+    ]
+
+
 def claim_next_analysis(
     db: Session,
 ) -> AnalysisClaim | None:
@@ -74,11 +87,7 @@ def claim_next_analysis(
     analysis = db.scalar(
         select(Analysis)
         .where(
-            Analysis.video_path.is_not(None),
-            Analysis.attempts < MAX_ANALYSIS_ATTEMPTS,
-            or_(
-                Analysis.owner_kind != "guest", Analysis.access_expires_at > func.now()
-            ),
+            *claimable_analysis_conditions(),
             or_(
                 Analysis.status == "queued",
                 and_(
