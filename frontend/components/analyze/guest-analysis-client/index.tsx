@@ -34,6 +34,8 @@ export function GuestAnalysisClient({
     executionIntent,
     setExecutionIntent,
     access,
+    serviceState,
+    newAnalysisBlocked,
     status,
     observing,
     stage,
@@ -94,6 +96,8 @@ export function GuestAnalysisClient({
             config={config}
             authenticated={authenticated}
             access={access}
+            serviceState={serviceState}
+            newAnalysisBlocked={newAnalysisBlocked}
             file={file}
             videoUrl={videoUrl}
             duration={duration}
