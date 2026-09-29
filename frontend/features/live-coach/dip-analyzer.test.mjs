@@ -170,6 +170,57 @@ test("a fast dip that bounces through the bottom in one 12 fps sample counts", (
   }
 });
 
+test("back-to-back dips that pass through lockout in one sample count", () => {
+  for (const rep of [[145, 110, 88, 101, 140, 164, 153], [140, 100, 86, 100, 135, 158, 166, 150]]) {
+    const h = harness();
+    h.feed(START);
+    h.feed([...rep, ...rep, ...rep]);
+    const result = h.frame(120);
+    assert.equal(result.validRepCount, 3, `rep ${rep}`);
+    assert.equal(result.partialRepCount, 0);
+    assert.equal(result.formFault, null);
+  }
+});
+
+test("a one-frame jump past lockout or depth beside a near sample is not an endpoint", () => {
+  const h = harness();
+  h.feed(START);
+  // 101 is within the bottom margin, but the jump to 76 and back is a glitch.
+  h.feed([145, 120, 101, 76, 102, 120]);
+  assert.equal(h.feed([140, 165, 170]).partialRepCount, 1);
+  // 153 is within the lockout margin, but 179 beside it is a glitch.
+  h.feed([145, 120, 90, 90, 120, 153, 179, 152, 140]);
+  assert.equal(h.frame(140).validRepCount, 0);
+  assert.equal(h.feed([165, 170]).validRepCount, 1);
+});
+
+// Continuous dips with no pause at either end, at the live loop's uneven cadence.
+function continuousDips({ top, bottom, periodMs, reps, offsetMs }) {
+  const analyzer = new LiveDipAnalyzer();
+  let time = 0, index = 0, snapshot;
+  const frame = (angleDeg) => {
+    snapshot = analyzer.update({ timestampMs: time, angleDeg, minimumVisibility: 0.99, side: "left",
+      supportReady: true, wristX: 0, wristY: 0, armLength: 1 }, time);
+    time += CADENCE[index++ % CADENCE.length];
+  };
+  while (time < 600) frame(170);
+  const [mid, amplitude, begin] = [(top + bottom) / 2, (top - bottom) / 2, time - offsetMs];
+  while (time < begin + reps * periodMs) frame(mid + amplitude * Math.cos(2 * Math.PI * (time - begin) / periodMs));
+  return snapshot;
+}
+
+test("continuous dips count each full rep and none that stop short", () => {
+  for (const [periodMs, top, bottom] of [[1200, 163, 88], [1000, 165, 88], [800, 168, 85]]) {
+    for (let offsetMs = 0; offsetMs < 120; offsetMs += 17) {
+      const full = continuousDips({ top, bottom, periodMs, reps: 6, offsetMs });
+      assert.ok(full.validRepCount >= 5, `${periodMs}/${offsetMs}: ${full.validRepCount}`);
+      assert.equal(full.partialRepCount, 0);
+      assert.equal(continuousDips({ top: 168, bottom: 110, periodMs, reps: 6, offsetMs }).validRepCount, 0);
+      assert.equal(continuousDips({ top: 148, bottom: 85, periodMs, reps: 6, offsetMs }).validRepCount, 0);
+    }
+  }
+});
+
 test("one-frame dropout survives; long tracking loss discards unfinished rep but preserves total", () => {
   const h = harness();
   h.feed(START);

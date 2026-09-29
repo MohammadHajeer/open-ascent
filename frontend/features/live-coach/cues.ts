@@ -184,8 +184,8 @@ const muscleUpCues = {
   setup: { id: "muscle-up-set-position", priority: 90, tone: "attention", title: "Hang from the bar", detail: "Grip the bar with your hands above your shoulders." },
   start: { id: "muscle-up-hold-start", priority: 60, tone: "neutral", title: "Hold a straight-arm hang", detail: "Extend your arms and hold briefly before the first rep." },
   overBar: { id: "get-over-bar", priority: 75, tone: "attention", title: "Get over the bar", detail: "Turn over into support with straight arms before lowering." },
-  complete: { id: "muscle-up-rep-complete", priority: 65, tone: "positive", title: "Rep complete", detail: "Settle in the hang, then begin the next rep." },
-  top: { id: "muscle-up-support", priority: 20, tone: "positive", title: "Support confirmed", detail: "Lower back to a straight-arm hang to complete the rep." },
+  complete: { id: "muscle-up-rep-complete", priority: 65, tone: "positive", title: "Rep complete", detail: "Lower to a straight-arm hang for the next rep." },
+  top: { id: "muscle-up-support", priority: 20, tone: "positive", title: "Support confirmed", detail: "Lower back to a straight-arm hang for the next rep." },
   transition: { id: "muscle-up-transition", priority: 15, tone: "neutral", title: "Transition", detail: "Turn over the bar and press to support." },
   lowering: { id: "muscle-up-lowering", priority: 15, tone: "neutral", title: "Return to the hang", detail: "Lower with control to a straight-arm hang." },
   rising: { id: "muscle-up-pulling", priority: 10, tone: "neutral", title: "Pulling", detail: "Pull toward the bar." },
@@ -198,9 +198,12 @@ export function selectMuscleUpCue(snapshot: MuscleUpSnapshot, timestampMs: numbe
   else if (!snapshot.setupReady) candidates.push(muscleUpCues.setup);
   else if (!snapshot.startingPositionReady) candidates.push(muscleUpCues.start);
   if (snapshot.formFault === "get-over-bar") candidates.push(muscleUpCues.overBar);
-  if (snapshot.phase === "bottom") {
-    candidates.push(muscleUpCues.ready);
-    if (snapshot.latestRep?.outcome === "valid" && timestampMs - snapshot.latestRep.endMs <= 2500) candidates.push(muscleUpCues.complete);
+  if (snapshot.phase === "bottom") candidates.push(muscleUpCues.ready);
+  // The count lands at lockout; confirm it there and through the return, but
+  // not over the next pull.
+  if ((snapshot.phase === "top" || snapshot.phase === "lowering" || snapshot.phase === "bottom") &&
+    snapshot.latestRep?.outcome === "valid" && timestampMs - snapshot.latestRep.endMs <= 2500) {
+    candidates.push(muscleUpCues.complete);
   }
   if (snapshot.phase === "top") candidates.push(muscleUpCues.top);
   if (snapshot.phase === "transition") candidates.push(muscleUpCues.transition);

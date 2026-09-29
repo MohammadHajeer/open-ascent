@@ -16,6 +16,12 @@ export const MUSCLE_UP_THRESHOLDS = {
   // A pull that bends the elbow this far (the Pull-Up partial top, 90°) or
   // reaches wrist height is a real attempt: returning without support is a partial.
   strongPullElbowDeg: 90,
+  // An explosive rep can pass through lockout or the bottom of the swing in
+  // one ~83 ms sample. Support and hang are confirmed by one sample in the
+  // zone next to one within these margins of it; a lone glitch has no such
+  // neighbor. Intermediate phases (pull, transition) are never timed.
+  zoneMarginElbowDeg: 15,
+  zoneMarginArmLengths: 0.15,
   // Hands stay on the bar through a rep. A wrist farther than this from its
   // hang height means the hands left the bar (standing with arms down looks
   // exactly like support), so that frame is not used.
@@ -58,12 +64,18 @@ export function measureMuscleUpPose(
     candidates.sort((a, b) => b.minimumVisibility - a.minimumVisibility)[0] ?? null;
 }
 
-type Zones = { hang: boolean; aboveWrist: boolean; support: boolean; strongPull: boolean };
+type Zones = {
+  hang: boolean; aboveWrist: boolean; support: boolean; strongPull: boolean;
+  nearHang: boolean; nearSupport: boolean;
+};
 
 /**
- * HANG → PULLING → TRANSITION → SUPPORT → RETURN → HANG (count once).
- * Every transition needs two consecutive agreeing samples; a count needs a
- * confirmed support and then a confirmed straight-arm hang.
+ * HANG → PULLING → TRANSITION → SUPPORT (count) → RETURN → HANG (re-arm).
+ * A muscle-up is complete at straight-arm lockout above the bar, so it counts
+ * there, the moment the coach can say so, even if the athlete then drops off
+ * the bar. Only a confirmed straight-arm hang re-arms the next count.
+ * Every transition needs two consecutive agreeing samples; support and hang
+ * may each pass in one sample next to a near-zone sample.
  */
 export class LiveMuscleUpAnalyzer {
   private phase: MuscleUpPhase = "unknown";
@@ -111,35 +123,44 @@ export class LiveMuscleUpAnalyzer {
 
   update(observation: MuscleUpObservation | null, timestampMs: number, personDetected = observation !== null): MuscleUpSnapshot {
     const T = MUSCLE_UP_THRESHOLDS;
+    // A blind interval longer than maxFrameGapMs cannot complete a rep: discard
+    // only the in-flight candidate, preserve totals, free the side lock, and
+    // re-arm at a hang.
+    if (this.lastFrameMs !== null && timestampMs - this.lastFrameMs > T.maxFrameGapMs) {
+      this.clearCycle();
+      this.side = null;
+      this.lastFrameMs = null;
+    }
     const onBar = observation !== null && (this.barY === null ||
       Math.abs(observation.wristY - this.barY) <= T.barToleranceArmLengths * observation.armLength);
-    // Skip a brief unusable frame; samples either side still count as
-    // consecutive. A blind interval longer than maxFrameGapMs cannot complete
-    // a rep: discard only the in-flight candidate, preserve totals, re-arm at a hang.
-    if (!observation || !onBar) {
-      if (this.lastFrameMs === null || timestampMs - this.lastFrameMs > T.maxFrameGapMs) {
-        this.clearCycle();
-        this.lastFrameMs = null;
-      }
+    // Skip a brief unusable frame, a hand glitch off the bar, or the far arm
+    // standing in while the locked arm is occluded over the bar; samples
+    // either side still count as consecutive.
+    if (!observation || !onBar || (this.side !== null && observation.side !== this.side)) {
       return this.snapshot(observation, personDetected, false);
     }
-    if ((this.lastFrameMs !== null && timestampMs - this.lastFrameMs > T.maxFrameGapMs) ||
-      (this.side !== null && observation.side !== this.side)) this.clearCycle();
     this.side = observation.side;
     this.lastFrameMs = timestampMs;
 
-    const extended = observation.elbowAngleDeg >= T.extendedElbowDeg;
+    const elbow = observation.elbowAngleDeg;
+    const height = observation.shoulderAboveWrist;
     const zones: Zones = {
-      hang: extended && observation.shoulderAboveWrist <= T.hangMaxShoulderAboveWrist,
-      aboveWrist: observation.shoulderAboveWrist >= T.transitionMinShoulderAboveWrist,
-      support: extended && observation.shoulderAboveWrist >= T.supportMinShoulderAboveWrist,
-      strongPull: observation.elbowAngleDeg <= T.strongPullElbowDeg ||
-        observation.shoulderAboveWrist >= T.transitionMinShoulderAboveWrist,
+      hang: elbow >= T.extendedElbowDeg && height <= T.hangMaxShoulderAboveWrist,
+      aboveWrist: height >= T.transitionMinShoulderAboveWrist,
+      support: elbow >= T.extendedElbowDeg && height >= T.supportMinShoulderAboveWrist,
+      strongPull: elbow <= T.strongPullElbowDeg || height >= T.transitionMinShoulderAboveWrist,
+      nearHang: elbow >= T.extendedElbowDeg - T.zoneMarginElbowDeg &&
+        height <= T.hangMaxShoulderAboveWrist + T.zoneMarginArmLengths,
+      nearSupport: elbow >= T.extendedElbowDeg - T.zoneMarginElbowDeg &&
+        height >= T.supportMinShoulderAboveWrist - T.zoneMarginArmLengths,
     };
     const previous = this.previous;
     this.previous = zones;
     const sustained = (key: keyof Zones, value = true) =>
       previous !== null && previous[key] === value && zones[key] === value;
+    // One sample in the zone, the adjacent one at least near it.
+    const confirmed = (key: "hang" | "support", near: "nearHang" | "nearSupport") =>
+      previous !== null && (previous[key] || zones[key]) && previous[near] && zones[near];
 
     if (this.phase === "unknown") {
       if (zones.hang) {
@@ -164,23 +185,28 @@ export class LiveMuscleUpAnalyzer {
     }
     if (this.phase === "rising" || this.phase === "transition") {
       if (sustained("strongPull")) this.strongPull = true;
-      if (sustained("support")) {
+      if (confirmed("support", "nearSupport")) {
         this.setPhase("top");
         this.topMs = timestampMs;
+        this.recordRep("valid", timestampMs);
       } else if (this.phase === "rising" && sustained("aboveWrist")) {
         this.setPhase("transition");
-      } else if (sustained("hang")) {
+      } else if (confirmed("hang", "nearHang")) {
         // Back to the hang without support: a strong pull is a failed attempt;
         // a kip swing or small pull simply re-arms.
-        if (this.strongPull) this.finishRep("partial", timestampMs, observation.wristY);
-        else this.enterHang(timestampMs, observation.wristY);
+        if (this.strongPull) {
+          this.setPhase("bottom");
+          this.recordRep("partial", timestampMs);
+        }
+        this.enterHang(timestampMs, observation.wristY);
       }
     }
-    // Staying in support never counts; only the return to a hang does.
+    // Already counted: holding, leaving, or re-entering support (e.g. a dip
+    // on top of the bar) cannot count again until a hang re-arms.
     if (this.phase === "top" && sustained("support", false)) this.setPhase("lowering");
     if (this.phase === "lowering") {
-      if (sustained("support")) this.setPhase("top");
-      else if (sustained("hang")) this.finishRep("valid", timestampMs, observation.wristY);
+      if (confirmed("support", "nearSupport")) this.setPhase("top");
+      else if (confirmed("hang", "nearHang")) this.enterHang(timestampMs, observation.wristY);
     }
     return this.snapshot(observation, personDetected, true);
   }
@@ -199,8 +225,7 @@ export class LiveMuscleUpAnalyzer {
     this.phase = phase;
   }
 
-  private finishRep(outcome: "valid" | "partial", timestampMs: number, wristY: number) {
-    this.setPhase("bottom");
+  private recordRep(outcome: "valid" | "partial", timestampMs: number) {
     if (outcome === "valid") {
       this.count += 1;
       this.fault = null;
@@ -214,7 +239,6 @@ export class LiveMuscleUpAnalyzer {
       index: ++this.repIndex, outcome, startMs: this.startMs, topMs: this.topMs, endMs: timestampMs,
       phases: [...this.phases], reasonCodes: outcome === "valid" ? [] : ["did_not_reach_support"],
     };
-    this.enterHang(timestampMs, wristY);
   }
 
   private snapshot(observation: MuscleUpObservation | null, personDetected: boolean, usable: boolean): MuscleUpSnapshot {

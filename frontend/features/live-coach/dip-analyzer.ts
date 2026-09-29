@@ -9,10 +9,16 @@ export const DIP_THRESHOLDS = {
   // A fast dip that bounces at the bottom can leave only one 12 fps sample
   // past bottomAngleDeg; the adjacent sample must still be within this.
   bottomNeighborMarginDeg: 8,
+  // Likewise, back-to-back dips pass through lockout without pausing, so the
+  // top needs one supported sample past topAngleDeg next to one within this.
+  topNeighborMarginDeg: 8,
+  // Both endpoint samples must agree: near a turnaround even a brisk dip moves
+  // well under this per sample, while a one-frame landmark jump does not.
+  endpointMaxStepDeg: 20,
   reversalDeltaDeg: 8,
-  confirmationMs: 60,
+  // Only arming asks the athlete to hold top support.
   startHoldMs: 250,
-  minConfirmationSamples: 2,
+  minStartSamples: 2,
   // Straight-arm support puts the hip joint ~0.14 arm lengths above the
   // wrist, more with active shoulders or a high camera. This only rejects
   // plank/hang-like poses: standing with arms down looks identical, so the
@@ -69,9 +75,9 @@ export class LiveDipAnalyzer {
   private side: DipObservation["side"] | null = null;
   private lastFrameMs: number | null = null;
   private previousAngle: number | null = null;
-  private boundary: "top" | "bottom" | null = null;
-  private boundarySince = 0;
-  private boundarySamples = 0;
+  private previousSupported = false;
+  private holdSince: number | null = null;
+  private holdSamples = 0;
   private startMs = 0;
   private bottomMs: number | null = null;
   private minimumAngle = 180;
@@ -97,8 +103,9 @@ export class LiveDipAnalyzer {
   private clearCycle() {
     this.phase = "unknown";
     this.previousAngle = null;
-    this.boundary = null;
-    this.boundarySamples = 0;
+    this.previousSupported = false;
+    this.holdSince = null;
+    this.holdSamples = 0;
     this.bottomMs = null;
     this.minimumAngle = 180;
     this.phases = [];
@@ -132,21 +139,25 @@ export class LiveDipAnalyzer {
     const angle = observation.angleDeg;
     const previous = this.previousAngle;
     this.previousAngle = angle;
+    const previousSupported = this.previousSupported;
+    this.previousSupported = observation.supportReady;
     const sustained = (holds: (value: number) => boolean) => previous !== null && holds(previous) && holds(angle);
     const atTop = angle >= T.topAngleDeg && observation.supportReady;
-    const atBottom = angle <= T.bottomAngleDeg;
-    const boundary = atTop ? "top" : atBottom ? "bottom" : null;
-    if (boundary !== this.boundary) {
-      this.boundary = boundary;
-      this.boundarySince = timestampMs;
-      this.boundarySamples = 0;
-    }
-    this.boundarySamples += 1;
-    const confirmed = this.boundarySamples >= T.minConfirmationSamples &&
-      timestampMs - this.boundarySince >= (this.phase === "unknown" ? T.startHoldMs : T.confirmationMs);
+    const agrees = previous !== null && Math.abs(angle - previous) <= T.endpointMaxStepDeg;
+    // Two consecutive supported samples near lockout, at least one past it.
+    const reachedTop = agrees && previousSupported && observation.supportReady &&
+      sustained((value) => value >= T.topAngleDeg - T.topNeighborMarginDeg) &&
+      Math.max(previous ?? angle, angle) >= T.topAngleDeg;
 
     if (this.phase === "unknown") {
-      if (atTop && confirmed) this.enterTop(observation);
+      if (atTop) {
+        this.holdSince ??= timestampMs;
+        this.holdSamples += 1;
+        if (this.holdSamples >= T.minStartSamples && timestampMs - this.holdSince >= T.startHoldMs) this.enterTop(observation);
+      } else {
+        this.holdSince = null;
+        this.holdSamples = 0;
+      }
     } else if (this.phase === "top") {
       if (sustained((value) => value <= T.leaveTopAngleDeg)) {
         this.setPhase("lowering");
@@ -157,7 +168,7 @@ export class LiveDipAnalyzer {
     } else {
       this.minimumAngle = Math.min(this.minimumAngle, angle);
       // Two consecutive samples near the bottom, at least one past it.
-      const reachedBottom = sustained((value) => value <= T.bottomAngleDeg + T.bottomNeighborMarginDeg) &&
+      const reachedBottom = agrees && sustained((value) => value <= T.bottomAngleDeg + T.bottomNeighborMarginDeg) &&
         Math.min(previous ?? angle, angle) <= T.bottomAngleDeg;
       if (reachedBottom && this.bottomMs === null) {
         this.bottomMs = timestampMs;
@@ -179,7 +190,7 @@ export class LiveDipAnalyzer {
           this.setFault("extend-arms", timestampMs);
         }
       }
-      if (atTop && confirmed) this.finishRep(observation);
+      if (reachedTop) this.finishRep(observation);
     }
     return this.snapshot(observation, personDetected, true);
   }

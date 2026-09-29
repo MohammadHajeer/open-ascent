@@ -94,7 +94,7 @@ export function SessionPanel({ session }: Props) {
             : isPushUp
               ? "Use a side or mostly-side view with your shoulder, elbow, wrist, hip, and ankle visible. Begin with extended arms. Changing movement stops the session and resets the count."
               : isMuscleUp
-                ? "Use a side or mostly-side view that keeps you in frame above and below the bar. Start from a straight-arm hang; a rep counts once you return to the hang after support. Changing movement stops the session and resets the count."
+                ? "Use a side or mostly-side view that keeps you in frame above and below the bar. Start from a straight-arm hang; a rep counts when you lock out in straight-arm support above the bar, and the next one needs a return to the hang. Changing movement stops the session and resets the count."
                 : "Counts pull-ups, chin-ups, and their width and height variations. The camera can't reliably see which way your palms face, so reps are labeled by hand width and pull height. Changing movement stops the session and resets the count."}
         </p>
       </div>

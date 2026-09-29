@@ -98,11 +98,27 @@ test("remaining at top or bottom never repeats a count; starting at bottom canno
 test("boundary jitter and isolated outliers cannot confirm endpoints or double count", () => {
   const h = harness();
   h.feed(start);
-  h.feed([145, 120, 98, 94, 98, 94, 98, 120, 159, 161, 159, 162]);
-  assert.equal(h.frame(159).validRepCount, 0);
-  assert.equal(h.feed([170, 170]).validRepCount, 0);
+  // Jitter just shy of both thresholds never reaches bottom or lockout.
+  h.feed([145, 120, 99, 97, 98, 96, 99, 120, 158, 159, 157, 159]);
+  assert.equal(h.frame(158).validRepCount, 0);
+  const shallow = h.feed([170, 170]);
+  assert.equal(shallow.validRepCount, 0);
+  assert.equal(shallow.partialRepCount, 1);
   assert.equal(h.feed(cycle).validRepCount, 1);
   assert.equal(h.feed([158, 162, 159, 163, 155, 160]).validRepCount, 1);
+  // One-frame landmark jumps past a threshold are not depth or lockout, even
+  // beside a sample that is near it.
+  const outlier = harness();
+  outlier.feed(start);
+  const jump = outlier.feed([145, 120, 104, 78, 103, 120, 150, 170, 170]);
+  assert.equal(jump.validRepCount, 0);
+  assert.equal(jump.partialRepCount, 1);
+  assert.equal(outlier.feed([145, 90, 90, 120, 152, 178, 150, 140]).validRepCount, 0);
+  assert.equal(outlier.feed([170, 170]).validRepCount, 1);
+  // Jitter that does pass 95° next to a near-bottom sample is depth.
+  const jitter = harness();
+  jitter.feed(start);
+  assert.equal(jitter.feed([145, 120, 98, 94, 98, 94, 98, 120, 158, 170, 170]).validRepCount, 1);
   const spike = harness();
   spike.feed(start);
   for (const angle of [148, 170, 170, 90, 170, 170]) {
@@ -137,6 +153,72 @@ test("at the real ~12 fps cadence, two samples at each endpoint count a brisk re
   const snapshot = h.frame(150);
   assert.equal(snapshot.validRepCount, 1);
   assert.equal(snapshot.partialRepCount, 0);
+});
+
+test("a fast rep with one sample past the bottom and one past lockout counts, without cues", () => {
+  for (const rep of [[135, 100, 86, 102, 140, 166, 151], [130, 94, 104, 145, 163, 152], [140, 104, 88, 110, 150, 168, 158]]) {
+    const h = harness(1000 / 12);
+    h.feed([...start, 170]);
+    const cues = [];
+    for (const angle of rep) {
+      h.frame(angle);
+      cues.push(h.cue().id);
+    }
+    assert.equal(h.frame(125).validRepCount, 1, `rep ${rep}`);
+    assert.equal(h.analyzer.update(null, 0).partialRepCount, 0);
+    assert.ok(!cues.includes("go-lower") && !cues.includes("extend-arms"), cues.join(","));
+  }
+});
+
+// Back-to-back reps that never pause at either end, sampled at the live loop's
+// real, uneven cadence (rAF-gated 12 fps lands 83 or 100 ms apart, sometimes 117).
+const CADENCE = [83.4, 100.1, 83.3, 83.4, 116.7];
+function continuousSet({ top, bottom, periodMs, reps, offsetMs = 0 }) {
+  const analyzer = new LivePushUpAnalyzer();
+  const cues = new Set();
+  let time = 0, index = 0, snapshot;
+  const frame = (angleDeg) => {
+    snapshot = analyzer.update({ timestampMs: time, angleDeg, bodyAngleDeg: 176, minimumVisibility: 0.9, side: "left", setupReady: true }, time);
+    cues.add(selectPushUpCue(snapshot, time).id);
+    time += CADENCE[index++ % CADENCE.length];
+  };
+  while (time < 600) frame(170);
+  const [mid, amplitude, begin] = [(top + bottom) / 2, (top - bottom) / 2, time - offsetMs];
+  while (time < begin + reps * periodMs) frame(mid + amplitude * Math.cos(2 * Math.PI * (time - begin) / periodMs));
+  const counted = { valid: snapshot.validRepCount, partial: snapshot.partialRepCount, cues };
+  for (let i = 0; i < 6; i += 1) frame(170);
+  return { ...counted, final: snapshot.validRepCount };
+}
+
+test("continuous fast push-ups with no pause at the top or bottom each count once", () => {
+  for (const [periodMs, top, bottom] of [[1000, 163, 88], [800, 165, 88], [700, 168, 85]]) {
+    for (let offsetMs = 0; offsetMs < 120; offsetMs += 17) {
+      const set = continuousSet({ top, bottom, periodMs, reps: 8, offsetMs });
+      const label = `${periodMs} ms, ${top}/${bottom}, offset ${offsetMs}`;
+      // The rep in progress when sampling stops completes at the final lockout.
+      assert.ok(set.valid >= 7, `${label}: ${set.valid}`);
+      assert.equal(set.final, 8, label);
+      assert.equal(set.partial, 0, label);
+      assert.ok(!set.cues.has("go-lower") && !set.cues.has("extend-arms"), `${label}: ${[...set.cues]}`);
+    }
+  }
+});
+
+test("continuous fast reps that stop short of depth or lockout never count", () => {
+  for (const periodMs of [1000, 800, 700]) {
+    for (let offsetMs = 0; offsetMs < 120; offsetMs += 17) {
+      const shallow = continuousSet({ top: 168, bottom: 108, periodMs, reps: 8, offsetMs });
+      assert.equal(shallow.valid, 0, `shallow ${periodMs}/${offsetMs}`);
+      assert.ok(shallow.partial >= 7);
+      assert.ok(shallow.cues.has("go-lower"));
+      // Without lockout the reps merge into one rising phase; only the final
+      // full extension after the set completes a single rep.
+      const unlocked = continuousSet({ top: 148, bottom: 85, periodMs, reps: 8, offsetMs });
+      assert.equal(unlocked.valid, 0, `unlocked ${periodMs}/${offsetMs}`);
+      assert.equal(unlocked.final, 1);
+      assert.ok(unlocked.cues.has("extend-arms"));
+    }
+  }
 });
 
 test("exact thresholds require sustained samples, with ten degrees of top hysteresis", () => {
@@ -203,11 +285,18 @@ test("loss longer than the frame-gap limit at any in-flight phase cannot complet
   }
 });
 
-test("side changes and long inference gaps discard a candidate without wiping totals", () => {
+test("the far arm standing in for a frame is a dropout; a lasting switch re-locks without wiping totals", () => {
   const h = harness();
-  h.feed([...start, ...cycle, 145, 90, 90]);
-  assert.equal(h.frame(170, { side: "right" }).validRepCount, 1);
-  assert.equal(h.feed(start, { side: "right" }).validRepCount, 1);
+  h.feed([...start, ...cycle, 145, 90]);
+  assert.equal(h.frame(60, { side: "right" }).phase, "lowering");
+  assert.equal(h.analyzer.selectedSide, "left");
+  assert.equal(h.feed([90, 105, 140, 170, 170]).validRepCount, 2);
+  h.feed([145, 90, 90]);
+  // The right arm stays the only usable one: the left candidate is discarded
+  // after the frame-gap limit and counting re-arms on the right.
+  assert.equal(h.feed(Array(7).fill(170), { side: "right" }).phase, "unknown");
+  assert.equal(h.analyzer.selectedSide, "right");
+  assert.equal(h.feed([...start, ...cycle], { side: "right" }).validRepCount, 3);
   const analyzer = new LivePushUpAnalyzer();
   let t = 0;
   for (const angleDeg of [...start, 145, 90, 90]) {

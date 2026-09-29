@@ -6,12 +6,18 @@ export const PUSH_UP_THRESHOLDS = {
   topAngleDeg: 160,
   leaveTopAngleDeg: 150,
   bottomAngleDeg: 95,
+  // Live inference runs at ~12 fps (83-100 ms apart), and a brisk rep can
+  // spend less than one frame interval past either endpoint. An endpoint is
+  // reached by one sample past its threshold next to a sample within this
+  // margin of it. No dwell is needed.
+  endpointMarginDeg: 10,
+  // The two samples must also agree: near a turnaround even a brisk rep moves
+  // well under this per sample, while a one-frame landmark jump does not.
+  endpointMaxStepDeg: 20,
   reversalDeltaDeg: 8,
-  // Live inference runs at ~12 fps (83-100 ms apart), so two consecutive
-  // samples must always satisfy this; 100 ms silently required three.
-  confirmationMs: 60,
+  // Only arming asks the athlete to hold the top position.
   startHoldMs: 250,
-  minConfirmationSamples: 2,
+  minStartSamples: 2,
   bodyAngleMinDeg: 150,
   bodyFaultPersistMs: 600,
   bodyFaultMinSamples: 3,
@@ -63,9 +69,8 @@ export class LivePushUpAnalyzer {
   private side: PushUpObservation["side"] | null = null;
   private lastFrameMs: number | null = null;
   private previousAngle: number | null = null;
-  private boundary: "top" | "bottom" | null = null;
-  private boundarySince = 0;
-  private boundarySamples = 0;
+  private holdSince: number | null = null;
+  private holdSamples = 0;
   private startMs = 0;
   private bottomMs: number | null = null;
   private minimumAngle = 180;
@@ -92,8 +97,8 @@ export class LivePushUpAnalyzer {
   private clearCycle() {
     this.phase = "unknown";
     this.previousAngle = null;
-    this.boundary = null;
-    this.boundarySamples = 0;
+    this.holdSince = null;
+    this.holdSamples = 0;
     this.bottomMs = null;
     this.minimumAngle = 180;
     this.phases = [];
@@ -104,43 +109,47 @@ export class LivePushUpAnalyzer {
   }
 
   update(observation: PushUpObservation | null, timestampMs: number, personDetected = observation !== null): PushUpSnapshot {
+    const T = PUSH_UP_THRESHOLDS;
+    // A blind interval longer than maxFrameGapMs cannot complete a rep: discard
+    // only the in-flight candidate, preserve totals, free the side lock, then
+    // re-arm at a confirmed top.
+    if (this.lastFrameMs !== null && timestampMs - this.lastFrameMs > T.maxFrameGapMs) {
+      this.clearCycle();
+      this.side = null;
+      this.lastFrameMs = null;
+    }
     // Skip a brief unusable frame (e.g. a folded elbow dipping below confidence
-    // at the bottom); samples either side still count as consecutive. A blind
-    // interval longer than maxFrameGapMs cannot complete a rep: discard only the
-    // in-flight candidate, preserve totals, then re-arm at a confirmed top.
-    if (!observation || !observation.setupReady) {
-      if (this.lastFrameMs === null || timestampMs - this.lastFrameMs > PUSH_UP_THRESHOLDS.maxFrameGapMs) {
-        this.clearCycle();
-        this.lastFrameMs = null;
-      }
+    // at the bottom, or the far arm standing in for one frame); samples either
+    // side still count as consecutive.
+    if (!observation || !observation.setupReady || (this.side !== null && observation.side !== this.side)) {
       return this.snapshot(observation, personDetected);
     }
-    if ((this.lastFrameMs !== null && timestampMs - this.lastFrameMs > PUSH_UP_THRESHOLDS.maxFrameGapMs) ||
-      (this.side !== null && observation.side !== this.side)) this.clearCycle();
     this.side = observation.side;
     this.lastFrameMs = timestampMs;
     const angle = observation.angleDeg;
     const previous = this.previousAngle;
     this.previousAngle = angle;
-    // Like endpoints, mid-rep transitions need two consecutive agreeing
-    // samples, so a single jittery elbow reading cannot start a rep or cue.
+    // Mid-rep transitions need two consecutive agreeing samples, so a single
+    // jittery elbow reading cannot start a rep or cue.
     const sustained = (holds: (value: number) => boolean) => previous !== null && holds(previous) && holds(angle);
-    const atTop = angle >= PUSH_UP_THRESHOLDS.topAngleDeg;
-    const atBottom = angle <= PUSH_UP_THRESHOLDS.bottomAngleDeg;
-    const boundary = atTop ? "top" : atBottom ? "bottom" : null;
-    if (boundary !== this.boundary) {
-      this.boundary = boundary;
-      this.boundarySince = timestampMs;
-      this.boundarySamples = 0;
-    }
-    this.boundarySamples += 1;
-    const confirmed = this.boundarySamples >= PUSH_UP_THRESHOLDS.minConfirmationSamples &&
-      timestampMs - this.boundarySince >= (this.phase === "unknown" ? PUSH_UP_THRESHOLDS.startHoldMs : PUSH_UP_THRESHOLDS.confirmationMs);
+    const atTop = angle >= T.topAngleDeg;
+    const agrees = previous !== null && Math.abs(angle - previous) <= T.endpointMaxStepDeg;
+    const reachedTop = agrees && sustained((value) => value >= T.topAngleDeg - T.endpointMarginDeg) &&
+      Math.max(previous ?? angle, angle) >= T.topAngleDeg;
+    const reachedBottom = agrees && sustained((value) => value <= T.bottomAngleDeg + T.endpointMarginDeg) &&
+      Math.min(previous ?? angle, angle) <= T.bottomAngleDeg;
 
     if (this.phase === "unknown") {
-      if (atTop && confirmed) this.enterTop(timestampMs);
+      if (atTop) {
+        this.holdSince ??= timestampMs;
+        this.holdSamples += 1;
+        if (this.holdSamples >= T.minStartSamples && timestampMs - this.holdSince >= T.startHoldMs) this.enterTop(timestampMs);
+      } else {
+        this.holdSince = null;
+        this.holdSamples = 0;
+      }
     } else if (this.phase === "top") {
-      if (sustained((value) => value <= PUSH_UP_THRESHOLDS.leaveTopAngleDeg)) {
+      if (sustained((value) => value <= T.leaveTopAngleDeg)) {
         this.setPhase("lowering");
         this.startMs = timestampMs;
         this.minimumAngle = Math.min(previous ?? angle, angle);
@@ -150,28 +159,28 @@ export class LivePushUpAnalyzer {
 
     if (this.phase === "lowering" || this.phase === "bottom" || this.phase === "rising") {
       this.minimumAngle = Math.min(this.minimumAngle, angle);
-      if (atBottom && confirmed && this.bottomMs === null) {
+      if (reachedBottom && this.bottomMs === null) {
         this.bottomMs = timestampMs;
         this.setPhase("bottom");
       }
-      if (this.phase !== "rising" && sustained((value) => value >= this.minimumAngle + PUSH_UP_THRESHOLDS.reversalDeltaDeg)) {
+      if (this.phase !== "rising" && sustained((value) => value >= this.minimumAngle + T.reversalDeltaDeg)) {
         this.setPhase("rising");
         this.upwardPeak = angle;
         this.progressMs = timestampMs;
         if (this.bottomMs === null) this.setFault("go-lower", timestampMs);
       }
       if (this.phase === "rising") {
-        if (angle >= this.upwardPeak + PUSH_UP_THRESHOLDS.extensionProgressDeg) {
+        if (angle >= this.upwardPeak + T.extensionProgressDeg) {
           this.upwardPeak = angle;
           this.progressMs = timestampMs;
         }
-        if (!atTop && this.upwardPeak >= PUSH_UP_THRESHOLDS.extensionCueMinAngleDeg &&
-          (timestampMs - this.progressMs >= PUSH_UP_THRESHOLDS.extensionPersistMs ||
-            sustained((value) => value <= this.upwardPeak - PUSH_UP_THRESHOLDS.reversalDeltaDeg))) {
+        if (!atTop && this.upwardPeak >= T.extensionCueMinAngleDeg &&
+          (timestampMs - this.progressMs >= T.extensionPersistMs ||
+            sustained((value) => value <= this.upwardPeak - T.reversalDeltaDeg))) {
           this.setFault("extend-arms", timestampMs);
         }
       }
-      if (atTop && confirmed) {
+      if (reachedTop) {
         const valid = this.bottomMs !== null;
         if (valid) this.count += 1;
         else this.partial += 1;
@@ -188,7 +197,7 @@ export class LivePushUpAnalyzer {
     }
 
     // Getting into position is never a body-line fault; track only once armed.
-    const bentBody = this.phase !== "unknown" && observation.bodyAngleDeg < PUSH_UP_THRESHOLDS.bodyAngleMinDeg;
+    const bentBody = this.phase !== "unknown" && observation.bodyAngleDeg < T.bodyAngleMinDeg;
     if (bentBody) {
       this.bodyFaultSince ??= timestampMs;
       this.bodyFaultSamples += 1;

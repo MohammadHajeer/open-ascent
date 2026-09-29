@@ -58,21 +58,24 @@ function interpolate(keyframes, stepsPerSegment) {
   return [...samples, keyframes.at(-1)];
 }
 
-test("one full muscle-up counts exactly once, only after returning to the hang", () => {
+test("one full muscle-up counts once at lockout; the return to the hang only re-arms", () => {
   const h = harness();
   assert.equal(h.feed(arm).phase, "bottom");
   assert.equal(h.cues.at(-1), "muscle-up-ready");
-  let snapshot = h.feed(up);
+  let snapshot = h.feed(up.slice(0, 6));
+  assert.equal(snapshot.validRepCount, 0, "the pull and transition alone never count");
+  snapshot = h.feed(up.slice(6));
   assert.equal(snapshot.phase, "top");
-  assert.equal(snapshot.validRepCount, 0, "reaching support alone never counts");
-  assert.equal(h.cue().id, "muscle-up-support");
+  assert.equal(snapshot.validRepCount, 1, "straight-arm support completes the rep");
+  assert.deepEqual(snapshot.latestRep.phases, ["bottom", "rising", "transition", "top"]);
+  assert.equal(h.cue().id, "muscle-up-rep-complete");
   snapshot = h.feed(down);
-  assert.equal(snapshot.validRepCount, 1);
+  assert.equal(snapshot.validRepCount, 1, "returning to the hang does not count again");
   assert.equal(snapshot.partialRepCount, 0);
   assert.equal(snapshot.phase, "bottom");
-  assert.deepEqual(snapshot.latestRep.phases, ["bottom", "rising", "transition", "top", "lowering", "bottom"]);
   assert.equal(h.cue().id, "muscle-up-rep-complete");
-  assert.equal(h.feed(Array(20).fill(HANG)).validRepCount, 1, "staying in the hang never repeats a count");
+  assert.equal(h.feed(Array(30).fill(HANG)).validRepCount, 1, "staying in the hang never repeats a count");
+  assert.equal(h.cue().id, "muscle-up-ready", "the confirmation fades after 2.5 s");
 });
 
 test("consecutive muscle-ups each count once", () => {
@@ -136,20 +139,34 @@ test("kip swings and small pulls re-arm silently without a partial or cue", () =
   assert.ok(!h.cues.includes("get-over-bar"));
 });
 
-test("support without a return to the hang does not count yet; the return does", () => {
+test("holding, leaving, and re-entering support count once; only a hang re-arms", () => {
   const h = harness();
-  h.feed([...arm, ...up]);
-  // Dropping into the transition zone and staying there is not a hang.
-  let snapshot = h.feed(Array(30).fill([0.1, 90]));
-  assert.equal(snapshot.phase, "lowering");
-  assert.equal(snapshot.validRepCount, 0);
-  // Pressing back to support and holding still never counts.
-  snapshot = h.feed([[0.8, 165], [0.85, 170], ...Array(40).fill([0.85, 170])]);
-  assert.equal(snapshot.phase, "top");
-  assert.equal(snapshot.validRepCount, 0);
-  snapshot = h.feed(down);
-  assert.equal(snapshot.validRepCount, 1);
+  assert.equal(h.feed([...arm, ...up, ...Array(40).fill([0.85, 170])]).validRepCount, 1);
+  // Dips on top of the bar and presses back to support are not new muscle-ups.
+  for (let press = 0; press < 3; press += 1) {
+    assert.equal(h.feed(Array(6).fill([0.1, 90])).phase, "lowering");
+    const snapshot = h.feed([[0.5, 140], [0.8, 165], [0.85, 170], [0.85, 170]]);
+    assert.equal(snapshot.phase, "top");
+    assert.equal(snapshot.validRepCount, 1);
+  }
+  assert.equal(h.feed(down).validRepCount, 1);
   assert.equal(h.feed(Array(10).fill(HANG)).validRepCount, 1);
+  assert.equal(h.feed(muscleUp).validRepCount, 2);
+});
+
+test("dismounting straight from support keeps the rep and cannot count again", () => {
+  const h = harness();
+  assert.equal(h.feed([...arm, ...up]).validRepCount, 1);
+  // Hands leave the bar: standing looks like support but the wrists are far
+  // below the bar, then the athlete walks out of frame.
+  let snapshot = h.feed([...Array(12).fill([0.9, 170]), ...Array(10).fill(null)], { wristY: 0.85 });
+  assert.equal(snapshot.validRepCount, 1);
+  assert.equal(snapshot.partialRepCount, 0);
+  assert.equal(snapshot.phase, "unknown");
+  // Coming back requires a fresh hang before the next count.
+  snapshot = h.feed([...Array(4).fill([0.85, 170]), ...arm, ...muscleUp]);
+  assert.equal(snapshot.validRepCount, 2);
+  assert.equal(snapshot.partialRepCount, 0);
 });
 
 test("noisy shoulder/wrist values around the transition and support lines cause no false state changes", () => {
@@ -175,6 +192,55 @@ test("fast muscle-up with only two samples in support counts at the live cadence
   assert.equal(h.feed(fast).validRepCount, 1);
   assert.equal(h.feed(fast).validRepCount, 2);
   assert.equal(h.feed(fast).partialRepCount, 0);
+});
+
+test("an explosive muscle-up through lockout in one sample counts, without a failed-attempt cue", () => {
+  const h = harness();
+  h.feed(arm);
+  const explosive = [[-0.5, 120], [0.1, 70], [0.3, 80], [0.45, 135], [0.8, 165], [0.4, 130], [-0.2, 100], [-0.7, 150], HANG, HANG];
+  for (let rep = 1; rep <= 3; rep += 1) assert.equal(h.feed(explosive).validRepCount, rep);
+  assert.equal(h.feed([HANG]).partialRepCount, 0);
+  assert.ok(!h.cues.includes("get-over-bar"), h.cues.join(","));
+});
+
+test("back-to-back kipping muscle-ups that pass the hang in one sample each count", () => {
+  const h = harness();
+  h.feed(arm);
+  // The straight-arm hang lasts one sample at the bottom of the swing, then the next pull starts.
+  const kipping = [[-0.3, 110], [0.1, 65], [0.35, 85], [0.6, 150], [0.85, 168], [0.3, 110], [-0.3, 120], [-0.6, 150], [-0.4, 138]];
+  const snapshot = h.feed([...kipping, ...kipping, ...kipping, HANG, HANG]);
+  assert.equal(snapshot.validRepCount, 3);
+  assert.equal(snapshot.partialRepCount, 0);
+});
+
+test("pressing out short of lockout never counts, even quickly", () => {
+  const h = harness();
+  h.feed(arm);
+  // Shoulders reach support height, but the elbows peak at 140°.
+  const short = [[-0.5, 120], [0.1, 70], [0.3, 80], [0.5, 130], [0.8, 140], [0.5, 128], [-0.2, 100], [-0.7, 150], HANG, HANG];
+  const snapshot = h.feed([...short, ...short]);
+  assert.equal(snapshot.validRepCount, 0);
+  assert.equal(snapshot.partialRepCount, 2);
+  assert.ok(!h.cues.includes("muscle-up-support"));
+  // A lone glitch to straight arms next to a bent-arm sample is not support.
+  const glitch = h.feed([[-0.5, 120], [0.1, 70], [0.3, 80], [0.8, 170], [0.3, 85], [-0.2, 100], [-0.7, 150], HANG, HANG]);
+  assert.equal(glitch.validRepCount, 0);
+  assert.equal(glitch.partialRepCount, 3);
+});
+
+test("the far arm standing in during the turnover is a dropout; a lasting switch re-locks", () => {
+  const h = harness();
+  h.feed(arm);
+  h.feed(up.slice(0, 5));
+  // The locked arm is occluded over the bar for a frame and the other arm,
+  // mid-turnover at a different angle, is reported instead.
+  assert.equal(h.frame([-0.2, 150], { side: "right" }).phase, "transition");
+  assert.equal(h.analyzer.selectedSide, "left");
+  assert.equal(h.feed([...up.slice(5), ...down]).validRepCount, 1);
+  h.feed(up.slice(0, 4));
+  assert.equal(h.feed(Array(8).fill(HANG), { side: "right" }).phase, "unknown");
+  assert.equal(h.analyzer.selectedSide, "right");
+  assert.equal(h.feed([...arm, ...muscleUp], { side: "right" }).validRepCount, 2);
 });
 
 test("slow muscle-up with small alternating jitter counts once", () => {
@@ -209,14 +275,18 @@ test("one-frame dropouts or hand glitches mid-rep are skipped without a reset", 
 
 test("a long tracking loss discards the unfinished rep, keeps the total, and needs a new hang", () => {
   const h = harness();
-  h.feed([...arm, ...muscleUp, ...up]);
+  h.feed([...arm, ...muscleUp, ...up.slice(0, 6)]);
   const lost = h.feed(Array(8).fill(null));
   assert.equal(lost.phase, "unknown");
   assert.equal(lost.validRepCount, 1);
   assert.equal(h.cue().id, "muscle-up-frame-body");
-  // Returning straight into a hang does not complete the discarded rep.
-  assert.equal(h.feed([HANG, HANG]).validRepCount, 1);
+  // Tracking returning in support does not complete the discarded pull.
+  assert.equal(h.feed(Array(6).fill([0.85, 170])).validRepCount, 1);
   assert.equal(h.feed([...arm, ...muscleUp]).validRepCount, 2);
+  // Losing tracking after a counted lockout keeps that rep and never repeats it.
+  h.feed(up);
+  assert.equal(h.feed(Array(8).fill(null)).validRepCount, 3);
+  assert.equal(h.feed([[0.85, 170], [0.85, 170], ...down, ...arm]).validRepCount, 3);
 });
 
 test("dropping off the bar and re-gripping cannot count, though standing looks like support", () => {
@@ -315,8 +385,8 @@ test("Pull-Up → Muscle-Up → Push-Up → Muscle-Up resets detector state; Pul
   let result = runMuscleUp();
   assert.equal(result.snapshot.validRepCount, 1);
   assert.equal(result.cue.id, "muscle-up-rep-complete");
-  // Stopping mid-rep in support must not leak into the next movement.
-  for (const [ratio, elbow] of up) step(landmarks(ratio, elbow));
+  // Stopping mid-turnover must not leak into the next movement.
+  for (const [ratio, elbow] of up.slice(0, 5)) step(landmarks(ratio, elbow));
 
   assert.equal(coach.selectMovement("push-up").validRepCount, 0);
   result = step(landmarks(...HANG));
@@ -324,9 +394,10 @@ test("Pull-Up → Muscle-Up → Push-Up → Muscle-Up resets detector state; Pul
   assert.equal(result.snapshot.validRepCount, 0);
 
   assert.equal(coach.selectMovement("muscle-up").validRepCount, 0);
-  // The previous support candidate is gone: a hang alone cannot complete it.
-  result = step(landmarks(...HANG));
+  // The previous pull is gone: reaching support without a new hang cannot count.
+  for (const [ratio, elbow] of up.slice(5)) result = step(landmarks(ratio, elbow));
   assert.equal(result.snapshot.phase, "unknown");
+  assert.equal(result.snapshot.validRepCount, 0);
   assert.equal(result.snapshot.latestRep, null);
   assert.equal(runMuscleUp().snapshot.validRepCount, 1);
 });
