@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { useLiveCoachSession } from "../hooks/use-live-coach-session.ts";
-import type { MuscleUpPhase, PullUpPhase, PullUpRep } from "../types.ts";
+import { phaseLabels as phaseLabelsFor } from "../labels.ts";
+import type { PullUpRep } from "../types.ts";
 import {
   LIVE_VERTICAL_PULL_MOVEMENTS,
   PARTIAL_VERTICAL_PULL_VARIANTS,
@@ -16,27 +17,6 @@ import {
 } from "../vertical-pull-config.ts";
 
 type Props = { session: ReturnType<typeof useLiveCoachSession> };
-
-const PHASE_LABELS: Record<PullUpPhase, string> = {
-  unknown: "Setting up",
-  bottom: "Hang",
-  rising: "Pulling",
-  top: "Top",
-  lowering: "Lowering",
-};
-
-const PUSH_UP_PHASE_LABELS: Record<PullUpPhase, string> = {
-  ...PHASE_LABELS, bottom: "Bottom", rising: "Pressing up",
-};
-
-const MUSCLE_UP_PHASE_LABELS: Record<MuscleUpPhase, string> = {
-  ...PHASE_LABELS, transition: "Transition", top: "Support", lowering: "Returning",
-};
-
-const DIP_PHASE_LABELS: Record<PullUpPhase, string> = {
-  unknown: "Setting up", top: "Support", lowering: "Lowering",
-  bottom: "Bottom", rising: "Pressing up",
-};
 
 const VARIANTS = [...LIVE_VERTICAL_PULL_MOVEMENTS, ...PARTIAL_VERTICAL_PULL_VARIANTS];
 
@@ -61,8 +41,7 @@ export function SessionPanel({ session }: Props) {
   const isPushUp = movement === "push-up";
   const isMuscleUp = movement === "muscle-up";
   const isDip = movement === "dips";
-  const phaseLabels: Record<MuscleUpPhase, string> = isMuscleUp
-    ? MUSCLE_UP_PHASE_LABELS : { ...(isDip ? DIP_PHASE_LABELS : isPushUp ? PUSH_UP_PHASE_LABELS : PHASE_LABELS), transition: "Transition" };
+  const phaseLabels = phaseLabelsFor(movement);
   const breakdown = [
     ...VARIANTS.filter((variant) => snapshot.variantBreakdown[variant.slug] > 0),
     ...(snapshot.variantBreakdown.unknown > 0 ? [{ slug: "unknown" as const, label: "Unclassified" }] : []),
