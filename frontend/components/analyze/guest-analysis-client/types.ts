@@ -34,6 +34,7 @@ export type Step =
 export type RecoveryIssue = "missing" | "invalid" | null;
 export type AnalysisAccess = GuestAccess | AuthenticatedAnalysisAccess;
 export type VideoChoice = "record" | null;
+export type StreamConnection = "connecting" | "live" | "reconnecting";
 
 export type GuestAnalysisClientProps = {
   analysisId: string | null;
@@ -53,6 +54,7 @@ export type AnalysisControllerState = {
   access: AnalysisAccess | null;
   status: AnalysisStatus;
   observing: boolean;
+  connection: StreamConnection;
   stage: string;
   reps: RepClassification[];
   result: GuestResult | null;
