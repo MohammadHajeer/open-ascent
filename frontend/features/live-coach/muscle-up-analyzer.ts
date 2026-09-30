@@ -1,4 +1,5 @@
 import { calculateAngle, POSE_INDEX, PULL_UP_SEMANTICS } from "./pull-up-semantics.ts";
+import { aspectCorrected } from "./pose-geometry.ts";
 import { INITIAL_SNAPSHOT } from "./session-state.ts";
 import type { MuscleUpObservation, MuscleUpPhase, MuscleUpRep, MuscleUpSnapshot, PoseLandmark } from "./types.ts";
 
@@ -49,7 +50,7 @@ export function measureMuscleUpPose(
     if (points.some((point) => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y))) return [];
     const minimumVisibility = Math.min(...points.map((point) => Math.min(point.visibility ?? 1, point.presence ?? 1)));
     if (!Number.isFinite(minimumVisibility) || minimumVisibility < PULL_UP_SEMANTICS.minLandmarkVisibility) return [];
-    const [shoulder, elbow, wrist] = points.map((point) => ({ ...point, x: point.x * aspectRatio }));
+    const [shoulder, elbow, wrist] = points.map((point) => aspectCorrected(point, aspectRatio));
     const elbowAngleDeg = calculateAngle(shoulder, elbow, wrist);
     if (elbowAngleDeg === null) return [];
     const armLength = Math.hypot(shoulder.x - elbow.x, shoulder.y - elbow.y) +

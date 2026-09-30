@@ -1,3 +1,4 @@
+import { PULL_UP_REFERENCE_ASPECT_RATIO, toPullUpReferenceFrame } from "./pose-geometry.ts";
 import type { PoseLandmark, PullUpObservation } from "./types.ts";
 import { VARIANT_EVIDENCE } from "./vertical-pull-config.ts";
 
@@ -113,10 +114,17 @@ export function calculateAngle(
   return (Math.acos(cosine) * 180) / Math.PI;
 }
 
+/**
+ * Pull-Up thresholds are calibrated on a 16:9 landscape frame; `aspectRatio`
+ * (video width / height) maps any other frame into it first. Omitted, the
+ * landmarks are taken to be in that reference frame already.
+ */
 export function measurePullUpPose(
-  landmarks: readonly PoseLandmark[],
+  frameLandmarks: readonly PoseLandmark[],
   timestampMs: number,
+  aspectRatio = PULL_UP_REFERENCE_ASPECT_RATIO,
 ): PullUpObservation | null {
+  const landmarks = toPullUpReferenceFrame(frameLandmarks, aspectRatio);
   if (landmarks.length <= Math.max(...REQUIRED_INDEXES)) return null;
 
   const minimumVisibility = Math.min(

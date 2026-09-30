@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { LiveCoachCameraSession, LiveCoachSessionError, type LiveFrame } from "../camera-session.ts";
+import { LiveCoachCameraSession, LiveCoachSessionError, type CameraFacing, type LiveFrame } from "../camera-session.ts";
 import { checkCameraSignal, createCanvasSignalProbe, isBlankFrame, type CameraSignal } from "../camera-signal.ts";
 import { createMediaPipePoseRuntime } from "../mediapipe-pose.ts";
 import { LiveCoachAnalyzer } from "../live-analyzer.ts";
+import { TrackingRateMonitor } from "../tracking-rate.ts";
 import {
   CAMERA_OFF_CUE,
   cameraOffCue,
@@ -42,7 +43,11 @@ export function useLiveCoachSession() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [devices, setDevices] = useState<DeviceOption[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
+  // Used when no specific camera is chosen; phones open this side's camera.
+  const [cameraFacing, setCameraFacing] = useState<CameraFacing>("user");
   const [mirrorPreview, setMirrorPreview] = useState(true);
+  const [trackingRate] = useState(() => new TrackingRateMonitor());
+  const [lowTrackingRate, setLowTrackingRate] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [fps, setFps] = useState(0);
   const [inferenceMs, setInferenceMs] = useState(0);
@@ -160,6 +165,8 @@ export function useLiveCoachSession() {
 
     voice.start();
     analyzer.reset();
+    trackingRate.reset();
+    setLowTrackingRate(false);
     lastLoggedRepRef.current = 0;
     clearCanvas(canvasRef.current);
     setSnapshot(INITIAL_SNAPSHOT);
@@ -192,6 +199,12 @@ export function useLiveCoachSession() {
       cancelFrame: (handle) => cancelAnimationFrame(handle),
       now: () => performance.now(),
       checkSignal: (video) => checkCameraSignal(video as HTMLVideoElement, probe),
+      ...("requestVideoFrameCallback" in HTMLVideoElement.prototype ? {
+        requestVideoFrame: (video, callback) => (video as HTMLVideoElement).requestVideoFrameCallback(
+          (nowMs, metadata) => callback(nowMs, { presentedFrames: metadata.presentedFrames, captureTime: metadata.captureTime }),
+        ),
+        cancelVideoFrame: (video, handle) => (video as HTMLVideoElement).cancelVideoFrameCallback(handle),
+      } : {}),
     });
     sessionRef.current = session;
 
@@ -208,6 +221,7 @@ export function useLiveCoachSession() {
           onError: handleSessionError,
         },
         selectedDeviceId || undefined,
+        cameraFacing,
       );
       if (!result) return;
       if (generation !== startGenerationRef.current) {
@@ -240,6 +254,9 @@ export function useLiveCoachSession() {
       setMirrorPreview(
         result.facingMode !== "environment" && !rearFacingLabel,
       );
+      // Reflect the camera actually opened (a chosen device may face either way).
+      if (result.facingMode === "environment" || rearFacingLabel) setCameraFacing("environment");
+      else if (result.facingMode === "user") setCameraFacing("user");
       setInitializationMs(result.initializationMs);
       await refreshCameraList(result.deviceId);
     } catch (error) {
@@ -264,16 +281,18 @@ export function useLiveCoachSession() {
     setCue(cameraOffCue(analyzer.movement));
     setDelegate(null);
     setCameraSignal(null);
+    setLowTrackingRate(false);
     clearCanvas(canvasRef.current);
   }
 
   function handleFrame(frame: LiveFrame) {
     drawPose(canvasRef.current, videoRef.current, frame.landmarks);
     const video = videoRef.current;
+    // Read per frame: rotating a phone swaps the stream's width and height.
     const { snapshot: nextSnapshot, cue: nextCue } = analyzer.update(
       frame.landmarks,
       frame.timestampMs,
-      video?.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 1,
+      video?.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : undefined,
     );
     if (analyzer.movement === "vertical-pull" && process.env.NODE_ENV === "development" &&
       nextSnapshot.latestRep?.outcome === "valid" &&
@@ -290,6 +309,7 @@ export function useLiveCoachSession() {
     voiceRef.current?.onFrame(nextSnapshot, nextCue, frame.timestampMs);
     setFps(frame.inferenceFps);
     setInferenceMs(frame.inferenceMs);
+    setLowTrackingRate(trackingRate.update(frame.inferenceFps, frame.timestampMs));
   }
 
   function handleSessionError(error: LiveCoachSessionError) {
@@ -300,6 +320,7 @@ export function useLiveCoachSession() {
     setCue(cameraOffCue(analyzer.movement));
     setDelegate(null);
     setCameraSignal(null);
+    setLowTrackingRate(false);
     setErrorMessage(sessionErrorMessage(error));
     clearCanvas(canvasRef.current);
   }
@@ -312,6 +333,13 @@ export function useLiveCoachSession() {
     } catch {
       // Camera enumeration is optional; the active stream can continue.
     }
+  }
+
+  /** Front or rear, for the next Start; replaces any specific camera choice. */
+  function selectCameraFacing(facing: CameraFacing) {
+    if (isActive) return;
+    setCameraFacing(facing);
+    setSelectedDeviceId("");
   }
 
   function toggleVoice() {
@@ -354,6 +382,9 @@ export function useLiveCoachSession() {
     devices,
     selectedDeviceId,
     setSelectedDeviceId,
+    cameraFacing,
+    selectCameraFacing,
+    lowTrackingRate,
     mirrorPreview,
     cameraSignal,
     cameraInfo,

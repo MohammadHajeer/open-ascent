@@ -28,6 +28,7 @@ export function FocusHud({ session, controlsVisible, onExit }: Props) {
   } = session;
   const running = status === "running";
   const cameraBlank = (running || status === "loading-pose") && session.cameraSignal === "blank";
+  const slowTracking = running && !cameraBlank && session.lowTrackingRate;
   const reps = snapshot.validRepCount;
   const stateLabel = running
     ? phaseLabels(movement)[snapshot.phase]
@@ -49,8 +50,8 @@ export function FocusHud({ session, controlsVisible, onExit }: Props) {
             {MOVEMENT_NAMES[movement]}
           </h2>
           <p className="mt-3 flex items-center gap-2 font-mono text-[clamp(0.58rem,0.72vw,0.8rem)] tracking-[0.18em] text-visual-foreground/60 uppercase lg:mt-4">
-            <span className={cn("size-1.5 rounded-full", cameraBlank ? TONE_MARK.attention : running && snapshot.poseReady ? TONE_MARK.positive : "bg-white/30")} />
-            {cameraBlank ? "No camera image" : "On-device tracking"}
+            <span className={cn("size-1.5 rounded-full", cameraBlank || slowTracking ? TONE_MARK.attention : running && snapshot.poseReady ? TONE_MARK.positive : "bg-white/30")} />
+            {cameraBlank ? "No camera image" : slowTracking ? `Slow tracking · ${Math.round(session.fps)} fps` : "On-device tracking"}
           </p>
         </div>
 

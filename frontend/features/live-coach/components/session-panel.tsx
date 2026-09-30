@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { useCoarsePointer } from "../hooks/use-coarse-pointer.ts";
 import type { useLiveCoachSession } from "../hooks/use-live-coach-session.ts";
 import { phaseLabels as phaseLabelsFor } from "../labels.ts";
 import type { PullUpRep } from "../types.ts";
@@ -37,7 +38,9 @@ export function SessionPanel({ session }: Props) {
     safetyAcknowledged, setSafetyAcknowledged, isActive, voiceEnabled,
     toggleVoice, devices, selectedDeviceId, setSelectedDeviceId,
     startSession, stopSession, movement, selectMovement, cameraInfo,
+    cameraFacing, selectCameraFacing,
   } = session;
+  const touchDevice = useCoarsePointer();
   const isPushUp = movement === "push-up";
   const isMuscleUp = movement === "muscle-up";
   const isDip = movement === "dips";
@@ -204,6 +207,31 @@ export function SessionPanel({ session }: Props) {
           {voiceEnabled ? <Volume2 className="size-4" /> : <VolumeX className="size-4" />}
           Voice coach {voiceEnabled ? "on" : "off"}
         </Button>
+        {touchDevice ? (
+          <div className="space-y-2">
+            <p id="live-coach-facing" className="text-sm font-medium">Phone camera</p>
+            <div role="group" aria-labelledby="live-coach-facing" className="grid grid-cols-2 gap-2">
+              {([["user", "Front"], ["environment", "Rear"]] as const).map(([facing, label]) => (
+                <Button
+                  key={facing}
+                  type="button"
+                  variant={cameraFacing === facing ? "default" : "outline"}
+                  className="h-10"
+                  aria-pressed={cameraFacing === facing}
+                  disabled={isActive}
+                  onClick={() => selectCameraFacing(facing)}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs leading-5 text-foreground-faint">
+              {cameraFacing === "environment"
+                ? "The rear camera sees more clearly; you won't see the screen while training."
+                : "The front camera lets you watch the count while you train."}
+            </p>
+          </div>
+        ) : null}
         {devices.length > 1 ? (
           <div className="space-y-2">
             <Label htmlFor="live-coach-camera">Camera</Label>

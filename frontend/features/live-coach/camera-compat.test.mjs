@@ -149,3 +149,19 @@ test("a camera that disappears mid-session stops cleanly and reports the disconn
   assert.equal(streams[0].track.stopped, true);
   assert.equal(video.srcObject, null);
 });
+
+test("the Front/Rear choice sets facingMode; a specific camera still wins", async () => {
+  const rear = tieredHarness({ signals: ["image"] });
+  await rear.session.start(rear.video, { onFrame: () => {} }, undefined, "environment");
+  assert.deepEqual(rear.requests[0].facingMode, { ideal: "environment" });
+  assert.equal(rear.requests[0].deviceId, undefined);
+
+  const front = tieredHarness({ signals: ["image"] });
+  await front.session.start(front.video, { onFrame: () => {} });
+  assert.deepEqual(front.requests[0].facingMode, { ideal: "user" });
+
+  const chosen = tieredHarness({ signals: ["image"] });
+  await chosen.session.start(chosen.video, { onFrame: () => {} }, "phone-cam", "environment");
+  assert.deepEqual(chosen.requests[0].deviceId, { exact: "phone-cam" });
+  assert.equal(chosen.requests[0].facingMode, undefined);
+});

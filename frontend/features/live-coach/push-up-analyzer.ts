@@ -1,4 +1,5 @@
 import { calculateAngle, POSE_INDEX, PULL_UP_SEMANTICS } from "./pull-up-semantics.ts";
+import { aspectCorrected } from "./pose-geometry.ts";
 import { INITIAL_SNAPSHOT } from "./session-state.ts";
 import type { PoseLandmark, PullUpPhase, PullUpRep, PushUpObservation, PushUpSnapshot } from "./types.ts";
 
@@ -45,7 +46,7 @@ export function measurePushUpPose(
     if (points.some((point) => !point || !Number.isFinite(point.x) || !Number.isFinite(point.y))) return [];
     const minimumVisibility = Math.min(...points.map((point) => Math.min(point.visibility ?? 1, point.presence ?? 1)));
     if (!Number.isFinite(minimumVisibility) || minimumVisibility < PULL_UP_SEMANTICS.minLandmarkVisibility) return [];
-    const [shoulder, elbow, wrist, hip, ankle] = points.map((point) => ({ ...point, x: point.x * aspectRatio }));
+    const [shoulder, elbow, wrist, hip, ankle] = points.map((point) => aspectCorrected(point, aspectRatio));
     const angleDeg = calculateAngle(shoulder, elbow, wrist);
     const bodyAngleDeg = calculateAngle(shoulder, hip, ankle);
     if (angleDeg === null || bodyAngleDeg === null) return [];

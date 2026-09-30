@@ -7,6 +7,18 @@ import type {
   PullUpSnapshot,
 } from "./types.ts";
 
+// The same blind-interval limit as the other Live Coach analyzers. Missing
+// frames (a hidden tab, a stalled inference) are not invalid frames, so the
+// invalid-position tolerance never sees them.
+const MAX_FRAME_GAP_MS = 600;
+
+// invalidPositionToleranceMs (120 ms) lets two consecutive invalid frames pass
+// at the 12 fps target. A slower device keeps that same two-frame allowance:
+// the tolerance stretches to this many typical frame intervals, never below
+// 120 ms and never past the blind-interval limit.
+const INVALID_TOLERANCE_FRAME_INTERVALS = 1.5;
+const FRAME_INTERVAL_SAMPLES = 5;
+
 type Grip = NonNullable<PullUpObservation["grip"]>;
 type Width = NonNullable<PullUpObservation["width"]>;
 type Evidence = { grip: Grip; width: Width; widthRatio?: number | null };
@@ -77,8 +89,12 @@ export class LiveVerticalPullAnalyzer {
   private readySinceMs: number | null = null;
   private invalidSinceMs: number | null = null;
   private personDetected = false;
+  private lastUpdateMs: number | null = null;
+  private frameIntervals: number[] = [];
 
   reset() {
+    this.lastUpdateMs = null;
+    this.frameIntervals = [];
     this.phase = "unknown";
     this.validRepCount = 0;
     this.partialRepCount = 0;
@@ -105,6 +121,14 @@ export class LiveVerticalPullAnalyzer {
     personDetected = observation !== null,
   ): PullUpSnapshot {
     this.personDetected = personDetected;
+    // Nothing seen for this long cannot complete a rep: treat it as lost
+    // tracking, then read this frame from a fresh start.
+    if (this.lastUpdateMs !== null) {
+      const intervalMs = timestampMs - this.lastUpdateMs;
+      if (intervalMs > MAX_FRAME_GAP_MS) this.loseTracking(timestampMs);
+      else if (intervalMs > 0) this.frameIntervals = [...this.frameIntervals, intervalMs].slice(-FRAME_INTERVAL_SAMPLES);
+    }
+    this.lastUpdateMs = timestampMs;
     if (!observation) return this.handleInvalid(timestampMs);
 
     this.invalidSinceMs = null;
@@ -223,18 +247,32 @@ export class LiveVerticalPullAnalyzer {
   private handleInvalid(timestampMs: number, observation: PullUpObservation | null = null) {
     this.readySinceMs = null;
     this.invalidSinceMs ??= timestampMs;
-    if (timestampMs - this.invalidSinceMs > PULL_UP_SEMANTICS.invalidPositionToleranceMs) {
-      if (
-        this.phase === "rising" &&
-        this.minimumAngleDeg !== null &&
-        this.minimumAngleDeg <= PULL_UP_SEMANTICS.partialTopAngleDeg
-      ) {
-        this.finishRep("uncertain", timestampMs, this.bottomBodyRelativeY ?? 0, ["tracking_lost"]);
-      }
-      this.phase = "unknown";
-      this.resetCandidate();
+    if (timestampMs - this.invalidSinceMs > this.invalidToleranceMs()) {
+      this.loseTracking(timestampMs);
     }
     return this.snapshot(observation, false);
+  }
+
+  /** How long invalid frames are tolerated at the current frame rate. */
+  invalidToleranceMs() {
+    const floor = PULL_UP_SEMANTICS.invalidPositionToleranceMs;
+    if (this.frameIntervals.length < 3) return floor;
+    const sorted = [...this.frameIntervals].sort((left, right) => left - right);
+    const typicalMs = sorted[Math.floor(sorted.length / 2)];
+    return Math.min(MAX_FRAME_GAP_MS, Math.max(floor, INVALID_TOLERANCE_FRAME_INTERVALS * typicalMs));
+  }
+
+  private loseTracking(timestampMs: number) {
+    if (
+      this.phase === "rising" &&
+      this.minimumAngleDeg !== null &&
+      this.minimumAngleDeg <= PULL_UP_SEMANTICS.partialTopAngleDeg
+    ) {
+      this.finishRep("uncertain", timestampMs, this.bottomBodyRelativeY ?? 0, ["tracking_lost"]);
+    }
+    this.phase = "unknown";
+    this.resetCandidate();
+    this.readySinceMs = null;
   }
 
   private isTop(angleDeg: number, observation: PullUpObservation) {

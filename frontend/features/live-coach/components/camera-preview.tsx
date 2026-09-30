@@ -90,15 +90,6 @@ export function CameraPreview({ session, focus }: Props) {
         </div>
       ) : null}
 
-      {cameraBlank && !inFocus ? (
-        <div role="alert" className="absolute inset-x-4 top-16 mx-auto max-w-lg rounded-2xl border border-warning/40 bg-black/70 px-4 py-3 text-sm leading-6 text-white backdrop-blur">
-          <p className="font-medium">This camera is sending a blank image.</p>
-          <p className="text-white/65">
-            The browser receives frames, but they&apos;re one flat color. For a phone or virtual camera, check that its app shows a live picture, then restart. Otherwise stop and choose another camera.
-          </p>
-        </div>
-      ) : null}
-
       {status === "verifying-access" || status === "requesting-camera" || status === "checking-camera" || status === "loading-pose" ? (
         <div className={cn(
           "absolute inset-x-5 bottom-5 flex items-center gap-3 rounded-2xl border border-white/10 bg-black/55 px-4 py-3 text-sm text-white backdrop-blur",
@@ -117,45 +108,63 @@ export function CameraPreview({ session, focus }: Props) {
         </div>
       ) : null}
 
-      <div className={cn("absolute inset-x-4 top-4 flex items-start justify-between gap-2", inFocus && "hidden")}>
-        <div className="flex flex-wrap gap-2">
-          <StatusPill
-            ready={cameraLive && !cameraBlank}
-            label={status === "checking-camera"
-              ? "Checking camera"
-              : !cameraLive
-                ? "Camera off"
-                : cameraBlank ? "No camera image" : "Camera ready"}
-          />
-          {status === "running" ? (
+      {/* Alerts flow under the status row: on a phone its pills wrap to several lines. */}
+      <div className={cn("absolute inset-x-4 top-4 space-y-3", inFocus && "hidden")}>
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex flex-wrap gap-2">
             <StatusPill
-              ready={snapshot.poseReady}
-              label={!snapshot.personDetected
-                ? "Find athlete"
-                : !snapshot.poseReady
-                  ? "Improve tracking"
-                  : !snapshot.setupReady
-                    ? isDip ? "Set up support" : isPushUp ? "Set up plank" : "Set up hang"
-                    : !snapshot.startingPositionReady
-                      ? "Hold start"
-                      : snapshot.phase === (isPushUp || isDip ? "top" : "bottom")
-                        ? "Ready"
-                        : "Active set"}
+              ready={cameraLive && !cameraBlank}
+              label={status === "checking-camera"
+                ? "Checking camera"
+                : !cameraLive
+                  ? "Camera off"
+                  : cameraBlank ? "No camera image" : "Camera ready"}
             />
+            {status === "running" ? (
+              <StatusPill
+                ready={snapshot.poseReady}
+                label={!snapshot.personDetected
+                  ? "Find athlete"
+                  : !snapshot.poseReady
+                    ? "Improve tracking"
+                    : !snapshot.setupReady
+                      ? isDip ? "Set up support" : isPushUp ? "Set up plank" : "Set up hang"
+                      : !snapshot.startingPositionReady
+                        ? "Hold start"
+                        : snapshot.phase === (isPushUp || isDip ? "top" : "bottom")
+                          ? "Ready"
+                          : "Active set"}
+              />
+            ) : null}
+            <span className="rounded-full border border-white/10 bg-black/45 px-3 py-1.5 font-mono text-[0.58rem] tracking-[0.12em] text-white/70 uppercase backdrop-blur">
+              On-device tracking
+            </span>
+          </div>
+          {isActive || setComplete ? (
+            <button
+              type="button"
+              onClick={enter}
+              className="flex shrink-0 items-center gap-2 rounded-full border border-white/15 bg-black/45 px-3 py-1.5 font-mono text-[0.58rem] tracking-[0.12em] text-white/85 uppercase backdrop-blur transition-colors outline-none hover:bg-black/70 hover:text-white focus-visible:ring-2 focus-visible:ring-white/60"
+            >
+              <Maximize2 className="size-3" aria-hidden="true" />
+              Focus mode
+            </button>
           ) : null}
-          <span className="rounded-full border border-white/10 bg-black/45 px-3 py-1.5 font-mono text-[0.58rem] tracking-[0.12em] text-white/70 uppercase backdrop-blur">
-            On-device tracking
-          </span>
         </div>
-        {isActive || setComplete ? (
-          <button
-            type="button"
-            onClick={enter}
-            className="flex shrink-0 items-center gap-2 rounded-full border border-white/15 bg-black/45 px-3 py-1.5 font-mono text-[0.58rem] tracking-[0.12em] text-white/85 uppercase backdrop-blur transition-colors outline-none hover:bg-black/70 hover:text-white focus-visible:ring-2 focus-visible:ring-white/60"
-          >
-            <Maximize2 className="size-3" aria-hidden="true" />
-            Focus mode
-          </button>
+        {cameraBlank ? (
+          <div role="alert" className="mx-auto max-w-lg rounded-2xl border border-warning/40 bg-black/70 px-4 py-3 text-sm leading-6 text-white backdrop-blur">
+            <p className="font-medium">This camera is sending a blank image.</p>
+            <p className="text-white/65">
+              The browser receives frames, but they&apos;re one flat color. For a phone or virtual camera, check that its app shows a live picture, then restart. Otherwise stop and choose another camera.
+            </p>
+          </div>
+        ) : status === "running" && session.lowTrackingRate ? (
+          <div role="status" className="mx-auto max-w-lg rounded-2xl border border-warning/40 bg-black/70 px-4 py-3 text-sm leading-6 text-white backdrop-blur">
+            <p className="font-medium">Tracking is slow ({Math.round(session.fps)} fps).</p>
+            <p className="text-white/65">
+              Fast reps may be missed. Add light, close other apps, or slow your reps down.
+            </p>
+          </div>
         ) : null}
       </div>
       {inFocus ? <FocusHud session={session} controlsVisible={controlsVisible} onExit={exit} /> : null}
