@@ -1,3 +1,4 @@
+import type { CameraSignal, FrameStats } from "./camera-signal.ts";
 import type { PoseRuntime } from "./mediapipe-pose.ts";
 import type { PoseLandmark } from "./types.ts";
 
@@ -12,7 +13,29 @@ type SessionDependencies = {
   requestFrame: (callback: FrameRequestCallback) => number;
   cancelFrame: (handle: number) => void;
   now: () => number;
+  /** Verifies the attached stream shows an image; omitted means trust the stream. */
+  checkSignal?: (video: VideoTarget) => Promise<{ signal: CameraSignal; stats: FrameStats | null }>;
 };
+
+export type CameraTier = "preferred" | "native" | "basic";
+
+export type CameraAttempt = {
+  tier: CameraTier;
+  signal: CameraSignal | "unavailable";
+  width?: number;
+  height?: number;
+  frameRate?: number;
+  mean?: FrameStats["mean"];
+};
+
+// Every tier keeps the same device. "preferred" asks for HD; "native" takes the
+// device's own default mode; "basic" asks for SD, which the most drivers fill.
+// Later tiers run only when an earlier one delivered no usable image.
+const CAMERA_TIERS: { tier: CameraTier; size: MediaTrackConstraints }[] = [
+  { tier: "preferred", size: { width: { ideal: 1280 }, height: { ideal: 720 } } },
+  { tier: "native", size: {} },
+  { tier: "basic", size: { width: { ideal: 640 }, height: { ideal: 480 } } },
+];
 
 export type LiveFrame = {
   landmarks: PoseLandmark[] | null;
@@ -21,6 +44,8 @@ export type LiveFrame = {
   inferenceFps: number;
   delegate: "GPU" | "CPU";
 };
+
+export const CAMERA_DISCONNECTED = "The camera disconnected.";
 
 export class LiveCoachSessionError extends Error {
   readonly stage: "camera" | "mediapipe" | "inference";
@@ -38,7 +63,9 @@ export class LiveCoachSessionError extends Error {
 
 type SessionCallbacks = {
   onFrame: (frame: LiveFrame) => void;
-  onCameraReady?: () => void;
+  /** A stream is attached; its frames are being checked. */
+  onCameraConnected?: () => void;
+  onCameraReady?: (signal: CameraSignal) => void;
   onError?: (error: LiveCoachSessionError) => void;
 };
 
@@ -67,38 +94,82 @@ export class LiveCoachCameraSession {
     const generation = this.generation;
     const initializationStartedAt = this.dependencies.now();
     this.video = video;
-
-    let stream: MediaStream;
-    try {
-      stream = await this.dependencies.getUserMedia({
-        audio: false,
-        video: deviceId
-          ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
-          : { facingMode: { ideal: "user" }, width: { ideal: 1280 }, height: { ideal: 720 } },
-      });
-    } catch (error) {
-      const sessionError = new LiveCoachSessionError(
-        "camera",
-        "The camera could not be started.",
-        { cause: error },
-      );
-      this.stop();
-      throw sessionError;
-    }
+    const attempts: CameraAttempt[] = [];
+    // Pinned after the first open, so fallback tiers can never drift to another camera.
+    let pinnedDeviceId = deviceId;
+    let firstOpened: { tier: CameraTier; constraints: MediaStreamConstraints } | null = null;
+    let openedTier: CameraTier | null = null;
+    let signal: CameraSignal = "image";
 
     try {
-      if (generation !== this.generation) {
-        stopStream(stream);
-        return null;
+      for (const [index, { tier, size }] of CAMERA_TIERS.entries()) {
+        const constraints: MediaStreamConstraints = {
+          audio: false,
+          video: pinnedDeviceId
+            ? { deviceId: { exact: pinnedDeviceId }, ...size }
+            : { facingMode: { ideal: "user" }, ...size },
+        };
+        let stream: MediaStream;
+        try {
+          stream = await this.dependencies.getUserMedia(constraints);
+        } catch (error) {
+          if (!firstOpened) {
+            throw new LiveCoachSessionError(
+              "camera",
+              "The camera could not be started.",
+              { cause: error },
+            );
+          }
+          attempts.push({ tier, signal: "unavailable" });
+          break;
+        }
+        if (generation !== this.generation) {
+          stopStream(stream);
+          return null;
+        }
+
+        await this.attach(video, stream, callbacks, generation);
+        if (generation !== this.generation) return null;
+        firstOpened ??= { tier, constraints };
+        openedTier = tier;
+        const settings = stream.getVideoTracks()[0]?.getSettings();
+        pinnedDeviceId ??= settings?.deviceId || undefined;
+        if (index === 0) callbacks.onCameraConnected?.();
+
+        const check = this.dependencies.checkSignal
+          ? await this.dependencies.checkSignal(video)
+          : { signal: "image" as const, stats: null };
+        if (generation !== this.generation) return null;
+        signal = check.signal;
+        attempts.push({
+          tier,
+          signal,
+          width: settings?.width,
+          height: settings?.height,
+          frameRate: settings?.frameRate,
+          mean: check.stats?.mean,
+        });
+        if (signal === "image" || index === CAMERA_TIERS.length - 1) break;
+        this.detach();
+        openedTier = null;
       }
 
-      this.stream = stream;
-      video.srcObject = stream;
-      await video.play();
-      if (generation !== this.generation) {
-        return null;
+      // No mode showed a picture, so the mode isn't the cause (an idle source,
+      // a covered lens). Settle on the first, highest-quality mode that opened;
+      // the live check clears the warning if a picture arrives later. This also
+      // covers a fallback mode that failed to open after the last was released.
+      if (firstOpened && openedTier !== firstOpened.tier && (signal !== "image" || openedTier === null)) {
+        this.detach();
+        const stream = await this.dependencies.getUserMedia(firstOpened.constraints);
+        if (generation !== this.generation) {
+          stopStream(stream);
+          return null;
+        }
+        await this.attach(video, stream, callbacks, generation);
+        if (generation !== this.generation) return null;
+        openedTier = firstOpened.tier;
       }
-      callbacks.onCameraReady?.();
+      callbacks.onCameraReady?.(signal);
 
       let runtime: PoseRuntime;
       try {
@@ -112,19 +183,24 @@ export class LiveCoachCameraSession {
       }
       if (generation !== this.generation) {
         runtime.close();
-        stopStream(stream);
         return null;
       }
       this.runtime = runtime;
       this.schedule(callbacks, generation);
 
-      const activeTrack = stream.getVideoTracks()[0];
+      const activeTrack = this.stream?.getVideoTracks()[0];
       const settings = activeTrack?.getSettings();
       return {
         delegate: runtime.delegate,
         facingMode: settings?.facingMode ?? null,
         deviceId: settings?.deviceId ?? null,
         deviceLabel: activeTrack?.label ?? "",
+        signal,
+        tier: openedTier ?? "preferred",
+        width: settings?.width ?? null,
+        height: settings?.height ?? null,
+        frameRate: settings?.frameRate ?? null,
+        attempts,
         initializationMs:
           this.dependencies.now() - initializationStartedAt,
       };
@@ -136,6 +212,34 @@ export class LiveCoachCameraSession {
         "The camera preview could not be initialized.",
         { cause: error },
       );
+    }
+  }
+
+  private async attach(
+    video: VideoTarget,
+    stream: MediaStream,
+    callbacks: SessionCallbacks,
+    generation: number,
+  ) {
+    this.stream = stream;
+    // "ended" fires when the device goes away (unplugged phone, closed virtual
+    // camera), never for our own track.stop(); without it the preview freezes.
+    stream.getVideoTracks()[0]?.addEventListener?.("ended", () => {
+      if (generation !== this.generation || this.stream !== stream) return;
+      this.stop();
+      callbacks.onError?.(new LiveCoachSessionError("camera", CAMERA_DISCONNECTED));
+    });
+    video.srcObject = stream;
+    await video.play();
+  }
+
+  /** Releases the current stream's tracks and preview before another open. */
+  private detach() {
+    if (this.stream) stopStream(this.stream);
+    this.stream = null;
+    if (this.video) {
+      this.video.pause();
+      this.video.srcObject = null;
     }
   }
 

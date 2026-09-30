@@ -1,20 +1,27 @@
+import { useEffect, useRef } from "react";
 import Image from "next/image";
-import { ScanLine } from "lucide-react";
+import { Check, ScanLine } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ThemedAsset } from "@/components/shared/themed-asset";
 import { assets } from "@/lib/assets";
 import { classificationLabels, targetRelation } from "@/lib/rep-classification";
 import type { AnalysisStatus, RepClassification } from "@/lib/analysis";
+import { cn } from "@/lib/utils";
 
 import { ProgressStep, progressSteps } from "./progress-step";
-import type { SelectedMovement } from "./types";
+import { StatusHeadline } from "./status-headline";
+import type { SelectedMovement, StreamConnection } from "./types";
+
+// Content inside a newly arrived rep settles in just after the card itself.
+const settle = "fade-in slide-in-from-bottom-1 duration-300 ease-out fill-mode-backwards motion-safe:animate-in";
 
 export function ProcessingStep({
   movement,
   status,
   stage,
   observing,
+  connection,
   reps,
   error,
   progressTitle,
@@ -25,12 +32,26 @@ export function ProcessingStep({
   status: AnalysisStatus;
   stage: string;
   observing: boolean;
+  connection: StreamConnection;
   reps: RepClassification[];
   error: string | null;
   progressTitle: string;
   progressDescription: string;
   onRestart: () => void;
 }) {
+  const listRef = useRef<HTMLOListElement>(null);
+  const followNewestRef = useRef(true);
+  // Only a running job is computing; queued work is waiting, so the scan rests.
+  const computing = observing && status === "running" && !error;
+
+  // Keep the newest real rep in view unless the user scrolled back up to read.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || !followNewestRef.current || reps.length === 0) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    list.scrollTo({ top: list.scrollHeight, behavior: reduceMotion ? "auto" : "smooth" });
+  }, [reps.length]);
+
   return (
     <section
       data-tour="guest-processing"
@@ -43,16 +64,11 @@ export function ProcessingStep({
           <span className="font-mono text-[0.59rem] font-semibold tracking-widest text-primary uppercase">
             Step 03 / Analysis
           </span>
-          <h2 className="mt-3 text-[clamp(2rem,4vw,3.5rem)] leading-none font-medium tracking-[-0.06em]">
-            {progressTitle}
-          </h2>
-          <p className="mt-3 text-sm text-foreground-soft">
-            {progressDescription}
-          </p>
+          <div className="mt-3">
+            <StatusHeadline title={progressTitle} description={progressDescription} />
+          </div>
         </div>
-        <span className="rounded-full border border-primary/40 px-3 py-1.5 font-mono text-[0.65rem] text-primary uppercase">
-          {observing ? "● Live" : "Analysis"}
-        </span>
+        <StreamBadge status={status} observing={observing} connection={connection} />
       </header>
 
       <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
@@ -69,7 +85,7 @@ export function ProcessingStep({
             </p>
           )}
 
-          <div className="relative mx-auto mt-4 h-32 w-full max-w-80 sm:h-56 lg:mt-auto lg:h-72">
+          <div className="relative mx-auto mt-4 h-32 w-full max-w-80 overflow-hidden sm:h-56 lg:mt-auto lg:h-72">
             {movement.illustrationUrl ? (
               <Image
                 src={movement.illustrationUrl}
@@ -87,6 +103,17 @@ export function ProcessingStep({
                 )}
               </span>
             )}
+
+            {computing && (
+              // A sweep that signals work in progress; it carries no progress value.
+              <span
+                className="pointer-events-none absolute inset-0 [mask-image:linear-gradient(to_right,transparent,black_18%,black_82%,transparent)] motion-safe:animate-oa-scan motion-reduce:hidden"
+                aria-hidden="true"
+              >
+                <span className="absolute inset-x-0 bottom-0 h-10 bg-linear-to-b from-transparent to-primary/6" />
+                <span className="absolute inset-x-0 bottom-0 h-px bg-primary/50" />
+              </span>
+            )}
           </div>
         </div>
 
@@ -96,11 +123,23 @@ export function ProcessingStep({
               Live rep analysis
             </h3>
             <span className="text-xs text-foreground-soft">
-              {reps.length} detected
+              <span
+                key={reps.length}
+                className="inline-block tabular-nums fade-in slide-in-from-bottom-1 duration-300 ease-out motion-safe:animate-in"
+              >
+                {reps.length}
+              </span>{" "}
+              detected
             </span>
           </div>
 
           <ol
+            ref={listRef}
+            onScroll={(event) => {
+              const list = event.currentTarget;
+              followNewestRef.current =
+                list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+            }}
             className="mt-4 h-72 min-h-0 space-y-3 overflow-y-auto overscroll-contain pr-1 sm:h-88"
             aria-label="Detected repetitions"
           >
@@ -110,55 +149,17 @@ export function ProcessingStep({
               </li>
             )}
 
-            {reps.map((rep) => {
-              const labels = classificationLabels(rep);
-              const relation = targetRelation(
-                rep,
-                !movement.id,
-                movement.slug,
-              );
-
-              return (
-                <li
-                  key={rep.rep_index}
-                  className="rounded-xl border border-border bg-background p-4"
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="font-mono text-xs text-primary">
-                      REP {String(rep.rep_index).padStart(2, "0")}
-                    </span>
-                    <span className="rounded-full border border-border px-2 py-0.5 text-xs capitalize">
-                      {rep.outcome}
-                    </span>
-                  </div>
-
-                  <strong className="mt-2 block text-lg">{labels.base}</strong>
-
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-foreground-soft">
-                    <span className="rounded-full bg-muted px-2 py-1">
-                      {labels.width}
-                    </span>
-                    <span className="rounded-full bg-muted px-2 py-1">
-                      {labels.height}
-                    </span>
-                  </div>
-
-                  {relation && (
-                    <p className="mt-3 border-t border-border pt-2 text-xs text-foreground-soft">
-                      {relation}
-                    </p>
-                  )}
-                </li>
-              );
-            })}
+            {reps.map((rep) => (
+              <RepCard key={rep.rep_index} rep={rep} movement={movement} />
+            ))}
           </ol>
         </div>
       </div>
 
       <footer className="border-t border-border p-6 sm:px-8">
-        <ol className="flex flex-wrap gap-x-8 gap-y-3 text-xs">
-          {progressSteps(status, stage).map((item) => (
-            <ProgressStep key={item.label} {...item} />
+        <ol className="flex flex-wrap items-center gap-x-8 gap-y-3 text-xs sm:gap-x-3">
+          {progressSteps(status, stage).map((item, index) => (
+            <ProgressStep key={index} index={index} {...item} />
           ))}
         </ol>
 
@@ -169,5 +170,97 @@ export function ProcessingStep({
         )}
       </footer>
     </section>
+  );
+}
+
+// Cards mount only when a rep_completed event adds them, so the entrance marks
+// a real detection. Updates to an existing rep keep its key and don't replay it.
+function RepCard({
+  rep,
+  movement,
+}: {
+  rep: RepClassification;
+  movement: SelectedMovement;
+}) {
+  const labels = classificationLabels(rep);
+  const relation = targetRelation(rep, !movement.id, movement.slug);
+
+  return (
+    <li className="relative rounded-xl border border-border bg-background p-4 fade-in slide-in-from-bottom-3 duration-400 ease-out motion-safe:animate-in">
+      <span
+        className="pointer-events-none absolute -inset-px rounded-xl border border-primary/55 bg-primary-light animate-oa-rep-arrival"
+        aria-hidden="true"
+      />
+      <div className="relative">
+        <div className="flex items-center justify-between gap-4">
+          <span className="font-mono text-xs text-primary">
+            REP {String(rep.rep_index).padStart(2, "0")}
+          </span>
+          <span className="rounded-full border border-border px-2 py-0.5 text-xs capitalize">
+            {rep.outcome}
+          </span>
+        </div>
+
+        <strong className={cn("mt-2 block text-lg delay-100", settle)}>
+          {labels.base}
+        </strong>
+
+        <div className={cn("mt-2 flex flex-wrap gap-2 text-xs text-foreground-soft delay-200", settle)}>
+          <span className="rounded-full bg-muted px-2 py-1">
+            {labels.width}
+          </span>
+          <span className="rounded-full bg-muted px-2 py-1">
+            {labels.height}
+          </span>
+        </div>
+
+        {relation && (
+          <p className={cn("mt-3 border-t border-border pt-2 text-xs text-foreground-soft delay-300", settle)}>
+            {relation}
+          </p>
+        )}
+      </div>
+    </li>
+  );
+}
+
+// Reflects the actual stream: "Live" only while a connection is delivering events.
+function StreamBadge({
+  status,
+  observing,
+  connection,
+}: {
+  status: AnalysisStatus;
+  observing: boolean;
+  connection: StreamConnection;
+}) {
+  const state =
+    status === "completed"
+      ? "complete"
+      : !observing
+        ? "idle"
+        : connection;
+
+  return (
+    <span className="flex items-center gap-2 rounded-full border border-primary/40 px-3 py-1.5 font-mono text-[0.65rem] text-primary uppercase transition-colors duration-500">
+      <span key={state} className="flex items-center gap-2 fade-in duration-300 motion-safe:animate-in">
+        {state === "complete" ? (
+          <Check className="size-3" aria-hidden="true" />
+        ) : state === "live" ? (
+          <span className="size-1.5 rounded-full bg-primary motion-safe:animate-oa-live-pulse" aria-hidden="true" />
+        ) : state !== "idle" ? (
+          <span className="size-1.5 rounded-full border border-primary/60" aria-hidden="true" />
+        ) : null}
+        {state === "complete"
+          ? "Complete"
+          : state === "live"
+            ? "Live"
+            : state === "reconnecting"
+              ? "Reconnecting"
+              : state === "connecting"
+                ? "Connecting"
+                : "Analysis"}
+      </span>
+    </span>
   );
 }

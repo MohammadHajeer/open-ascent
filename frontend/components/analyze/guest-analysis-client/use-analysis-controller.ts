@@ -54,9 +54,15 @@ import type {
   RecoveryIssue,
   SelectedMovement,
   Step,
+  StreamConnection,
   UploadConfig,
   VideoChoice,
 } from "./types";
+
+// Once the completion event lands, "Your results are ready" stays on screen at
+// least this long (measured from the event, so a slow result fetch adds nothing)
+// before the results view replaces the live rep list.
+const RESULTS_REVEAL_MS = 900;
 
 const INVALID_ACCESS_MESSAGE =
   "Analysis access has expired or is invalid. Start a new analysis.";
@@ -118,6 +124,9 @@ export function useAnalysisController({
   const [access, setAccess] = useState<AnalysisAccess | null>(null);
   const [status, setStatus] = useState<AnalysisStatus>("reserved");
   const [observing, setObserving] = useState(false);
+  // Truthful stream state for the Live badge: "live" once this connection has
+  // delivered an event (the server always sends a state snapshot on connect).
+  const [connection, setConnection] = useState<StreamConnection>("connecting");
   const [stage, setStage] = useState("reserved");
   const [queue, setQueue] = useState<AnalysisQueue | null>(null);
   const [reps, setReps] = useState<RepClassification[]>([]);
@@ -253,11 +262,18 @@ export function useAnalysisController({
       }
 
       if (nextStatus === "completed") {
+        const readyAt = performance.now();
         const completed = await resultFor(access!, authenticated);
 
         if (!active || settled) return;
         if (!completed.result) {
           throw new Error("The analysis completed without a result.");
+        }
+
+        const remaining = RESULTS_REVEAL_MS - (performance.now() - readyAt);
+        if (remaining > 0) {
+          await new Promise((resolve) => setTimeout(resolve, remaining));
+          if (!active || settled) return;
         }
 
         settled = true;
@@ -276,6 +292,7 @@ export function useAnalysisController({
 
     async function receive(event: AnalysisProgressEvent) {
       if (!active || settled) return;
+      setConnection("live");
 
       if (event.id !== null) {
         if (event.id <= lastEventId.current) return;
@@ -375,6 +392,7 @@ export function useAnalysisController({
           }
 
           failures += 1;
+          setConnection("reconnecting");
 
           if (failures >= 3) {
             try {
@@ -495,6 +513,7 @@ export function useAnalysisController({
     setStage("reserved");
     setQueue(null);
     setObserving(false);
+    setConnection("connecting");
     setReps([]);
     lastEventId.current = 0;
     currentAttempt.current = 0;
@@ -581,6 +600,7 @@ export function useAnalysisController({
     setResult(null);
     setQueue(null);
     setObserving(false);
+    setConnection("connecting");
     setReps([]);
     lastEventId.current = 0;
     currentAttempt.current = 0;
@@ -623,6 +643,7 @@ export function useAnalysisController({
     access,
     status,
     observing,
+    connection,
     stage,
     queue,
     serviceState,

@@ -446,6 +446,68 @@
   }
 }
 
+/*
+  Analysis progress motion. Each loop ends where it starts, so the global
+  reduced-motion rule below (one 0.01ms iteration) leaves a static state.
+*/
+@theme {
+  --animate-oa-breathe: oa-breathe 1.8s ease-in-out infinite;
+  --animate-oa-live-pulse: oa-live-pulse 2.4s ease-out infinite;
+  --animate-oa-rep-arrival: oa-rep-arrival 1.6s ease-out forwards;
+  --animate-oa-scan: oa-scan 3.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+
+  @keyframes oa-breathe {
+    0%,
+    100% {
+      opacity: 1;
+    }
+
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  @keyframes oa-live-pulse {
+    0% {
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 45%, transparent);
+    }
+
+    70%,
+    100% {
+      box-shadow: 0 0 0 5px color-mix(in srgb, var(--primary) 0%, transparent);
+    }
+  }
+
+  @keyframes oa-rep-arrival {
+    0%,
+    30% {
+      opacity: 1;
+    }
+
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @keyframes oa-scan {
+    0% {
+      opacity: 0;
+      transform: translateY(-100%);
+    }
+
+    12%,
+    68% {
+      opacity: 1;
+    }
+
+    80%,
+    100% {
+      opacity: 0;
+      transform: translateY(0);
+    }
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
