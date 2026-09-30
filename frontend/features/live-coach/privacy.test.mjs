@@ -92,7 +92,10 @@ test("Live Coach stays inside authenticated Train and does not replace AI Coach"
   assert.match(workspace, /useLiveCoachSession/);
   assert.match(session, /useLiveCoachAccess/);
   assert.match(session, /fetchLiveCoachAccess/);
-  assert.match(session, /measurePullUpPose\(frame\.landmarks/);
+  assert.match(session, /analyzer\.update\(\s*frame\.landmarks/);
+  const analyzer = readFileSync(join(featureRoot, "live-analyzer.ts"), "utf8");
+  assert.match(analyzer, /measurePullUpPose\(landmarks/);
+  assert.match(analyzer, /measurePushUpPose\(landmarks/);
   assert.match(preview, /mirrorPreview && "-scale-x-100"/);
   assert.match(panel, /Safety guidance remains/);
   assert.match(navigation, /label: "Train"/);

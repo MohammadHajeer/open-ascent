@@ -1,6 +1,7 @@
-import { Check, LoaderCircle } from "lucide-react";
+import { Check } from "lucide-react";
 
 import type { AnalysisStatus } from "@/lib/analysis";
+import { cn } from "@/lib/utils";
 
 export type ProgressStepState = "completed" | "active" | "upcoming";
 
@@ -47,30 +48,77 @@ export function progressSteps(
 export function ProgressStep({
   label,
   state,
+  index,
 }: {
   label: string;
   state: ProgressStepState;
+  index: number;
 }) {
   return (
     <li
-      className={`flex items-center gap-3 ${
-        state === "upcoming" ? "text-foreground-faint" : "text-foreground"
-      }`}
-    >
-      {state === "completed" ? (
-        <Check className="size-4 shrink-0 text-primary" aria-hidden="true" />
-      ) : state === "active" ? (
-        <LoaderCircle
-          className="size-4 shrink-0 animate-spin text-primary"
-          aria-hidden="true"
-        />
-      ) : (
-        <span
-          className="size-4 shrink-0 rounded-full border border-border"
-          aria-hidden="true"
-        />
+      className={cn(
+        "flex items-center gap-3 transition-colors duration-500",
+        state === "upcoming" ? "text-foreground-faint" : "text-foreground",
       )}
-      <span>{label}</span>
+    >
+      {index > 0 && (
+        // Fills once the real flow reaches this stage; it never shows partial progress.
+        <span
+          className="relative hidden h-px w-8 overflow-hidden bg-border sm:block"
+          aria-hidden="true"
+        >
+          <span
+            className={cn(
+              "absolute inset-0 origin-left bg-primary transition-transform duration-500 ease-out",
+              state === "upcoming" ? "scale-x-0" : "scale-x-100",
+            )}
+          />
+        </span>
+      )}
+      <StepMarker key={state} state={state} index={index} />
+      <span
+        key={label}
+        className="fade-in duration-300 motion-safe:animate-in"
+      >
+        {label}
+      </span>
     </li>
+  );
+}
+
+function StepMarker({
+  state,
+  index,
+}: {
+  state: ProgressStepState;
+  index: number;
+}) {
+  if (state === "completed") {
+    return (
+      <Check
+        className="size-4 shrink-0 text-primary zoom-in-50 fade-in duration-300 ease-out fill-mode-backwards motion-safe:animate-in"
+        // When several stages resolve on one event, they settle left to right.
+        style={{ animationDelay: `${index * 90}ms` }}
+        aria-hidden="true"
+      />
+    );
+  }
+
+  if (state === "active") {
+    return (
+      <span
+        className="grid size-4 shrink-0 place-items-center rounded-full border border-primary/45 zoom-in-75 fade-in duration-300 motion-safe:animate-in"
+        aria-hidden="true"
+      >
+        <span className="size-1.5 rounded-full bg-primary motion-safe:animate-oa-breathe" />
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="size-4 shrink-0 rounded-full border border-border"
+      aria-hidden="true"
+    />
   );
 }

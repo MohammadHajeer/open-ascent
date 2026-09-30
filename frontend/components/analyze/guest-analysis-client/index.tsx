@@ -38,6 +38,7 @@ export function GuestAnalysisClient({
     newAnalysisBlocked,
     status,
     observing,
+    connection,
     stage,
     reps,
     result,
@@ -123,6 +124,7 @@ export function GuestAnalysisClient({
             status={status}
             stage={stage}
             observing={observing}
+            connection={connection}
             reps={reps}
             error={error}
             progressTitle={progressTitle}
@@ -132,13 +134,15 @@ export function GuestAnalysisClient({
         )}
 
         {step === "results" && result?.result && (
-          <AnalysisResults
-            analysis={result}
-            access={access}
-            authenticated={authenticated}
-            videoUrl={videoUrl}
-            onRestart={restart}
-          />
+          <div className="fade-in slide-in-from-bottom-2 duration-500 ease-out motion-safe:animate-in">
+            <AnalysisResults
+              analysis={result}
+              access={access}
+              authenticated={authenticated}
+              videoUrl={videoUrl}
+              onRestart={restart}
+            />
+          </div>
         )}
       </div>
     </>

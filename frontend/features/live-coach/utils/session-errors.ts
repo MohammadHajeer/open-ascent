@@ -1,4 +1,4 @@
-import { LiveCoachSessionError } from "../camera-session.ts";
+import { CAMERA_DISCONNECTED, LiveCoachSessionError } from "../camera-session.ts";
 
 export function normalizeSessionError(error: unknown) {
   return error instanceof LiveCoachSessionError
@@ -11,6 +11,9 @@ export function normalizeSessionError(error: unknown) {
 export function sessionErrorMessage(error: LiveCoachSessionError) {
   const cause = error.cause;
   const name = cause instanceof DOMException ? cause.name : "";
+  if (error.message === CAMERA_DISCONNECTED) {
+    return "The camera disconnected. Reconnect it (or reopen its phone or virtual-camera app), then restart the session.";
+  }
   if (name === "NotAllowedError" || name === "SecurityError") {
     return "Camera permission was denied. Allow camera access in browser settings, then restart the session.";
   }

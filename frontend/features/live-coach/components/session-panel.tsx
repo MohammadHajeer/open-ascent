@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { useLiveCoachSession } from "../hooks/use-live-coach-session.ts";
-import type { PullUpPhase, PullUpRep } from "../types.ts";
+import { phaseLabels as phaseLabelsFor } from "../labels.ts";
+import type { PullUpRep } from "../types.ts";
 import {
   LIVE_VERTICAL_PULL_MOVEMENTS,
   PARTIAL_VERTICAL_PULL_VARIANTS,
@@ -16,14 +17,6 @@ import {
 } from "../vertical-pull-config.ts";
 
 type Props = { session: ReturnType<typeof useLiveCoachSession> };
-
-const PHASE_LABELS: Record<PullUpPhase, string> = {
-  unknown: "Setting up",
-  bottom: "Hang",
-  rising: "Pulling",
-  top: "Top",
-  lowering: "Lowering",
-};
 
 const VARIANTS = [...LIVE_VERTICAL_PULL_MOVEMENTS, ...PARTIAL_VERTICAL_PULL_VARIANTS];
 
@@ -43,8 +36,12 @@ export function SessionPanel({ session }: Props) {
     status, snapshot, cue, errorMessage, hasLiveCoachAccess, access,
     safetyAcknowledged, setSafetyAcknowledged, isActive, voiceEnabled,
     toggleVoice, devices, selectedDeviceId, setSelectedDeviceId,
-    startSession, stopSession,
+    startSession, stopSession, movement, selectMovement, cameraInfo,
   } = session;
+  const isPushUp = movement === "push-up";
+  const isMuscleUp = movement === "muscle-up";
+  const isDip = movement === "dips";
+  const phaseLabels = phaseLabelsFor(movement);
   const breakdown = [
     ...VARIANTS.filter((variant) => snapshot.variantBreakdown[variant.slug] > 0),
     ...(snapshot.variantBreakdown.unknown > 0 ? [{ slug: "unknown" as const, label: "Unclassified" }] : []),
@@ -57,23 +54,36 @@ export function SessionPanel({ session }: Props) {
         <Label htmlFor="live-coach-movement" className="font-mono text-[0.56rem] font-semibold tracking-[0.14em] text-primary uppercase">
           Movement family
         </Label>
-        <Select defaultValue="vertical-pull">
+        <Select value={movement} onValueChange={(value) => {
+          if (value === "vertical-pull" || value === "push-up" || value === "muscle-up" || value === "dips") selectMovement(value);
+        }}>
           <SelectTrigger id="live-coach-movement" className="mt-2 h-11 w-full rounded-xl bg-background/70">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent><SelectItem value="vertical-pull">Vertical Pull</SelectItem></SelectContent>
+          <SelectContent>
+            <SelectItem value="vertical-pull">Vertical Pull (Pull-Up)</SelectItem>
+            <SelectItem value="push-up">Push-Up</SelectItem>
+            <SelectItem value="muscle-up">Muscle-Up</SelectItem>
+            <SelectItem value="dips">Dips</SelectItem>
+          </SelectContent>
         </Select>
         <p className="mt-2 text-xs leading-5 text-foreground-faint">
-          Counts pull-ups, chin-ups, and their width and height variations. The camera can&apos;t reliably see which way your palms face, so reps are labeled by hand width and pull height.
+          {isDip
+            ? "Use a side or mostly-side view of parallel bars with shoulder, elbow, wrist, and hip visible. Begin in straight-arm support; a rep counts when you return there after reaching the bottom. Changing movement stops the session and resets the count."
+            : isPushUp
+              ? "Use a side or mostly-side view with your shoulder, elbow, wrist, hip, and ankle visible. Begin with extended arms. Changing movement stops the session and resets the count."
+              : isMuscleUp
+                ? "Use a side or mostly-side view that keeps you in frame above and below the bar. Start from a straight-arm hang; a rep counts when you lock out in straight-arm support above the bar, and the next one needs a return to the hang. Changing movement stops the session and resets the count."
+                : "Counts pull-ups, chin-ups, and their width and height variations. The camera can't reliably see which way your palms face, so reps are labeled by hand width and pull height. Changing movement stops the session and resets the count."}
         </p>
       </div>
 
       <div className="grid grid-cols-2 border-b border-border">
         <Metric label="Completed reps" value={String(snapshot.validRepCount)} />
-        <Metric label="Current phase" value={PHASE_LABELS[snapshot.phase]} />
+        <Metric label="Current phase" value={phaseLabels[snapshot.phase]} />
       </div>
 
-      <div className="border-b border-border px-5 py-4 sm:px-6">
+      {!isPushUp && !isMuscleUp && !isDip ? <div className="border-b border-border px-5 py-4 sm:px-6">
         <p className="font-mono text-[0.56rem] font-semibold tracking-[0.14em] text-primary uppercase">
           Rep breakdown
         </p>
@@ -97,7 +107,7 @@ export function SessionPanel({ session }: Props) {
             {latestValidRep.classification ? <p>{lastRepDetail(latestValidRep.classification)}</p> : null}
           </div>
         ) : null}
-      </div>
+      </div> : null}
 
       <div className="flex-1 p-5 sm:p-6">
         <p className="font-mono text-[0.56rem] font-semibold tracking-[0.14em] text-primary uppercase">
@@ -174,7 +184,11 @@ export function SessionPanel({ session }: Props) {
           />
           <div>
             <Label htmlFor="live-coach-safety" className="cursor-pointer text-sm leading-5 font-normal">
-              I checked the bar and space, can hang comfortably, and will stop if grip or body control breaks down.
+              {isDip
+                ? "I checked the parallel bars and space, can hold stable support comfortably, and will stop if grip or body control breaks down."
+                : isPushUp
+                  ? "I checked the floor and space, can support myself comfortably, and will stop if body control breaks down."
+                  : "I checked the bar and space, can hang comfortably, and will stop if grip or body control breaks down."}
             </Label>
             <a href="#live-coach-safety-guidance" className="mt-1 inline-block text-xs font-medium text-primary underline underline-offset-4">Read safety guidance</a>
           </div>
@@ -194,7 +208,11 @@ export function SessionPanel({ session }: Props) {
           <div className="space-y-2">
             <Label htmlFor="live-coach-camera">Camera</Label>
             <Select
-              items={devices.map((device) => ({ value: device.deviceId, label: device.label || "Camera" }))}
+              items={[
+                // Before the first start nothing is chosen; the browser's default camera opens.
+                ...(selectedDeviceId ? [] : [{ value: "", label: "Default camera" }]),
+                ...devices.map((device) => ({ value: device.deviceId, label: device.label })),
+              ]}
               value={selectedDeviceId}
               onValueChange={(value) => { if (value) setSelectedDeviceId(value); }}
               disabled={isActive}
@@ -203,20 +221,23 @@ export function SessionPanel({ session }: Props) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                {selectedDeviceId ? null : <SelectItem value="">Default camera</SelectItem>}
                 {devices.map((device) => (
                   <SelectItem key={device.deviceId} value={device.deviceId}>
-                    {device.label || "Camera"}
+                    {device.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <p className="text-xs leading-5 text-foreground-faint">
-              {isActive ? "Stop the session to switch cameras." : "The selected camera is used when you start."}
+              {isActive && cameraInfo?.width
+                ? `In use at ${cameraInfo.width}×${cameraInfo.height}${cameraInfo.frameRate ? ` · ${Math.round(cameraInfo.frameRate)} fps` : ""}${cameraInfo.tier === "preferred" ? "" : " (fallback mode: the HD request showed no picture)"}. Stop the session to switch cameras.`
+                : isActive ? "Stop the session to switch cameras." : "The selected camera is used when you start."}
             </p>
           </div>
         ) : (
           <p className="text-xs leading-5 text-foreground-faint">
-            Camera choices appear after first permission. Place the selected camera in front of the bar.
+            Camera choices appear after first permission. {isDip ? "Place the selected camera beside the parallel bars." : isPushUp ? "Place the selected camera beside you." : isMuscleUp ? "Place the selected camera beside the bar." : "Place the selected camera in front of the bar."}
           </p>
         )}
 
