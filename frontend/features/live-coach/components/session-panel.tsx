@@ -36,7 +36,7 @@ export function SessionPanel({ session }: Props) {
     status, snapshot, cue, errorMessage, hasLiveCoachAccess, access,
     safetyAcknowledged, setSafetyAcknowledged, isActive, voiceEnabled,
     toggleVoice, devices, selectedDeviceId, setSelectedDeviceId,
-    startSession, stopSession, movement, selectMovement,
+    startSession, stopSession, movement, selectMovement, cameraInfo,
   } = session;
   const isPushUp = movement === "push-up";
   const isMuscleUp = movement === "muscle-up";
@@ -208,7 +208,11 @@ export function SessionPanel({ session }: Props) {
           <div className="space-y-2">
             <Label htmlFor="live-coach-camera">Camera</Label>
             <Select
-              items={devices.map((device) => ({ value: device.deviceId, label: device.label || "Camera" }))}
+              items={[
+                // Before the first start nothing is chosen; the browser's default camera opens.
+                ...(selectedDeviceId ? [] : [{ value: "", label: "Default camera" }]),
+                ...devices.map((device) => ({ value: device.deviceId, label: device.label })),
+              ]}
               value={selectedDeviceId}
               onValueChange={(value) => { if (value) setSelectedDeviceId(value); }}
               disabled={isActive}
@@ -217,15 +221,18 @@ export function SessionPanel({ session }: Props) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                {selectedDeviceId ? null : <SelectItem value="">Default camera</SelectItem>}
                 {devices.map((device) => (
                   <SelectItem key={device.deviceId} value={device.deviceId}>
-                    {device.label || "Camera"}
+                    {device.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <p className="text-xs leading-5 text-foreground-faint">
-              {isActive ? "Stop the session to switch cameras." : "The selected camera is used when you start."}
+              {isActive && cameraInfo?.width
+                ? `In use at ${cameraInfo.width}×${cameraInfo.height}${cameraInfo.frameRate ? ` · ${Math.round(cameraInfo.frameRate)} fps` : ""}${cameraInfo.tier === "preferred" ? "" : " (fallback mode: the HD request showed no picture)"}. Stop the session to switch cameras.`
+                : isActive ? "Stop the session to switch cameras." : "The selected camera is used when you start."}
             </p>
           </div>
         ) : (

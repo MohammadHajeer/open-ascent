@@ -3,9 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 
 import { LiveCoachCameraSession, LiveCoachSessionError, type LiveFrame } from "../camera-session.ts";
+import { checkCameraSignal, createCanvasSignalProbe, isBlankFrame, type CameraSignal } from "../camera-signal.ts";
 import { createMediaPipePoseRuntime } from "../mediapipe-pose.ts";
 import { LiveCoachAnalyzer } from "../live-analyzer.ts";
-import { CAMERA_OFF_CUE, cameraOffCue, INITIAL_SNAPSHOT, type DeviceOption, type SessionStatus } from "../session-state.ts";
+import {
+  CAMERA_OFF_CUE,
+  cameraOffCue,
+  cameraOptions,
+  INITIAL_SNAPSHOT,
+  type CameraInfo,
+  type DeviceOption,
+  type SessionStatus,
+} from "../session-state.ts";
 import { drawPose, clearCanvas } from "../utils/pose-canvas.ts";
 import { normalizeSessionError, sessionErrorMessage } from "../utils/session-errors.ts";
 import { LiveCoachVoice } from "../voice.ts";
@@ -39,10 +48,16 @@ export function useLiveCoachSession() {
   const [inferenceMs, setInferenceMs] = useState(0);
   const [initializationMs, setInitializationMs] = useState<number | null>(null);
   const [delegate, setDelegate] = useState<"GPU" | "CPU" | null>(null);
+  // "image" once real frames show a picture; "blank" when the camera delivers
+  // a flat fill (e.g. an idle virtual camera's solid green).
+  const [cameraSignal, setCameraSignal] = useState<Exclude<CameraSignal, "no-frames"> | null>(null);
+  const [cameraInfo, setCameraInfo] = useState<CameraInfo | null>(null);
+  const [probe] = useState(createCanvasSignalProbe);
 
   const isActive =
     status === "verifying-access" ||
     status === "requesting-camera" ||
+    status === "checking-camera" ||
     status === "loading-pose" ||
     status === "running";
   const hasLiveCoachAccess = access.data?.allowed === true;
@@ -53,6 +68,49 @@ export function useLiveCoachSession() {
     sessionRef.current?.stop();
     voiceRef.current?.stop();
   }, []);
+
+  // List cameras before the first start when permission already exists, and
+  // follow plug/unplug (a USB phone camera appearing or disappearing).
+  useEffect(() => {
+    const media = navigator.mediaDevices;
+    if (!media?.enumerateDevices) return;
+    let cancelled = false;
+    const refresh = () => {
+      void media.enumerateDevices().then((available) => {
+        if (cancelled) return;
+        const options = cameraOptions(available);
+        setDevices(options);
+        setSelectedDeviceId((current) =>
+          !current || options.some((device) => device.deviceId === current) ? current : "",
+        );
+      }, () => {});
+    };
+    refresh();
+    media.addEventListener?.("devicechange", refresh);
+    return () => {
+      cancelled = true;
+      media.removeEventListener?.("devicechange", refresh);
+    };
+  }, []);
+
+  // Keep checking the live picture: a phone camera can drop to a flat frame
+  // mid-set, or start delivering an image after its app connects.
+  useEffect(() => {
+    if (status !== "running") return;
+    let blankSamples = 0;
+    const timer = window.setInterval(() => {
+      const video = videoRef.current;
+      const stats = video ? probe.sample(video) : null;
+      if (!stats) return;
+      if (!isBlankFrame(stats)) {
+        blankSamples = 0;
+        setCameraSignal("image");
+      } else if (++blankSamples >= 2) {
+        setCameraSignal("blank");
+      }
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [status, probe]);
 
   async function startSession() {
     if (!videoRef.current || !safetyAcknowledged || !hasLiveCoachAccess || isActive) return;
@@ -122,6 +180,8 @@ export function useLiveCoachSession() {
     setInferenceMs(0);
     setDelegate(null);
     setErrorMessage(null);
+    setCameraSignal(null);
+    setCameraInfo(null);
     setStatus("requesting-camera");
 
     const session = new LiveCoachCameraSession({
@@ -131,6 +191,7 @@ export function useLiveCoachSession() {
       requestFrame: (callback) => requestAnimationFrame(callback),
       cancelFrame: (handle) => cancelAnimationFrame(handle),
       now: () => performance.now(),
+      checkSignal: (video) => checkCameraSignal(video as HTMLVideoElement, probe),
     });
     sessionRef.current = session;
 
@@ -138,7 +199,11 @@ export function useLiveCoachSession() {
       const result = await session.start(
         videoRef.current,
         {
-          onCameraReady: () => setStatus("loading-pose"),
+          onCameraConnected: () => setStatus("checking-camera"),
+          onCameraReady: (signal) => {
+            setCameraSignal(signal === "image" ? "image" : "blank");
+            setStatus("loading-pose");
+          },
           onFrame: handleFrame,
           onError: handleSessionError,
         },
@@ -149,6 +214,24 @@ export function useLiveCoachSession() {
         session.stop();
         return;
       }
+      // One line per start so camera problems can be diagnosed from the console.
+      console.info("[Live Coach camera]", {
+        label: result.deviceLabel,
+        signal: result.signal,
+        settings: `${result.width ?? "?"}x${result.height ?? "?"} @ ${result.frameRate ?? "?"} fps`,
+        attempts: result.attempts.map((attempt) =>
+          `${attempt.tier}: ${attempt.signal}` +
+          (attempt.width ? ` ${attempt.width}x${attempt.height}` : "") +
+          (attempt.mean ? ` avg rgb(${attempt.mean.map(Math.round).join(",")})` : ""),
+        ).join(" → "),
+      });
+      setCameraInfo({
+        label: result.deviceLabel,
+        width: result.width,
+        height: result.height,
+        frameRate: result.frameRate,
+        tier: result.tier,
+      });
       setStatus("running");
       setDelegate(result.delegate);
       const rearFacingLabel = /\b(back|rear|environment)\b/i.test(
@@ -180,6 +263,7 @@ export function useLiveCoachSession() {
     setStatus("stopped");
     setCue(cameraOffCue(analyzer.movement));
     setDelegate(null);
+    setCameraSignal(null);
     clearCanvas(canvasRef.current);
   }
 
@@ -215,6 +299,7 @@ export function useLiveCoachSession() {
     setStatus("error");
     setCue(cameraOffCue(analyzer.movement));
     setDelegate(null);
+    setCameraSignal(null);
     setErrorMessage(sessionErrorMessage(error));
     clearCanvas(canvasRef.current);
   }
@@ -222,13 +307,7 @@ export function useLiveCoachSession() {
   async function refreshCameraList(activeDeviceId: string | null) {
     try {
       const available = await navigator.mediaDevices.enumerateDevices();
-      const videoInputs = available
-        .filter((device) => device.kind === "videoinput")
-        .map((device, index) => ({
-          deviceId: device.deviceId,
-          label: device.label || `Camera ${index + 1}`,
-        }));
-      setDevices(videoInputs);
+      setDevices(cameraOptions(available));
       if (activeDeviceId) setSelectedDeviceId(activeDeviceId);
     } catch {
       // Camera enumeration is optional; the active stream can continue.
@@ -276,6 +355,8 @@ export function useLiveCoachSession() {
     selectedDeviceId,
     setSelectedDeviceId,
     mirrorPreview,
+    cameraSignal,
+    cameraInfo,
     voiceEnabled,
     toggleVoice,
     fps,

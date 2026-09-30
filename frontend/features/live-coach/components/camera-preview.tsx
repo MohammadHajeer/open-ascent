@@ -13,6 +13,9 @@ export function CameraPreview({ session, focus }: Props) {
   const isPushUp = movement === "push-up";
   const isDip = movement === "dips";
   const setComplete = status === "stopped" && snapshot.validRepCount > 0;
+  const cameraLive = status === "loading-pose" || status === "running";
+  // Frames arrive but carry no picture (e.g. an idle virtual camera's solid green).
+  const cameraBlank = cameraLive && session.cameraSignal === "blank";
   const { active: inFocus, controlsVisible, rootRef, enter, exit } = focus;
   const inlineSize = "h-[min(58dvh,34rem)] min-h-72 lg:h-[min(calc(100dvh-8rem),46rem)] lg:min-h-120";
   return (
@@ -87,7 +90,16 @@ export function CameraPreview({ session, focus }: Props) {
         </div>
       ) : null}
 
-      {status === "verifying-access" || status === "requesting-camera" || status === "loading-pose" ? (
+      {cameraBlank && !inFocus ? (
+        <div role="alert" className="absolute inset-x-4 top-16 mx-auto max-w-lg rounded-2xl border border-warning/40 bg-black/70 px-4 py-3 text-sm leading-6 text-white backdrop-blur">
+          <p className="font-medium">This camera is sending a blank image.</p>
+          <p className="text-white/65">
+            The browser receives frames, but they&apos;re one flat color. For a phone or virtual camera, check that its app shows a live picture, then restart. Otherwise stop and choose another camera.
+          </p>
+        </div>
+      ) : null}
+
+      {status === "verifying-access" || status === "requesting-camera" || status === "checking-camera" || status === "loading-pose" ? (
         <div className={cn(
           "absolute inset-x-5 bottom-5 flex items-center gap-3 rounded-2xl border border-white/10 bg-black/55 px-4 py-3 text-sm text-white backdrop-blur",
           inFocus && "bottom-22 sm:inset-x-auto sm:bottom-10 sm:left-1/2 sm:-translate-x-1/2 lg:bottom-14",
@@ -97,15 +109,23 @@ export function CameraPreview({ session, focus }: Props) {
             ? "Checking Pro access…"
             : status === "requesting-camera"
               ? "Waiting for camera permission…"
-              : "Camera ready. Loading local pose model…"}
+              : status === "checking-camera"
+                ? "Camera connected. Checking the picture…"
+                : cameraBlank
+                  ? "Loading local pose model…"
+                  : "Camera ready. Loading local pose model…"}
         </div>
       ) : null}
 
       <div className={cn("absolute inset-x-4 top-4 flex items-start justify-between gap-2", inFocus && "hidden")}>
         <div className="flex flex-wrap gap-2">
           <StatusPill
-            ready={status === "loading-pose" || status === "running"}
-            label={status === "loading-pose" || status === "running" ? "Camera ready" : "Camera off"}
+            ready={cameraLive && !cameraBlank}
+            label={status === "checking-camera"
+              ? "Checking camera"
+              : !cameraLive
+                ? "Camera off"
+                : cameraBlank ? "No camera image" : "Camera ready"}
           />
           {status === "running" ? (
             <StatusPill
